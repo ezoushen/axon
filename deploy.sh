@@ -94,6 +94,103 @@ parse_config() {
     fi
 }
 
+# Function to build docker run command from docker-compose.yml using decomposerize
+# This keeps docker-compose.yml as the single source of truth
+build_docker_run_command() {
+    local compose_file=$1
+    local container_name=$2
+    local app_port=$3
+    local full_image=$4
+    local env_file=$5
+    local network_name=$6
+
+    # Export required variables for docker-compose config
+    export AWS_ACCOUNT_ID AWS_REGION ECR_REPOSITORY IMAGE_TAG
+    export PRODUCT_NAME ENVIRONMENT APP_PORT
+
+    # Check if decomposerize is available (required)
+    if ! command -v decomposerize &> /dev/null; then
+        echo -e "${RED}Error: decomposerize is required but not installed${NC}" >&2
+        echo ""
+        echo -e "Please install decomposerize:"
+        echo -e "  ${CYAN}npm install -g decomposerize${NC}"
+        echo ""
+        echo -e "decomposerize converts docker-compose files to docker run commands,"
+        echo -e "ensuring accurate and reliable container configuration."
+        echo ""
+        exit 1
+    fi
+
+    # Use docker-compose config to render the final compose file with variables substituted
+    local rendered_compose=$(cd "$PRODUCT_ROOT" && docker-compose -f "$compose_file" config 2>/dev/null)
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: Failed to render docker-compose file${NC}" >&2
+        echo -e "Compose file: $compose_file"
+        exit 1
+    fi
+
+    # Use decomposerize to convert compose file to docker run command
+    # decomposerize outputs multiple lines (network create, docker run, etc.)
+    # We only need the docker run command
+    local docker_run_cmd=$(echo "$rendered_compose" | decomposerize 2>/dev/null | grep "^docker run")
+
+    if [ -z "$docker_run_cmd" ]; then
+        echo -e "${RED}Error: decomposerize failed to generate docker run command${NC}" >&2
+        echo -e "This may indicate an issue with the docker-compose file format."
+        exit 1
+    fi
+
+    # Post-process the generated command to ensure our specific requirements
+    # Replace the auto-generated container name with our blue-green specific name
+    docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name [^ ]*/--name \"$container_name\"/")
+
+    # Replace the image if decomposerize output doesn't match
+    if ! echo "$docker_run_cmd" | grep -q "$full_image"; then
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|[^ ]*$|\"$full_image\"|")
+    fi
+
+    # Ensure detached mode (-d)
+    if ! echo "$docker_run_cmd" | grep -q " -d "; then
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/^docker run /docker run -d /')
+    fi
+
+    # Add port mapping if missing (decomposerize sometimes omits it)
+    if ! echo "$docker_run_cmd" | grep -q " -p "; then
+        # Insert port mapping after container name
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p \"$app_port:3000\"/")
+    else
+        # Replace existing port mapping with our dynamic port
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p \"$app_port:3000\"/")
+    fi
+
+    # Fix health check format (decomposerize outputs CMD,wget,--quiet,... but docker expects space-separated)
+    # Extract the health-cmd value, remove CMD prefix, replace commas with spaces
+    if echo "$docker_run_cmd" | grep -q -- "--health-cmd"; then
+        # Get the health-cmd value (everything between --health-cmd and next --)
+        local health_value=$(echo "$docker_run_cmd" | sed -n 's/.*--health-cmd \([^ ]*\).*/\1/p' | sed 's/^CMD,//' | tr ',' ' ')
+        # Replace the old health-cmd with the fixed one (use | as delimiter to avoid conflicts with URLs)
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|--health-cmd [^ ]*|--health-cmd \"$health_value\"|")
+    fi
+
+    # Fix log options (decomposerize may output: --log-opt max-file=3,max-size=10m)
+    # Should be: --log-opt max-file=3 --log-opt max-size=10m
+    # Replace comma with space and add --log-opt prefix before each key=value after the first
+    docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/--log-opt \([^,]*\),\([a-z-]*=\)/--log-opt \1 --log-opt \2/g')
+
+    # Replace network with our specific network
+    if echo "$docker_run_cmd" | grep -q " --net "; then
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--net [^ ]*/--network \"$network_name\"/")
+    elif echo "$docker_run_cmd" | grep -q " --network "; then
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--network [^ ]*/--network \"$network_name\"/")
+    else
+        # Add network if missing
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" --network \"$network_name\"/")
+    fi
+
+    echo "$docker_run_cmd"
+}
+
 # Load configuration
 echo -e "${CYAN}==================================================${NC}"
 echo -e "${CYAN}Zero-Downtime Deployment (from Local Machine)${NC}"
@@ -315,14 +412,27 @@ echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
 echo -e "  Container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}${NC}"
 echo -e "  Port: ${YELLOW}${APP_PORT}${NC}"
 
+# Build docker run command from docker-compose.yml
+FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+CONTAINER_NAME="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
+NETWORK_NAME="${PRODUCT_NAME}_${ENVIRONMENT}-network"
+
+# Build the docker run command from docker-compose.yml (single source of truth)
+DOCKER_RUN_CMD=$(build_docker_run_command \
+    "$DOCKER_COMPOSE_FILE" \
+    "$CONTAINER_NAME" \
+    "$APP_PORT" \
+    "$FULL_IMAGE" \
+    "$ENV_FILE" \
+    "$NETWORK_NAME")
+
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 set -e
 cd $APP_DEPLOY_PATH
 
-# Build full image name
-FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-CONTAINER_NAME="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
-NETWORK_NAME="${PRODUCT_NAME}_${ENVIRONMENT}-network"
+FULL_IMAGE="${FULL_IMAGE}"
+CONTAINER_NAME="${CONTAINER_NAME}"
+NETWORK_NAME="${NETWORK_NAME}"
 
 # Create network if it doesn't exist
 if ! docker network ls | grep -q "\${NETWORK_NAME}"; then
@@ -336,26 +446,9 @@ if docker ps -a --format '{{.Names}}' | grep -q "^\${CONTAINER_NAME}\$"; then
     docker rm "\${CONTAINER_NAME}" 2>/dev/null || true
 fi
 
-# Start new container using docker run (NOT docker-compose)
-# This ensures we don't interfere with the old container
-docker run -d \\
-    --name "\${CONTAINER_NAME}" \\
-    --restart unless-stopped \\
-    -p "${APP_PORT}:3000" \\
-    --env-file "$ENV_FILE" \\
-    -e NODE_ENV=production \\
-    -e PORT=3000 \\
-    --add-host="host.docker.internal:host-gateway" \\
-    --network "\${NETWORK_NAME}" \\
-    --log-driver json-file \\
-    --log-opt max-size=10m \\
-    --log-opt max-file=3 \\
-    --health-cmd="wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1" \\
-    --health-interval=30s \\
-    --health-timeout=10s \\
-    --health-retries=3 \\
-    --health-start-period=40s \\
-    "\${FULL_IMAGE}"
+# Start new container using docker run command built from docker-compose.yml
+# This ensures we don't interfere with the old container and maintains docker-compose.yml as source of truth
+${DOCKER_RUN_CMD}
 
 if [ \$? -ne 0 ]; then
     echo "Error: Failed to start container"
@@ -371,7 +464,7 @@ fi
 echo -e "  ✓ Container started"
 echo ""
 
-# Step 6: Wait for health check on Application Server
+# Step 5: Wait for health check on Application Server
 echo -e "${BLUE}Step 5/10: Waiting for health check on Application Server...${NC}"
 
 RETRY_COUNT=0

@@ -322,6 +322,10 @@ See [Usage Guide](docs/usage.md) for detailed usage.
 - AWS CLI configured with ECR access
 - SSH access to both servers
 - `yq` tool (recommended for YAML parsing, falls back to grep/awk if not available)
+- `decomposerize` (required for docker-compose to docker run conversion):
+  ```bash
+  npm install -g decomposerize
+  ```
 - SSH keys configured for both servers
 
 ### System Server (nginx + SSL)
