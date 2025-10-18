@@ -1,0 +1,91 @@
+# Deployment Module Configuration
+# Copy this file to your product repository as 'deploy.config.yml'
+# and customize for your product
+#
+# IMPORTANT: All deployment scripts run from your LOCAL MACHINE
+# and SSH to both Application Server and System Server to execute commands.
+
+# Product Information
+product:
+  name: "my-product"                    # Product name (used in container names)
+  description: "My Product Description" # Product description
+
+# AWS Configuration
+aws:
+  profile: "default"                    # AWS CLI profile name
+  region: "ap-northeast-1"              # AWS region
+  account_id: "123456789012"            # AWS account ID
+  ecr_repository: "my-product"          # ECR repository name
+
+# Server Configuration
+servers:
+  # System Server (runs nginx + SSL)
+  system:
+    host: "system-server-ip-or-hostname"  # System Server IP or hostname
+    user: "deploy"                         # SSH user with nginx permissions
+    ssh_key: "~/.ssh/deployment_key"       # Path to SSH private key
+
+  # Application Server (runs Docker containers)
+  application:
+    host: "application-server-ip"          # Application Server IP
+    user: "ubuntu"                         # SSH user for Application Server
+    ssh_key: "~/.ssh/application_server_key"  # Path to SSH private key for Application Server
+    deploy_path: "/home/ubuntu/my-product"    # Path where app code is deployed on Application Server
+
+# Environment Configurations
+environments:
+  # Production environment
+  production:
+    blue_port: 5100                                           # Blue deployment port
+    green_port: 5102                                          # Green deployment port
+    domain: "production.example.com"                          # Production domain
+    nginx_upstream_file: "/etc/nginx/upstreams/product-production.conf"  # nginx upstream file path
+    nginx_upstream_name: "product_production_backend"         # nginx upstream name
+    env_file: ".env.production"                               # Environment file
+    image_tag: "production"                                   # Default image tag
+    docker_compose_file: "docker-compose.production.yml"     # Docker compose file
+
+  # Staging environment
+  staging:
+    blue_port: 5101
+    green_port: 5103
+    domain: "staging.example.com"
+    nginx_upstream_file: "/etc/nginx/upstreams/product-staging.conf"
+    nginx_upstream_name: "product_staging_backend"
+    env_file: ".env.staging"
+    image_tag: "staging"
+    docker_compose_file: "docker-compose.staging.yml"
+
+  # Add more environments as needed
+  # development:
+  #   blue_port: 5104
+  #   green_port: 5105
+  #   ...
+
+# Health Check Configuration
+health_check:
+  endpoint: "/api/health"    # Health check endpoint (must return 200)
+  max_retries: 30            # Maximum retry attempts
+  retry_interval: 2          # Seconds between retries
+  timeout: 10                # Request timeout in seconds
+
+# Deployment Options
+deployment:
+  connection_drain_time: 5   # Seconds to wait before stopping old container
+  enable_auto_rollback: true # Automatically rollback on failure
+  keep_old_images: 3         # Number of old images to keep in ECR
+  log_retention: 30          # Days to retain deployment logs
+
+# Docker Configuration (optional overrides)
+docker:
+  network_name: "${PRODUCT_NAME}-network"  # Docker network name
+  restart_policy: "unless-stopped"         # Container restart policy
+  log_driver: "json-file"                  # Logging driver
+  log_max_size: "10m"                      # Max log file size
+  log_max_file: 3                          # Max number of log files
+
+# Notifications (optional)
+notifications:
+  enabled: false
+  slack_webhook: ""          # Slack webhook URL for deployment notifications
+  email: ""                  # Email for deployment notifications
