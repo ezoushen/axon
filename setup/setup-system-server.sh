@@ -226,7 +226,9 @@ if [ -n "$PRODUCT_NAME" ] && [ -n "$APPLICATION_SERVER_IP" ]; then
     else
         echo -e "  ${YELLOW}Creating production upstream...${NC}"
 
-        PROD_UPSTREAM_CONTENT="upstream ${PRODUCT_NAME}_production_backend {
+        # Convert hyphens to underscores in upstream name
+        PROD_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_production_backend"
+        PROD_UPSTREAM_CONTENT="upstream ${PROD_UPSTREAM_NAME} {
     server ${APPLICATION_SERVER_IP}:5100;
 }"
 
@@ -246,7 +248,9 @@ if [ -n "$PRODUCT_NAME" ] && [ -n "$APPLICATION_SERVER_IP" ]; then
     else
         echo -e "  ${YELLOW}Creating staging upstream...${NC}"
 
-        STAGING_UPSTREAM_CONTENT="upstream ${PRODUCT_NAME}_staging_backend {
+        # Convert hyphens to underscores in upstream name
+        STAGING_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_staging_backend"
+        STAGING_UPSTREAM_CONTENT="upstream ${STAGING_UPSTREAM_NAME} {
     server ${APPLICATION_SERVER_IP}:5101;
 }"
 

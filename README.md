@@ -108,8 +108,8 @@ environments:
   production:
     blue_port: 5100
     green_port: 5102
-    nginx_upstream_file: "/etc/nginx/upstreams/my-product-production.conf"
-    nginx_upstream_name: "my_product_production_backend"
+    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-production.conf
+    # nginx backend:  Auto-generated as my_product_production_backend
     env_file: ".env.production"
     image_tag: "production"
     docker_compose_file: "docker-compose.production.yml"
@@ -117,8 +117,8 @@ environments:
   staging:
     blue_port: 5101
     green_port: 5103
-    nginx_upstream_file: "/etc/nginx/upstreams/my-product-staging.conf"
-    nginx_upstream_name: "my_product_staging_backend"
+    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-staging.conf
+    # nginx backend:  Auto-generated as my_product_staging_backend
     env_file: ".env.staging"
     image_tag: "staging"
     docker_compose_file: "docker-compose.staging.yml"

@@ -39,9 +39,8 @@ environments:
   production:
     blue_port: 5100                                           # Blue deployment port
     green_port: 5102                                          # Green deployment port
-    domain: "production.example.com"                          # Production domain
-    nginx_upstream_file: "/etc/nginx/upstreams/product-production.conf"  # nginx upstream file path
-    nginx_upstream_name: "product_production_backend"         # nginx upstream name
+    # nginx upstream file: Auto-generated as /etc/nginx/upstreams/{product.name}-production.conf
+    # nginx upstream name: Auto-generated as {product.name}_production_backend
     env_file: ".env.production"                               # Environment file
     image_tag: "production"                                   # Default image tag
     docker_compose_file: "docker-compose.production.yml"     # Docker compose file
@@ -50,9 +49,8 @@ environments:
   staging:
     blue_port: 5101
     green_port: 5103
-    domain: "staging.example.com"
-    nginx_upstream_file: "/etc/nginx/upstreams/product-staging.conf"
-    nginx_upstream_name: "product_staging_backend"
+    # nginx upstream file: Auto-generated as /etc/nginx/upstreams/{product.name}-staging.conf
+    # nginx upstream name: Auto-generated as {product.name}_staging_backend
     env_file: ".env.staging"
     image_tag: "staging"
     docker_compose_file: "docker-compose.staging.yml"
@@ -61,7 +59,11 @@ environments:
   # development:
   #   blue_port: 5104
   #   green_port: 5105
-  #   ...
+  #   # nginx upstream: Auto-generated as /etc/nginx/upstreams/{product.name}-development.conf
+  #   # nginx backend:  Auto-generated as {product.name}_development_backend
+  #   env_file: ".env.development"
+  #   image_tag: "development"
+  #   docker_compose_file: "docker-compose.development.yml"
 
 # Health Check Configuration
 health_check:

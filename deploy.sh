@@ -135,8 +135,11 @@ APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 BLUE_PORT=$(parse_config "environments.${ENVIRONMENT}.blue_port" "5100")
 GREEN_PORT=$(parse_config "environments.${ENVIRONMENT}.green_port" "5102")
 DOMAIN=$(parse_config "environments.${ENVIRONMENT}.domain" "")
-NGINX_UPSTREAM_FILE=$(parse_config "environments.${ENVIRONMENT}.nginx_upstream_file" "/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf")
-NGINX_UPSTREAM_NAME=$(parse_config "environments.${ENVIRONMENT}.nginx_upstream_name" "${PRODUCT_NAME}_${ENVIRONMENT}_backend")
+# Auto-generate nginx upstream file path and name (same logic as setup script)
+# File path: /etc/nginx/upstreams/{product}-{environment}.conf (keeps hyphens)
+# Upstream name: {product}_{environment}_backend (hyphens converted to underscores)
+NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
+NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
 ENV_FILE=$(parse_config "environments.${ENVIRONMENT}.env_file" ".env.${ENVIRONMENT}")
 IMAGE_TAG=$(parse_config "environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
 DOCKER_COMPOSE_FILE=$(parse_config "environments.${ENVIRONMENT}.docker_compose_file" "docker-compose.${ENVIRONMENT}.yml")
@@ -316,26 +319,43 @@ ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 set -e
 cd $APP_DEPLOY_PATH
 
-# Set unique project name per environment to prevent interference
-export COMPOSE_PROJECT_NAME="${PRODUCT_NAME}_${ENVIRONMENT}"
+# Build full image name
+FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+CONTAINER_NAME="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
+NETWORK_NAME="${PRODUCT_NAME}_${ENVIRONMENT}-network"
 
-# Export AWS configuration (from deploy.config.yml, not .env)
-export AWS_ACCOUNT_ID="$AWS_ACCOUNT_ID"
-export AWS_REGION="$AWS_REGION"
-export ECR_REPOSITORY="$ECR_REPOSITORY"
-export IMAGE_TAG="$IMAGE_TAG"
+# Create network if it doesn't exist
+if ! docker network ls | grep -q "\${NETWORK_NAME}"; then
+    docker network create "\${NETWORK_NAME}"
+fi
 
-# Export variables for docker-compose
-export PRODUCT_NAME="$PRODUCT_NAME"
-export APP_PORT="$APP_PORT"
-export DEPLOYMENT_SLOT="$DEPLOYMENT_SLOT"
+# Remove container if it already exists (for retries)
+if docker ps -a --format '{{.Names}}' | grep -q "^\${CONTAINER_NAME}\$"; then
+    echo "  Removing existing container \${CONTAINER_NAME}..."
+    docker stop "\${CONTAINER_NAME}" 2>/dev/null || true
+    docker rm "\${CONTAINER_NAME}" 2>/dev/null || true
+fi
 
-# Load application environment variables from env file
-# (AWS vars already set above, will not be overwritten)
-export \$(cat "$ENV_FILE" | grep -v '^#' | xargs)
-
-# Start container
-docker-compose -f "$DOCKER_COMPOSE_FILE" up -d --force-recreate
+# Start new container using docker run (NOT docker-compose)
+# This ensures we don't interfere with the old container
+docker run -d \\
+    --name "\${CONTAINER_NAME}" \\
+    --restart unless-stopped \\
+    -p "${APP_PORT}:3000" \\
+    --env-file "$ENV_FILE" \\
+    -e NODE_ENV=production \\
+    -e PORT=3000 \\
+    --add-host="host.docker.internal:host-gateway" \\
+    --network "\${NETWORK_NAME}" \\
+    --log-driver json-file \\
+    --log-opt max-size=10m \\
+    --log-opt max-file=3 \\
+    --health-cmd="wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1" \\
+    --health-interval=30s \\
+    --health-timeout=10s \\
+    --health-retries=3 \\
+    --health-start-period=40s \\
+    "\${FULL_IMAGE}"
 
 if [ \$? -ne 0 ]; then
     echo "Error: Failed to start container"
@@ -416,10 +436,14 @@ echo ""
 # Step 8: Test nginx configuration on System Server
 echo -e "${BLUE}Step 7/10: Testing nginx configuration on System Server...${NC}"
 
-ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1 | grep -q "successful"
+NGINX_TEST_OUTPUT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1)
 
-if [ $? -ne 0 ]; then
+if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
     echo -e "${RED}Error: nginx configuration test failed!${NC}"
+    echo ""
+    echo -e "${YELLOW}nginx -t output:${NC}"
+    echo "$NGINX_TEST_OUTPUT"
+    echo ""
 
     # Rollback nginx config
     echo -e "${YELLOW}Rolling back nginx configuration...${NC}"
