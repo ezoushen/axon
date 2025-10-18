@@ -165,7 +165,8 @@ services:
 **Important Notes:**
 - Container names use **port numbers** as suffixes (e.g., `my-product-production-5100`)
 - The deployment script sets `COMPOSE_PROJECT_NAME="${PRODUCT_NAME}_${ENVIRONMENT}"` to prevent cross-environment interference
-- AWS environment variables (AWS_ACCOUNT_ID, AWS_REGION, ECR_REPOSITORY) must be in your `.env` file
+- AWS configuration (AWS_ACCOUNT_ID, AWS_REGION, ECR_REPOSITORY, IMAGE_TAG) is **automatically injected from deploy.config.yml**
+- Your `.env` files should only contain **application-specific** environment variables (API keys, database URLs, etc.)
 
 ### File Locations
 
@@ -185,9 +186,15 @@ my-product/
 /home/ubuntu/apps/my-product/
 ├── docker-compose.production.yml        # Auto-copied from local
 ├── docker-compose.staging.yml           # Auto-copied from local
-├── .env.production                      # Manually created (contains secrets)
-└── .env.staging                         # Manually created (contains secrets)
+├── .env.production                      # Manually created (app secrets only)
+└── .env.staging                         # Manually created (app secrets only)
 ```
+
+**What goes in .env files:**
+- ✅ Application secrets (API keys, database passwords, etc.)
+- ✅ Environment-specific URLs (database hosts, API endpoints, etc.)
+- ❌ AWS configuration (handled by deploy.config.yml)
+- ❌ Port numbers (handled by deploy.config.yml)
 
 **On System Server (after setup):**
 ```
@@ -198,7 +205,8 @@ my-product/
 
 **Important:**
 - ✅ Docker-compose files are **auto-copied** from local machine during each deployment
-- ⚠️ `.env` files must be **manually created** on Application Server (one-time setup)
+- ✅ AWS configuration is **auto-injected** from `deploy.config.yml` (not in `.env` files)
+- ⚠️ `.env` files must be **manually created** on Application Server (one-time setup, app secrets only)
 - ❌ Never commit actual `.env` files to git (use `.env.*.example` as templates)
 - ✅ No source code needs to exist on Application Server (all code is in Docker images)
 

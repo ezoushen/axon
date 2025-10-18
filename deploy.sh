@@ -319,12 +319,19 @@ cd $APP_DEPLOY_PATH
 # Set unique project name per environment to prevent interference
 export COMPOSE_PROJECT_NAME="${PRODUCT_NAME}_${ENVIRONMENT}"
 
+# Export AWS configuration (from deploy.config.yml, not .env)
+export AWS_ACCOUNT_ID="$AWS_ACCOUNT_ID"
+export AWS_REGION="$AWS_REGION"
+export ECR_REPOSITORY="$ECR_REPOSITORY"
+export IMAGE_TAG="$IMAGE_TAG"
+
 # Export variables for docker-compose
 export PRODUCT_NAME="$PRODUCT_NAME"
 export APP_PORT="$APP_PORT"
 export DEPLOYMENT_SLOT="$DEPLOYMENT_SLOT"
 
-# Load environment variables from env file
+# Load application environment variables from env file
+# (AWS vars already set above, will not be overwritten)
 export \$(cat "$ENV_FILE" | grep -v '^#' | xargs)
 
 # Start container
