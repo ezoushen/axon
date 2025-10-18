@@ -26,17 +26,34 @@ PRODUCT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
 
 # Parse command line arguments
-ENVIRONMENT=${1}
+ENVIRONMENT=""
+FORCE_CLEANUP=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force|-f)
+            FORCE_CLEANUP=true
+            shift
+            ;;
+        *)
+            ENVIRONMENT=$1
+            shift
+            ;;
+    esac
+done
 
 # Validate environment parameter
 if [ -z "$ENVIRONMENT" ]; then
     echo -e "${RED}Error: Environment parameter required${NC}"
     echo ""
-    echo "Usage: $0 <environment>"
+    echo "Usage: $0 <environment> [--force]"
+    echo ""
+    echo "Options:"
+    echo "  --force, -f    Force cleanup of existing containers on target port"
     echo ""
     echo "Examples:"
     echo "  $0 production"
-    echo "  $0 staging"
+    echo "  $0 staging --force"
     exit 1
 fi
 
@@ -57,7 +74,8 @@ parse_config() {
 
     # Try to parse using yq if available
     if command -v yq &> /dev/null; then
-        value=$(yq eval "$key" "$CONFIG_FILE" 2>/dev/null || echo "")
+        # yq requires leading dot for path
+        value=$(yq eval ".$key" "$CONFIG_FILE" 2>/dev/null || echo "")
         if [ "$value" != "null" ] && [ -n "$value" ]; then
             echo "$value"
             return
@@ -104,10 +122,14 @@ SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"  # Expand ~
 
 # Application Server config
 APP_SERVER_HOST=$(parse_config "servers.application.host" "")
+APP_SERVER_PRIVATE_IP=$(parse_config "servers.application.private_ip" "")
 APP_SERVER_USER=$(parse_config "servers.application.user" "ubuntu")
 APP_SSH_KEY=$(parse_config "servers.application.ssh_key" "~/.ssh/application_server_key")
 APP_DEPLOY_PATH=$(parse_config "servers.application.deploy_path" "/home/ubuntu/app")
 APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"  # Expand ~
+
+# Use private IP for nginx upstream (falls back to public host if not set)
+APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 
 # Environment-specific config
 BLUE_PORT=$(parse_config "environments.${ENVIRONMENT}.blue_port" "5100")
@@ -199,26 +221,36 @@ echo -e "  Target deployment: ${GREEN}$DEPLOYMENT_SLOT${NC} (port $APP_PORT)"
 echo -e "  Current deployment: ${YELLOW}$CURRENT_SLOT${NC} (port $CURRENT_PORT)"
 echo ""
 
-# Step 3: Verify deployment files exist on Application Server
-echo -e "${BLUE}Step 2/10: Verifying deployment files on Application Server...${NC}"
+# Step 3: Prepare deployment files on Application Server
+echo -e "${BLUE}Step 2/10: Preparing deployment files on Application Server...${NC}"
 
-FILES_CHECK=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "cd $APP_DEPLOY_PATH && \
-     [ -f '$ENV_FILE' ] && echo 'ENV_OK' || echo 'ENV_MISSING' && \
-     [ -f '$DOCKER_COMPOSE_FILE' ] && echo 'COMPOSE_OK' || echo 'COMPOSE_MISSING'")
+# Create deployment directory if it doesn't exist
+ssh -i "$APP_SSH_KEY" "$APP_SERVER" "mkdir -p $APP_DEPLOY_PATH"
 
-if echo "$FILES_CHECK" | grep -q "ENV_MISSING"; then
-    echo -e "${RED}Error: Environment file not found on Application Server: ${APP_DEPLOY_PATH}/${ENV_FILE}${NC}"
+# Copy docker-compose file from local machine
+echo -e "  Copying docker-compose file..."
+if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
+    echo -e "${RED}Error: Docker Compose file not found locally: ${DOCKER_COMPOSE_FILE}${NC}"
     exit 1
 fi
 
-if echo "$FILES_CHECK" | grep -q "COMPOSE_MISSING"; then
-    echo -e "${RED}Error: Docker Compose file not found on Application Server: ${APP_DEPLOY_PATH}/${DOCKER_COMPOSE_FILE}${NC}"
+scp -i "$APP_SSH_KEY" "$DOCKER_COMPOSE_FILE" "${APP_SERVER}:${APP_DEPLOY_PATH}/"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Error: Failed to copy docker-compose file to Application Server${NC}"
     exit 1
 fi
+echo -e "  ✓ Docker Compose copied: ${DOCKER_COMPOSE_FILE}"
 
-echo -e "  ✓ Environment file: ${ENV_FILE}"
-echo -e "  ✓ Docker Compose:   ${DOCKER_COMPOSE_FILE}"
+# Check if .env file exists on Application Server (don't copy - may contain secrets)
+ENV_EXISTS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" "[ -f '$APP_DEPLOY_PATH/$ENV_FILE' ] && echo 'YES' || echo 'NO'")
+
+if [ "$ENV_EXISTS" = "NO" ]; then
+    echo -e "${YELLOW}⚠ Warning: Environment file not found on Application Server: ${APP_DEPLOY_PATH}/${ENV_FILE}${NC}"
+    echo -e "${YELLOW}  Please create it manually with your environment variables${NC}"
+    echo -e "${YELLOW}  Example: ssh ${APP_SERVER} 'cat > ${APP_DEPLOY_PATH}/${ENV_FILE}'${NC}"
+    exit 1
+fi
+echo -e "  ✓ Environment file exists: ${ENV_FILE}"
 echo ""
 
 # Step 4: Authenticate with ECR on Application Server and pull latest image
@@ -251,7 +283,31 @@ fi
 echo -e "  ✓ Image pulled successfully"
 echo ""
 
-# Step 5: Start new container on Application Server
+# Step 4: Force cleanup if requested (optional step)
+if [ "$FORCE_CLEANUP" = true ]; then
+    echo -e "${YELLOW}Force cleanup enabled - removing containers on port ${APP_PORT}...${NC}"
+
+    ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+# Find containers using the target port
+BLOCKING_CONTAINERS=\$(docker ps -a --filter "publish=${APP_PORT}" --format "{{.Names}}")
+
+if [ -n "\$BLOCKING_CONTAINERS" ]; then
+    echo "  Found containers blocking port ${APP_PORT}:"
+    echo "\$BLOCKING_CONTAINERS" | while read container; do
+        echo "    - \$container"
+        docker stop "\$container" 2>/dev/null || true
+        docker rm "\$container" 2>/dev/null || true
+    done
+    echo "  ✓ Cleanup completed"
+else
+    echo "  No containers blocking port ${APP_PORT}"
+fi
+EOF
+
+    echo ""
+fi
+
+# Step 4: Start new container on Application Server
 echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
 echo -e "  Container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}${NC}"
 echo -e "  Port: ${YELLOW}${APP_PORT}${NC}"
@@ -259,6 +315,9 @@ echo -e "  Port: ${YELLOW}${APP_PORT}${NC}"
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 set -e
 cd $APP_DEPLOY_PATH
+
+# Set unique project name per environment to prevent interference
+export COMPOSE_PROJECT_NAME="${PRODUCT_NAME}_${ENVIRONMENT}"
 
 # Export variables for docker-compose
 export PRODUCT_NAME="$PRODUCT_NAME"
@@ -313,11 +372,14 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
         echo -e "${YELLOW}Auto-rollback enabled. Stopping new container...${NC}"
 
         ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-cd $APP_DEPLOY_PATH
-export PRODUCT_NAME="$PRODUCT_NAME"
-export APP_PORT="$APP_PORT"
-export DEPLOYMENT_SLOT="$DEPLOYMENT_SLOT"
-docker-compose -f "$DOCKER_COMPOSE_FILE" down
+# Stop and remove the specific failed container
+FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}"
+
+if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
+    echo "  Stopping \${FAILED_CONTAINER}..."
+    docker stop "\${FAILED_CONTAINER}" 2>/dev/null || true
+    docker rm "\${FAILED_CONTAINER}" 2>/dev/null || true
+fi
 EOF
 
         echo -e "${YELLOW}Old container still running. No impact to production.${NC}"
@@ -331,10 +393,10 @@ echo ""
 echo -e "${BLUE}Step 6/10: Updating System Server nginx...${NC}"
 
 UPSTREAM_CONFIG="upstream $NGINX_UPSTREAM_NAME {
-    server $APP_SERVER_HOST:$APP_PORT;
+    server $APP_UPSTREAM_IP:$APP_PORT;
 }"
 
-ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$UPSTREAM_CONFIG' > $NGINX_UPSTREAM_FILE"
+ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Failed to update nginx upstream file${NC}"
@@ -355,18 +417,21 @@ if [ $? -ne 0 ]; then
     # Rollback nginx config
     echo -e "${YELLOW}Rolling back nginx configuration...${NC}"
     ROLLBACK_CONFIG="upstream $NGINX_UPSTREAM_NAME {
-    server $APP_SERVER_HOST:$CURRENT_PORT;
+    server $APP_UPSTREAM_IP:$CURRENT_PORT;
 }"
-    ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' > $NGINX_UPSTREAM_FILE"
+    ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
 
     # Stop new container
     echo -e "${YELLOW}Stopping new container on Application Server...${NC}"
     ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-cd $APP_DEPLOY_PATH
-export PRODUCT_NAME="$PRODUCT_NAME"
-export APP_PORT="$APP_PORT"
-export DEPLOYMENT_SLOT="$DEPLOYMENT_SLOT"
-docker-compose -f "$DOCKER_COMPOSE_FILE" down
+# Stop and remove the specific failed container
+FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}"
+
+if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
+    echo "  Stopping \${FAILED_CONTAINER}..."
+    docker stop "\${FAILED_CONTAINER}" 2>/dev/null || true
+    docker rm "\${FAILED_CONTAINER}" 2>/dev/null || true
+fi
 EOF
 
     exit 1
@@ -399,11 +464,17 @@ echo -e "${BLUE}Step 10/10: Stopping old container on Application Server...${NC}
 echo -e "  Old container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_SLOT}${NC} (port $CURRENT_PORT)"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-cd $APP_DEPLOY_PATH
-export PRODUCT_NAME="$PRODUCT_NAME"
-export APP_PORT="$CURRENT_PORT"
-export DEPLOYMENT_SLOT="$CURRENT_SLOT"
-docker-compose -f "$DOCKER_COMPOSE_FILE" down
+# Stop and remove the specific old container
+OLD_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_SLOT}"
+
+if docker ps -a --format '{{.Names}}' | grep -q "^\${OLD_CONTAINER}\$"; then
+    echo "  Stopping \${OLD_CONTAINER}..."
+    docker stop "\${OLD_CONTAINER}" 2>/dev/null || true
+    docker rm "\${OLD_CONTAINER}" 2>/dev/null || true
+    echo "  ✓ Container stopped and removed"
+else
+    echo "  Container \${OLD_CONTAINER} not found (already removed)"
+fi
 EOF
 
 echo -e "  ✓ Old container stopped"
@@ -421,7 +492,6 @@ echo -e "  Environment:      ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "  Active Slot:      ${GREEN}${DEPLOYMENT_SLOT}${NC} (port $APP_PORT)"
 echo -e "  Container:        ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}${NC}"
 echo -e "  Image:            ${YELLOW}${FULL_IMAGE}${NC}"
-echo -e "  Domain:           ${YELLOW}${DOMAIN}${NC}"
 echo -e "  Downtime:         ${GREEN}0 seconds${NC} ⚡"
 echo ""
 
@@ -441,7 +511,11 @@ echo ""
 # Display recent logs from Application Server
 echo -e "${CYAN}Recent Logs (last 20 lines):${NC}"
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker logs --tail=20 '${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}' 2>&1 | head -20"
+    "if docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}' --format '{{.Names}}' | grep -q .; then \
+        docker logs --tail=20 '${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}' 2>&1 | head -20; \
+    else \
+        echo 'Container ${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT} not found'; \
+    fi"
 echo ""
 
 exit 0

@@ -27,7 +27,8 @@ servers:
 
   # Application Server (runs Docker containers)
   application:
-    host: "application-server-ip"             # Application Server IP
+    host: "application-server-ip"             # Application Server public IP/hostname (for SSH)
+    private_ip: "10.0.1.10"                   # Private IP within VPC (for nginx upstream)
     user: "ubuntu"                            # SSH user
     ssh_key: "~/.ssh/application_server_key" # SSH private key (must exist)
     deploy_path: "/home/ubuntu/my-product"   # Deployment directory on Application Server

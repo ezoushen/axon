@@ -36,57 +36,42 @@ check_environment() {
 
     echo -e "${BLUE}Checking ${PRODUCT_NAME} - ${env}:${NC}"
 
-    # Check via domain if configured (public endpoint)
-    if [ -n "$DOMAIN" ]; then
-        URL="https://${DOMAIN}${HEALTH_ENDPOINT}"
-        echo -e "  URL: ${CYAN}${URL}${NC} (public)"
+    # Check via Application Server (container directly via localhost)
+    if [ -z "$APP_SERVER_HOST" ]; then
+        echo -e "  ${YELLOW}⚠ Application Server not configured${NC}"
+        return 1
+    fi
 
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" 2>/dev/null)
+    if [ ! -f "$APP_SSH_KEY" ]; then
+        echo -e "  ${RED}✗ SSH key not found: $APP_SSH_KEY${NC}"
+        return 1
+    fi
 
-        if [ "$HTTP_CODE" == "200" ]; then
-            echo -e "  Status: ${GREEN}✓ Healthy (HTTP $HTTP_CODE)${NC}"
-            return 0
-        else
-            echo -e "  Status: ${RED}✗ Unhealthy (HTTP $HTTP_CODE)${NC}"
-            return 1
-        fi
+    APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
+
+    # Get port from running container via SSH
+    PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker ps --filter 'name=${PRODUCT_NAME}-${env}' --format '{{.Ports}}' | grep -o '[0-9]*->' | head -1 | tr -d '->' " 2>/dev/null)
+
+    if [ -z "$PORT" ]; then
+        echo -e "  Status: ${YELLOW}⚠ Container not found on Application Server${NC}"
+        return 1
+    fi
+
+    URL="http://localhost:${PORT}${HEALTH_ENDPOINT}"
+    echo -e "  Container Port: ${CYAN}${PORT}${NC}"
+    echo -e "  Health URL:     ${CYAN}${URL}${NC} (on Application Server)"
+
+    # Perform health check via SSH
+    HTTP_CODE=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$URL' 2>/dev/null")
+
+    if [ "$HTTP_CODE" == "200" ]; then
+        echo -e "  Status:         ${GREEN}✓ Healthy (HTTP $HTTP_CODE)${NC}"
+        return 0
     else
-        # Check via Application Server (internal check)
-        if [ -z "$APP_SERVER_HOST" ]; then
-            echo -e "  ${YELLOW}⚠ Application Server not configured, cannot perform internal health check${NC}"
-            return 1
-        fi
-
-        if [ ! -f "$APP_SSH_KEY" ]; then
-            echo -e "  ${RED}✗ SSH key not found: $APP_SSH_KEY${NC}"
-            return 1
-        fi
-
-        APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
-
-        # Get port from running container via SSH
-        PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-            "docker ps --filter 'name=${PRODUCT_NAME}-${env}' --format '{{.Ports}}' | grep -oP '\d+(?=->)' | head -1" 2>/dev/null)
-
-        if [ -z "$PORT" ]; then
-            echo -e "  Status: ${YELLOW}⚠ Container not found on Application Server${NC}"
-            return 1
-        fi
-
-        URL="http://localhost:${PORT}${HEALTH_ENDPOINT}"
-        echo -e "  URL: ${CYAN}${URL}${NC} (via Application Server)"
-
-        # Perform health check via SSH
-        HTTP_CODE=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-            "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$URL' 2>/dev/null")
-
-        if [ "$HTTP_CODE" == "200" ]; then
-            echo -e "  Status: ${GREEN}✓ Healthy (HTTP $HTTP_CODE)${NC}"
-            return 0
-        else
-            echo -e "  Status: ${RED}✗ Unhealthy (HTTP $HTTP_CODE)${NC}"
-            return 1
-        fi
+        echo -e "  Status:         ${RED}✗ Unhealthy (HTTP $HTTP_CODE)${NC}"
+        return 1
     fi
 }
 

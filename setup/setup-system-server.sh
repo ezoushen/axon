@@ -73,6 +73,7 @@ fi
 echo -e "${BLUE}Loading configuration...${NC}"
 PRODUCT_NAME=$(parse_config ".product.name" "")
 APP_SERVER_HOST=$(parse_config ".servers.application.host" "")
+APP_SERVER_PRIVATE_IP=$(parse_config ".servers.application.private_ip" "")
 
 SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
 SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
@@ -80,7 +81,8 @@ SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "~/.ssh/system_se
 
 # Allow environment variable override
 UPSTREAM_DIR=${UPSTREAM_DIR:-"/etc/nginx/upstreams"}
-APPLICATION_SERVER_IP=${APPLICATION_SERVER_IP:-"$APP_SERVER_HOST"}
+# Use private IP for nginx upstream (falls back to public host if not set)
+APPLICATION_SERVER_IP=${APPLICATION_SERVER_IP:-"${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"}
 PRODUCT_NAME=${PRODUCT_NAME:-"$(parse_config ".product.name" "")"}
 
 # Expand tilde in SSH key path
