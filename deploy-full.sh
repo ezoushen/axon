@@ -21,17 +21,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse arguments
 ENVIRONMENT=${1}
-SKIP_BUILD=${2}
+SECOND_ARG=${2}
+GIT_SHA_OR_FLAG=""
 
 if [ -z "$ENVIRONMENT" ]; then
     echo -e "${RED}Error: Environment parameter required${NC}"
     echo ""
-    echo "Usage: $0 <environment> [--skip-build]"
+    echo "Usage: $0 <environment> [git-sha|--skip-build|--skip-git]"
     echo ""
     echo "Examples:"
-    echo "  $0 production              # Build, push, and deploy"
-    echo "  $0 staging --skip-build    # Skip build, only deploy"
+    echo "  $0 production              # Auto-detect git SHA, build, push, and deploy"
+    echo "  $0 staging abc123          # Use specific git SHA, build, push, and deploy"
+    echo "  $0 staging --skip-git      # Build without git SHA tag"
+    echo "  $0 staging --skip-build    # Skip build, only deploy (use existing image)"
     exit 1
+fi
+
+# Determine if we're skipping build or passing git SHA
+if [ "$SECOND_ARG" = "--skip-build" ]; then
+    SKIP_BUILD=true
+    GIT_SHA_OR_FLAG=""
+else
+    SKIP_BUILD=false
+    GIT_SHA_OR_FLAG="$SECOND_ARG"  # Could be git SHA, --skip-git, or empty
 fi
 
 echo -e "${CYAN}===========================================================${NC}"
@@ -41,7 +53,7 @@ echo -e "${CYAN}===========================================================${NC}
 echo ""
 
 # Step 1: Build and Push (unless skipped)
-if [ "$SKIP_BUILD" == "--skip-build" ]; then
+if [ "$SKIP_BUILD" = true ]; then
     echo -e "${YELLOW}⏭  Skipping build and push (--skip-build flag provided)${NC}"
     echo ""
 else
@@ -50,7 +62,12 @@ else
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    "$SCRIPT_DIR/scripts/build-and-push.sh" "$ENVIRONMENT"
+    # Call build-and-push.sh with optional git SHA argument
+    if [ -n "$GIT_SHA_OR_FLAG" ]; then
+        "$SCRIPT_DIR/scripts/build-and-push.sh" "$ENVIRONMENT" "$GIT_SHA_OR_FLAG"
+    else
+        "$SCRIPT_DIR/scripts/build-and-push.sh" "$ENVIRONMENT"
+    fi
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Build and push failed!${NC}"
@@ -83,10 +100,19 @@ echo -e "${GREEN}===========================================================${NC
 echo ""
 
 echo -e "${CYAN}Summary:${NC}"
-if [ "$SKIP_BUILD" == "--skip-build" ]; then
+if [ "$SKIP_BUILD" = true ]; then
     echo -e "  Build:       ${YELLOW}Skipped${NC}"
 else
     echo -e "  Build:       ${GREEN}✓ Completed${NC}"
+    if [ -n "$GIT_SHA_OR_FLAG" ]; then
+        if [ "$GIT_SHA_OR_FLAG" = "--skip-git" ]; then
+            echo -e "  Git SHA:     ${YELLOW}Skipped${NC}"
+        else
+            echo -e "  Git SHA:     ${YELLOW}${GIT_SHA_OR_FLAG}${NC}"
+        fi
+    else
+        echo -e "  Git SHA:     ${GREEN}Auto-detected${NC}"
+    fi
 fi
 echo -e "  Deployment:  ${GREEN}✓ Completed${NC}"
 echo -e "  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
