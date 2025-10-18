@@ -142,7 +142,7 @@ build_docker_run_command() {
     fi
 
     # Post-process the generated command to ensure our specific requirements
-    # Replace the auto-generated container name with our blue-green specific name
+    # Replace the auto-generated container name with our deployment-specific name (includes port)
     docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name [^ ]*/--name \"$container_name\"/")
 
     # Replace the image if decomposerize output doesn't match
@@ -156,12 +156,24 @@ build_docker_run_command() {
     fi
 
     # Add port mapping if missing (decomposerize sometimes omits it)
-    if ! echo "$docker_run_cmd" | grep -q " -p "; then
-        # Insert port mapping after container name
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p \"$app_port:3000\"/")
+    if [ "$app_port" = "auto" ]; then
+        # Let Docker assign random port - use -p 3000 (no host port specified)
+        if ! echo "$docker_run_cmd" | grep -q " -p "; then
+            # Insert port mapping after container name
+            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p 3000/")
+        else
+            # Replace existing port mapping to let Docker auto-assign
+            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p 3000/")
+        fi
     else
-        # Replace existing port mapping with our dynamic port
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p \"$app_port:3000\"/")
+        # Use specified port
+        if ! echo "$docker_run_cmd" | grep -q " -p "; then
+            # Insert port mapping after container name
+            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p \"$app_port:3000\"/")
+        else
+            # Replace existing port mapping with our specified port
+            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p \"$app_port:3000\"/")
+        fi
     fi
 
     # Fix health check format (decomposerize outputs CMD,wget,--quiet,... but docker expects space-separated)
@@ -229,8 +241,6 @@ APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"  # Expand ~
 APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 
 # Environment-specific config
-BLUE_PORT=$(parse_config "environments.${ENVIRONMENT}.blue_port" "5100")
-GREEN_PORT=$(parse_config "environments.${ENVIRONMENT}.green_port" "5102")
 DOMAIN=$(parse_config "environments.${ENVIRONMENT}.domain" "")
 # Auto-generate nginx upstream file path and name (same logic as setup script)
 # File path: /etc/nginx/upstreams/{product}-{environment}.conf (keeps hyphens)
@@ -274,7 +284,7 @@ echo -e "  ECR Repository:     ${YELLOW}${ECR_REPOSITORY}${NC}"
 echo -e "  System Server:      ${YELLOW}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
 echo -e "  Application Server: ${YELLOW}${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
 echo -e "  Deploy Path:        ${YELLOW}${APP_DEPLOY_PATH}${NC}"
-echo -e "  Ports:              ${YELLOW}${BLUE_PORT} (blue) ↔ ${GREEN_PORT} (green)${NC}"
+echo -e "  Port Assignment:    ${YELLOW}Auto (Docker assigns)${NC}"
 echo ""
 
 # SSH connection strings
@@ -298,27 +308,33 @@ if [ ! -f "$APP_SSH_KEY" ]; then
     exit 1
 fi
 
-# Step 1: Detect current deployment slot
-echo -e "${BLUE}Step 1/10: Detecting current deployment slot...${NC}"
+# Step 1: Detect current deployment
+echo -e "${BLUE}Step 1/10: Detecting current deployment...${NC}"
 
+# Try to get current port from nginx upstream file
 CURRENT_PORT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" \
-    "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null" || echo "$BLUE_PORT")
+    "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null" || echo "")
 
-echo -e "  Current active port: ${YELLOW}$CURRENT_PORT${NC}"
-
-# Step 2: Determine target slot
-if [ "$CURRENT_PORT" == "$BLUE_PORT" ]; then
-    export APP_PORT=$GREEN_PORT
-    export DEPLOYMENT_SLOT="green"
-    CURRENT_SLOT="blue"
+# Try to find current container (may have timestamp suffix)
+if [ -z "$CURRENT_PORT" ]; then
+    echo -e "  No active deployment detected (first deployment)"
+    CURRENT_CONTAINER=""
 else
-    export APP_PORT=$BLUE_PORT
-    export DEPLOYMENT_SLOT="blue"
-    CURRENT_SLOT="green"
+    echo -e "  Current active port: ${YELLOW}$CURRENT_PORT${NC}"
+    # Find container by port (handle both old port-based and new timestamp-based names)
+    CURRENT_CONTAINER=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker ps --filter 'publish=${CURRENT_PORT}' --format '{{.Names}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' | head -1" || echo "")
+    if [ -n "$CURRENT_CONTAINER" ]; then
+        echo -e "  Current container:   ${YELLOW}$CURRENT_CONTAINER${NC}"
+    fi
 fi
 
-echo -e "  Target deployment: ${GREEN}$DEPLOYMENT_SLOT${NC} (port $APP_PORT)"
-echo -e "  Current deployment: ${YELLOW}$CURRENT_SLOT${NC} (port $CURRENT_PORT)"
+# Step 2: Generate new container name (timestamp-based for uniqueness)
+TIMESTAMP=$(date +%s)
+NEW_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${TIMESTAMP}"
+
+echo -e "  New container:       ${GREEN}$NEW_CONTAINER${NC}"
+echo -e "  Port:                ${GREEN}Auto-assigned by Docker${NC}"
 echo ""
 
 # Step 3: Prepare deployment files on Application Server
@@ -409,19 +425,20 @@ fi
 
 # Step 4: Start new container on Application Server
 echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
-echo -e "  Container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}${NC}"
-echo -e "  Port: ${YELLOW}${APP_PORT}${NC}"
+echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
+echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
 # Build docker run command from docker-compose.yml
 FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-CONTAINER_NAME="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
+CONTAINER_NAME="${NEW_CONTAINER}"
 NETWORK_NAME="${PRODUCT_NAME}_${ENVIRONMENT}-network"
 
 # Build the docker run command from docker-compose.yml (single source of truth)
+# Note: We pass "auto" for app_port to let Docker assign a random port
 DOCKER_RUN_CMD=$(build_docker_run_command \
     "$DOCKER_COMPOSE_FILE" \
     "$CONTAINER_NAME" \
-    "$APP_PORT" \
+    "auto" \
     "$FULL_IMAGE" \
     "$ENV_FILE" \
     "$NETWORK_NAME")
@@ -448,6 +465,7 @@ fi
 
 # Start new container using docker run command built from docker-compose.yml
 # This ensures we don't interfere with the old container and maintains docker-compose.yml as source of truth
+echo "  Running docker run command: ${DOCKER_RUN_CMD}"
 ${DOCKER_RUN_CMD}
 
 if [ \$? -ne 0 ]; then
@@ -464,7 +482,21 @@ fi
 echo -e "  ✓ Container started"
 echo ""
 
-# Step 5: Wait for health check on Application Server
+# Query Docker for the assigned port
+APP_PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    "docker port ${CONTAINER_NAME} 3000 | cut -d: -f2")
+
+if [ -z "$APP_PORT" ]; then
+    echo -e "${RED}Error: Could not determine assigned port${NC}"
+    echo -e "${YELLOW}Stopping new container...${NC}"
+    ssh -i "$APP_SSH_KEY" "$APP_SERVER" "docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}"
+    exit 1
+fi
+
+echo -e "  ${GREEN}✓ Docker assigned port: ${APP_PORT}${NC}"
+echo ""
+
+# Step 6: Wait for health check on Application Server
 echo -e "${BLUE}Step 5/10: Waiting for health check on Application Server...${NC}"
 
 RETRY_COUNT=0
@@ -575,7 +607,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo -e "${GREEN}  ✓ nginx reloaded successfully!${NC}"
-echo -e "${GREEN}  ✓ Traffic now flows to ${DEPLOYMENT_SLOT} (port $APP_PORT)${NC}"
+echo -e "${GREEN}  ✓ Traffic now flows to new container (port $APP_PORT)${NC}"
 echo ""
 
 # Step 10: Connection draining
@@ -583,25 +615,31 @@ echo -e "${BLUE}Step 9/10: Waiting for connection draining (${DRAIN_TIME}s)...${
 sleep $DRAIN_TIME
 echo ""
 
-# Step 11: Stop old container on Application Server
-echo -e "${BLUE}Step 10/10: Stopping old container on Application Server...${NC}"
-echo -e "  Old container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_PORT}${NC} (port $CURRENT_PORT)"
+# Step 11: Stop old containers on Application Server
+echo -e "${BLUE}Step 10/10: Cleaning up old containers on Application Server...${NC}"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-# Stop and remove the specific old container
-OLD_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_PORT}"
+# Find all containers for this product/environment except the new one
+NEW_CONTAINER="${CONTAINER_NAME}"
+PRODUCT_ENV_PREFIX="${PRODUCT_NAME}-${ENVIRONMENT}"
 
-if docker ps -a --format '{{.Names}}' | grep -q "^\${OLD_CONTAINER}\$"; then
-    echo "  Stopping \${OLD_CONTAINER}..."
-    docker stop "\${OLD_CONTAINER}" 2>/dev/null || true
-    docker rm "\${OLD_CONTAINER}" 2>/dev/null || true
-    echo "  ✓ Container stopped and removed"
+# Get list of all containers for this product/environment
+OLD_CONTAINERS=\$(docker ps -a --filter "name=\${PRODUCT_ENV_PREFIX}" --format '{{.Names}}' | grep -v "^\${NEW_CONTAINER}\$" || true)
+
+if [ -z "\$OLD_CONTAINERS" ]; then
+    echo "  No old containers to clean up"
 else
-    echo "  Container \${OLD_CONTAINER} not found (already removed)"
+    echo "  Cleaning up old containers:"
+    for container in \$OLD_CONTAINERS; do
+        echo "    Stopping \$container..."
+        docker stop "\$container" 2>/dev/null || true
+        docker rm "\$container" 2>/dev/null || true
+        echo "    ✓ \$container removed"
+    done
 fi
 EOF
 
-echo -e "  ✓ Old container stopped"
+echo -e "  ✓ Cleanup complete"
 echo ""
 
 # Success!
@@ -613,14 +651,14 @@ echo ""
 echo -e "${CYAN}Deployment Summary:${NC}"
 echo -e "  Product:          ${YELLOW}${PRODUCT_NAME}${NC}"
 echo -e "  Environment:      ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "  Active Slot:      ${GREEN}${DEPLOYMENT_SLOT}${NC} (port $APP_PORT)"
-echo -e "  Container:        ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}${NC}"
+echo -e "  Active Port:      ${GREEN}${APP_PORT}${NC}"
+echo -e "  Container:        ${YELLOW}${CONTAINER_NAME}${NC}"
 echo -e "  Image:            ${YELLOW}${FULL_IMAGE}${NC}"
 echo -e "  Downtime:         ${GREEN}0 seconds${NC} ⚡"
 echo ""
 
 echo -e "${CYAN}Useful Commands:${NC}"
-echo -e "  View logs:        ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker logs -f ${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}'${NC}"
+echo -e "  View logs:        ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker logs -f ${CONTAINER_NAME}'${NC}"
 echo -e "  Container status: ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker ps | grep ${PRODUCT_NAME}-${ENVIRONMENT}'${NC}"
 echo -e "  nginx upstream:   ${BLUE}ssh -i $SYSTEM_SSH_KEY $SYSTEM_SERVER 'cat $NGINX_UPSTREAM_FILE'${NC}"
 echo ""
@@ -635,10 +673,10 @@ echo ""
 # Display recent logs from Application Server
 echo -e "${CYAN}Recent Logs (last 20 lines):${NC}"
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "if docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}' --format '{{.Names}}' | grep -q .; then \
-        docker logs --tail=20 '${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}' 2>&1 | head -20; \
+    "if docker ps --filter 'name=${CONTAINER_NAME}' --format '{{.Names}}' | grep -q .; then \
+        docker logs --tail=20 '${CONTAINER_NAME}' 2>&1 | head -20; \
     else \
-        echo 'Container ${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT} not found'; \
+        echo 'Container ${CONTAINER_NAME} not found'; \
     fi"
 echo ""
 
