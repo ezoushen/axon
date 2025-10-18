@@ -22,7 +22,7 @@ source "$MODULE_DIR/lib/config-parser.sh"
 
 # Parse arguments
 ENVIRONMENT=${1}
-GIT_SHA=${2}
+GIT_SHA_ARG=${2}  # User-provided SHA (optional)
 
 # Validate environment
 if [ -z "$ENVIRONMENT" ]; then
@@ -31,10 +31,50 @@ if [ -z "$ENVIRONMENT" ]; then
     echo "Usage: $0 <environment> [git-sha]"
     echo ""
     echo "Examples:"
-    echo "  $0 production"
-    echo "  $0 staging"
-    echo "  $0 production abc123  # with git commit SHA tag"
+    echo "  $0 production                 # Auto-detect git SHA"
+    echo "  $0 staging                    # Auto-detect git SHA"
+    echo "  $0 production abc123          # Use specific git SHA"
+    echo "  $0 production --skip-git      # Skip git SHA (build only with env tag)"
     exit 1
+fi
+
+# Check if we're in a git repository
+if [ -d ".git" ] || git rev-parse --git-dir > /dev/null 2>&1; then
+    IS_GIT_REPO=true
+else
+    IS_GIT_REPO=false
+fi
+
+# Handle git SHA
+if [ -z "$GIT_SHA_ARG" ]; then
+    # No SHA provided - auto-detect from git
+    if [ "$IS_GIT_REPO" = true ]; then
+        # Check for uncommitted changes
+        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+            echo -e "${RED}Error: You have uncommitted changes${NC}"
+            echo ""
+            echo "Please commit your changes before building, or provide an explicit git SHA:"
+            echo "  $0 $ENVIRONMENT <git-sha>"
+            echo ""
+            echo "Uncommitted changes:"
+            git status --short
+            exit 1
+        fi
+
+        # Get current commit SHA
+        GIT_SHA=$(git rev-parse --short HEAD)
+        echo -e "${GREEN}Auto-detected git SHA: ${GIT_SHA}${NC}"
+    else
+        echo -e "${YELLOW}Warning: Not a git repository, skipping git SHA tag${NC}"
+        GIT_SHA=""
+    fi
+elif [ "$GIT_SHA_ARG" = "--skip-git" ]; then
+    # Explicitly skip git SHA
+    GIT_SHA=""
+else
+    # User provided explicit SHA - use it regardless of uncommitted changes
+    GIT_SHA="$GIT_SHA_ARG"
+    echo -e "${YELLOW}Using provided git SHA: ${GIT_SHA}${NC}"
 fi
 
 echo -e "${BLUE}==================================================${NC}"
@@ -44,6 +84,21 @@ echo ""
 
 # Load configuration
 load_config "$ENVIRONMENT"
+
+# Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
+# Re-parse with explicit environment prefix to ensure correctness
+if command -v yq &> /dev/null; then
+    IMAGE_TAG=$(yq eval ".environments.${ENVIRONMENT}.image_tag" "$CONFIG_FILE" 2>/dev/null)
+    if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+        IMAGE_TAG="$ENVIRONMENT"  # Default to environment name
+    fi
+else
+    echo -e "${YELLOW}Warning: yq not found. Using fallback parser.${NC}"
+    echo -e "${YELLOW}For accurate YAML parsing, install yq: brew install yq${NC}"
+    echo ""
+    # Fallback: default to environment name
+    IMAGE_TAG="$ENVIRONMENT"
+fi
 
 # Load product env file
 ENV_FILE="${PRODUCT_ROOT}/${ENV_FILE_PATH}"
@@ -123,7 +178,7 @@ echo -e "${GREEN}Step 4/5: Tagging image...${NC}"
 IMAGES_TO_PUSH=("$FULL_IMAGE_NAME")
 
 if [ -n "$GIT_SHA" ]; then
-    GIT_SHA_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${ENVIRONMENT}-${GIT_SHA}"
+    GIT_SHA_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${GIT_SHA}"
     docker tag "$FULL_IMAGE_NAME" "$GIT_SHA_IMAGE"
     IMAGES_TO_PUSH+=("$GIT_SHA_IMAGE")
     echo -e "Tagged as: ${YELLOW}${GIT_SHA_IMAGE}${NC}"
