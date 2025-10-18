@@ -1,27 +1,32 @@
 # Zero-Downtime Deployment Module
 
-A reusable deployment module for achieving zero-downtime deployments across multiple products using Docker, nginx, and AWS ECR.
+A reusable, config-driven deployment module for achieving zero-downtime deployments across multiple products using Docker, nginx, and AWS ECR.
 
 ## Features
 
-- ✅ **Zero-downtime deployments** - Blue-green deployment strategy with nginx atomic reload
-- ✅ **Multi-environment support** - Production, staging, and custom environments with full isolation
-- ✅ **Product-agnostic** - Reusable across multiple projects via configuration
-- ✅ **AWS ECR integration** - Automatic authentication and image pulling
-- ✅ **Automatic rollback** - Reverts on health check or nginx configuration failures
-- ✅ **VPC-optimized** - nginx uses private IPs for internal routing
-- ✅ **Environment isolation** - Separate Docker Compose projects prevent cross-contamination
-- ✅ **Auto-file sync** - Docker-compose files copied automatically from local machine
-- ✅ **Direct health checks** - Container testing via localhost, bypassing nginx/SSL complexity
-- ✅ **Force cleanup** - Optional flag to remove blocking containers
+- ✅ **Zero-downtime deployments** - Docker auto-port assignment with rolling updates
+- ✅ **Config-driven** - All settings in `deploy.config.yml` (no docker-compose files)
+- ✅ **Multi-environment support** - Production, staging, and custom environments
+- ✅ **Product-agnostic** - Reusable across multiple projects
+- ✅ **AWS ECR integration** - Build, push, and pull images from ECR
+- ✅ **Docker native health checks** - Leverages Docker's built-in health status
+- ✅ **Git SHA tagging** - Automatic commit tagging with uncommitted change detection
+- ✅ **Automatic rollback** - On health check failures
+- ✅ **SSH-based coordination** - Updates System Server nginx automatically
 
 ## Architecture
 
 ```
 Internet → System Server (nginx + SSL)  →  Application Server (Docker)
-           ├─ Port 443                      ├─ Product containers
-           └─ Proxies to apps               └─ Blue-green ports
+           ├─ Port 443 (HTTPS)              ├─ Timestamp-based containers
+           └─ Proxies to apps               └─ Auto-assigned ports (32768-60999)
 ```
+
+**Key Concepts:**
+- **Auto-assigned Ports**: Docker assigns random ephemeral ports (no manual port management)
+- **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
+- **Rolling Updates**: New container starts → health check passes → nginx switches → old container stops
+- **Config-driven**: Single `deploy.config.yml` defines all Docker runtime settings
 
 ## Quick Start
 
@@ -40,334 +45,338 @@ cp deploy/config.example.yml deploy.config.yml
 # Edit deploy.config.yml with your product settings
 ```
 
-### 3. Deploy
+### 3. Set Up Environment Files
+
+Create environment-specific `.env` files on your Application Server:
 
 ```bash
-./deploy/deploy.sh production
+# SSH to Application Server
+ssh ubuntu@your-app-server
+
+# Create .env files in deploy path
+cat > /home/ubuntu/apps/your-product/.env.production <<EOF
+DATABASE_URL=your-production-db-url
+API_KEY=your-production-api-key
+EOF
+
+cat > /home/ubuntu/apps/your-product/.env.staging <<EOF
+DATABASE_URL=your-staging-db-url
+API_KEY=your-staging-api-key
+EOF
+```
+
+### 4. Build, Push, and Deploy
+
+```bash
+# Full pipeline: build → push → deploy
+./deploy/deploy-full.sh production
+
+# Or run steps separately:
+./deploy/scripts/build-and-push.sh production  # Build and push image
+./deploy/deploy.sh production                  # Deploy with zero downtime
 ```
 
 ## Directory Structure
 
 ```
 deployment-module/
-├── README.md                         # This file
-├── config.example.yml                # Example configuration (copy to product root)
-├── deploy.sh                         # Main deployment script
-├── lib/
-│   └── config-parser.sh              # YAML parsing utilities
-├── setup/
-│   ├── setup-application-server.sh   # One-time Application Server setup
-│   └── setup-system-server.sh        # One-time System Server setup
+├── README.md                    # This file
+├── deploy.sh                    # Main deployment script (zero-downtime)
+├── deploy-full.sh               # Full pipeline: build → push → deploy
+├── config.example.yml           # Example configuration (copy to deploy.config.yml)
 ├── scripts/
-│   ├── build-and-push.sh             # Build Docker image and push to ECR
-│   ├── health-check.sh               # Health check verification (localhost)
-│   ├── logs.sh                       # View container logs
-│   ├── restart.sh                    # Restart containers
-│   └── status.sh                     # Check container status
-└── docs/
-    └── ...                           # Additional documentation
+│   ├── build-and-push.sh       # Build Docker image and push to ECR
+│   ├── health-check.sh         # Health check verification (via SSH)
+│   ├── logs.sh                 # View container logs (via SSH)
+│   ├── restart.sh              # Restart containers (via SSH)
+│   └── status.sh               # Check container status (via SSH)
+└── lib/
+    └── config-parser.sh        # YAML configuration parser
 ```
+
+**Note**: All scripts run from your **local machine** and use SSH to manage remote servers.
 
 ## Product Integration
 
 ### Configuration File (`deploy.config.yml`)
 
-Each product creates a `deploy.config.yml` in their repository root:
+Each product creates a `deploy.config.yml` in their repository root. This is the **single source of truth** for all deployment settings:
 
 ```yaml
-# Product information
+# Product Information
 product:
-  name: "my-product"
-  description: "My Application"
+  name: "linebot-nextjs"
+  description: "LINE Bot Next.js Application"
 
 # AWS Configuration
 aws:
-  profile: "default"
+  profile: "lastlonger"
   region: "ap-northeast-1"
-  account_id: "123456789012"
-  ecr_repository: "my-product"
+  account_id: "948190058961"
+  ecr_repository: "linebot-nextjs"
 
 # Server Configuration
 servers:
   # System Server (nginx + SSL)
   system:
-    host: "system-server.example.com"      # System Server IP or hostname
-    user: "ubuntu"                          # SSH user (must exist, SSH key required)
-    ssh_key: "~/.ssh/system_server_key"    # SSH private key (must exist)
+    host: "master.goodtogo.tw"
+    user: "ubuntu"
+    ssh_key: "~/.ssh/GoodToGo.pem"
 
   # Application Server (Docker containers)
   application:
-    host: "app-server.example.com"         # Application Server public IP/hostname (for SSH)
-    private_ip: "10.0.1.10"                # Private IP within VPC (for nginx upstream)
-    user: "ubuntu"                          # SSH user (must exist, SSH key required)
-    ssh_key: "~/.ssh/app_server_key"       # SSH private key (must exist)
-    deploy_path: "/home/ubuntu/apps/my-product"  # Deployment directory on Application Server
+    host: "server.goodtogo.tw"              # Public IP/hostname for SSH
+    private_ip: "server"                     # Private IP for nginx upstream
+    user: "ubuntu"
+    ssh_key: "~/.ssh/GoodToGo.pem"
+    deploy_path: "/home/ubuntu/apps/linebot-nextjs"
 
-# Environments
+# Environment Configurations
 environments:
   production:
-    blue_port: 5100
-    green_port: 5102
-    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-production.conf
-    # nginx backend:  Auto-generated as my_product_production_backend
-    env_file: ".env.production"
-    image_tag: "production"
-    docker_compose_file: "docker-compose.production.yml"
+    env_file: ".env.production"              # Runtime env vars on App Server
+    image_tag: "production"                  # ECR image tag
 
   staging:
-    blue_port: 5101
-    green_port: 5103
-    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-staging.conf
-    # nginx backend:  Auto-generated as my_product_staging_backend
     env_file: ".env.staging"
     image_tag: "staging"
-    docker_compose_file: "docker-compose.staging.yml"
 
-# Health check configuration
+# Health Check Configuration
 health_check:
-  endpoint: "/api/health"
-  max_retries: 30
-  retry_interval: 2
-  timeout: 10
+  endpoint: "/api/health"                    # Health check endpoint
 
-# Deployment options
+  # Docker container health check (used by Docker daemon)
+  interval: "30s"                            # How often Docker checks
+  timeout: "10s"                             # Max time to wait
+  retries: 3                                 # Failed checks before unhealthy
+  start_period: "40s"                        # Grace period on startup
+
+  # Deployment verification (script polls Docker's health status)
+  max_retries: 30                            # Max polling attempts
+  retry_interval: 2                          # Seconds between polls
+
+# Deployment Options
 deployment:
-  connection_drain_time: 5
-  enable_auto_rollback: true
-  keep_old_images: 3
+  connection_drain_time: 5                   # Seconds to wait before stopping old container
+  enable_auto_rollback: true                 # Rollback on failure
+
+# Docker Configuration
+docker:
+  # Image template (supports variable substitution)
+  image_template: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+  # Container runtime
+  container_port: 3000                       # Internal port app listens on
+  restart_policy: "unless-stopped"
+
+  # Network (template variables: ${PRODUCT_NAME}, ${ENVIRONMENT})
+  network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
+  network_driver: "bridge"
+
+  # Environment variables (set in container, separate from .env files)
+  env_vars:
+    NODE_ENV: "production"
+    PORT: "3000"
+
+  # Extra hosts
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+  # Logging
+  logging:
+    driver: "json-file"
+    max_size: "10m"
+    max_file: 3
 ```
 
-### Docker Configuration (Optional)
+### No Docker Compose Files Needed!
 
-Docker configurations are defined in `deploy.config.yml`. Docker Compose files are **optional** and only needed for local development.
-
-If you prefer using Docker Compose files, they must use environment variables for dynamic configuration:
-
-```yaml
-# docker-compose.production.yml
-services:
-  app:
-    # Container name uses port number (not blue/green)
-    container_name: ${PRODUCT_NAME:-my-product}-production-${APP_PORT:-5100}
-
-    # Image from AWS ECR
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:production
-
-    # Dynamic port mapping
-    ports:
-      - "${APP_PORT:-5100}:3000"
-
-    # Load environment variables from .env file
-    env_file:
-      - .env.production
-
-    # ... rest of your config
-```
-
-**Important Notes:**
-- Container names use **port numbers** as suffixes (e.g., `my-product-production-5100`)
-- The deployment script sets `COMPOSE_PROJECT_NAME="${PRODUCT_NAME}_${ENVIRONMENT}"` to prevent cross-environment interference
-- AWS configuration (AWS_ACCOUNT_ID, AWS_REGION, ECR_REPOSITORY, IMAGE_TAG) is **automatically injected from deploy.config.yml**
-- Your `.env` files should only contain **application-specific** environment variables (API keys, database URLs, etc.)
-
-### File Locations
-
-**On Local Machine (your repository):**
-```
-my-product/
-├── deploy.config.yml                    # Deployment configuration
-├── docker-compose.production.yml        # Copied to server during deployment
-├── docker-compose.staging.yml           # Copied to server during deployment
-├── .env.production.example              # Template only (DO NOT commit real .env)
-├── .env.staging.example                 # Template only (DO NOT commit real .env)
-└── deploy/                              # Git submodule (this deployment module)
-```
-
-**On Application Server (after deployment):**
-```
-/home/ubuntu/apps/my-product/
-├── docker-compose.production.yml        # Auto-copied from local
-├── docker-compose.staging.yml           # Auto-copied from local
-├── .env.production                      # Manually created (app secrets only)
-└── .env.staging                         # Manually created (app secrets only)
-```
-
-**What goes in .env files:**
-- ✅ Application secrets (API keys, database passwords, etc.)
-- ✅ Environment-specific URLs (database hosts, API endpoints, etc.)
-- ❌ AWS configuration (handled by deploy.config.yml)
-- ❌ Port numbers (handled by deploy.config.yml)
-
-**On System Server (after setup):**
-```
-/etc/nginx/upstreams/
-├── my-product-production.conf           # Auto-generated by deployment
-└── my-product-staging.conf              # Auto-generated by deployment
-```
-
-**Important:**
-- ✅ Docker-compose files are **auto-copied** from local machine during each deployment
-- ✅ AWS configuration is **auto-injected** from `deploy.config.yml` (not in `.env` files)
-- ⚠️ `.env` files must be **manually created** on Application Server (one-time setup, app secrets only)
-- ❌ Never commit actual `.env` files to git (use `.env.*.example` as templates)
-- ✅ No source code needs to exist on Application Server (all code is in Docker images)
+The deployment system **automatically generates** docker run commands from `deploy.config.yml`. You don't need to maintain docker-compose files - all Docker settings are in the config.
 
 ## Setup Guide
 
-### Prerequisites
+### One-Time Setup
 
-**SSH Keys:**
-You must have SSH keys set up before running deployment scripts:
+1. **System Server Setup** (30 min)
+   ```bash
+   ./deploy/setup/setup-system-server.sh
+   ```
 
-1. **System Server SSH Key** - For accessing nginx server
-2. **Application Server SSH Key** - For accessing Docker host
+2. **Application Server Setup** (15 min)
+   ```bash
+   ./deploy/setup/setup-app-server.sh
+   ```
 
-The scripts do NOT generate keys automatically. If keys don't exist, setup scripts will exit with instructions.
-
-**Create keys if needed:**
-```bash
-# Create System Server key
-ssh-keygen -t ed25519 -C 'system-server-key' -f ~/.ssh/system_server_key
-
-# Create Application Server key
-ssh-keygen -t ed25519 -C 'app-server-key' -f ~/.ssh/app_server_key
-
-# Copy keys to servers
-ssh-copy-id -i ~/.ssh/system_server_key.pub user@system-server
-ssh-copy-id -i ~/.ssh/app_server_key.pub user@app-server
-```
-
-### Automated Setup
-
-**1. Update Configuration:**
-Edit `deploy.config.yml` with your server details and SSH key paths.
-
-**2. Run Setup Scripts:**
-
-```bash
-# Setup Application Server (Docker, AWS CLI)
-./deploy/setup/setup-application-server.sh
-
-# Setup System Server (nginx upstreams)
-./deploy/setup/setup-system-server.sh
-```
-
-Both scripts are **idempotent** (safe to re-run) and validate prerequisites before making changes.
+3. **SSH Configuration** (15 min)
+   ```bash
+   ./deploy/setup/setup-ssh.sh
+   ```
 
 See [Setup Guide](docs/setup.md) for detailed instructions.
 
 ## Usage
 
-### Deploy to Environment
+### Full Deployment Pipeline
+
+Build, push to ECR, and deploy with zero downtime:
 
 ```bash
-./deploy/deploy.sh <environment> [--force]
+# Auto-detect git SHA (aborts if uncommitted changes)
+./deploy/deploy-full.sh production
+
+# Use specific git SHA (ignores uncommitted changes)
+./deploy/deploy-full.sh production abc123
+
+# Skip git SHA tagging
+./deploy/deploy-full.sh production --skip-git
+
+# Skip build, only deploy (use existing image)
+./deploy/deploy-full.sh staging --skip-build
 ```
 
-**Options:**
-- `--force, -f` - Force cleanup of existing containers blocking the target port
+### Separate Steps
 
-**Examples:**
+**Build and Push Image:**
 ```bash
-# Normal deployment
+# Auto-detect git SHA
+./deploy/scripts/build-and-push.sh staging
+
+# Use specific git SHA
+./deploy/scripts/build-and-push.sh staging abc123
+
+# Skip git SHA
+./deploy/scripts/build-and-push.sh staging --skip-git
+```
+
+This creates two image tags:
+- `linebot-nextjs:staging` (environment tag)
+- `linebot-nextjs:abc123` (git SHA tag)
+
+**Deploy Only:**
+```bash
 ./deploy/deploy.sh production
-
-# Deploy with forced cleanup
-./deploy/deploy.sh staging --force
-
-# Short form
-./deploy/deploy.sh production -f
+./deploy/deploy.sh staging
 ```
 
-**What happens during deployment:**
-1. Detects current active port from nginx
-2. Determines target deployment slot (toggles between blue/green ports)
-3. Pulls latest image from AWS ECR
-4. **(Optional with --force)** Removes any containers blocking the target port
-5. Starts new container on target port
-6. Waits for health check to pass
-7. Updates nginx upstream to point to new container
-8. Reloads nginx (zero-downtime)
-9. Waits for connection draining
-10. Stops old container
+### Monitoring
 
-### Build and Push Image
-
+**View Logs:**
 ```bash
-./deploy/scripts/build-and-push.sh <environment>
+./deploy/scripts/logs.sh production           # Last 50 lines
+./deploy/scripts/logs.sh staging follow       # Follow in real-time
+./deploy/scripts/logs.sh all                  # All environments
 ```
 
-### View Logs
-
+**Check Status:**
 ```bash
-./deploy/scripts/logs.sh <environment> [follow]
+./deploy/scripts/status.sh                    # All environments
+./deploy/scripts/status.sh production         # Specific environment
 ```
 
-### Check Status
-
+**Health Check:**
 ```bash
-./deploy/scripts/status.sh
+./deploy/scripts/health-check.sh              # Check all environments
+./deploy/scripts/health-check.sh staging      # Check specific environment
 ```
 
-### Manual Rollback
-
+**Restart Container:**
 ```bash
-./deploy/scripts/rollback.sh <environment>
+./deploy/scripts/restart.sh production
+./deploy/scripts/restart.sh all
 ```
-
-See [Usage Guide](docs/usage.md) for detailed usage.
 
 ## Requirements
 
-### Local Machine (where you run deployments)
-- Docker installed (for building images)
-- AWS CLI configured with ECR access
-- SSH access to both servers
-- `yq` tool (recommended for YAML parsing, falls back to grep/awk if not available)
-- SSH keys configured for both servers
-
-### System Server (nginx + SSL)
-- nginx installed and running
-- SSH access with sudo permissions
-- `/etc/nginx/upstreams/` directory (created by setup script)
-- User account with sudo access for nginx operations
-
-### Application Server (Docker host)
-- Docker and Docker Compose installed
-- AWS CLI configured with ECR pull permissions
+### System Server
+- nginx installed
 - SSH access
-- User account with Docker permissions
-- `.env` files must be created manually (not in git, contains secrets)
-- Docker-compose files are auto-copied from local machine during deployment
+- sudo permissions for nginx reload
+- `/etc/nginx/upstreams/` directory
+
+### Application Server
+- Docker and Docker Compose installed
+- AWS CLI configured
+- SSH access to System Server
+- Network access to System Server
+
+### Local Machine
+- Docker installed
+- AWS CLI configured
+- SSH access to Application Server
 
 ## How It Works
 
 ### Deployment Flow
 
-1. **Configuration Loading**: Parses `deploy.config.yml` for environment-specific settings
-2. **Port Detection**: Queries nginx upstream file on System Server to detect active port
-3. **Slot Toggle**: Determines target deployment slot (toggles between blue/green ports)
-4. **File Preparation**: Auto-copies docker-compose file from local machine to Application Server
-5. **Image Pull**: Authenticates with AWS ECR and pulls latest image
-6. **Force Cleanup** (if `--force`): Removes any containers blocking the target port
-7. **Container Start**: Starts new container with `COMPOSE_PROJECT_NAME` isolation
-8. **Health Check**: Tests container directly via localhost (not through nginx)
-9. **nginx Update**: Updates upstream file on System Server to point to new port
-10. **nginx Test**: Validates nginx configuration before reload
-11. **nginx Reload**: Atomic reload with zero downtime
-12. **Connection Drain**: Waits for existing connections to complete
-13. **Cleanup**: Stops and removes the specific old container (by port-based name)
+1. **Detect Current Deployment**: Query nginx on System Server for active port
+2. **Generate Container Name**: Create timestamp-based name (`{product}-{env}-{timestamp}`)
+3. **Pull Image**: Pull latest image from ECR on Application Server
+4. **Start New Container**:
+   - Docker auto-assigns port (32768-60999)
+   - Container starts with health check configured
+5. **Wait for Health Check**: Query Docker's health status (not manual curl)
+6. **Update nginx**: Update upstream on System Server to point to new port
+7. **Test nginx Config**: Validate before reloading
+8. **Reload nginx**: Zero-downtime reload
+9. **Connection Draining**: Wait for existing connections to complete
+10. **Cleanup**: Stop and remove old containers
 
-**Key Features:**
-- ✅ **Zero Downtime**: nginx atomic reload ensures uninterrupted service
-- ✅ **Environment Isolation**: `COMPOSE_PROJECT_NAME` prevents cross-environment interference
-- ✅ **Direct Container Testing**: Health checks bypass nginx/DNS/SSL complexity
-- ✅ **VPC-Optimized**: nginx uses private IPs for upstream connections
-- ✅ **Automatic Rollback**: Reverts nginx and stops new container on failure
+**Total Downtime: 0 seconds** ⚡
+
+### Health Check Approach
+
+The deployment leverages **Docker's native health check**:
+- Docker continuously checks container health using `wget` to test your health endpoint
+- Deployment script queries Docker's health status with `docker inspect`
+- Benefits:
+  - ✅ Single source of truth (Docker's health status)
+  - ✅ No manual URL construction or port management
+  - ✅ More reliable (Docker handles retries internally)
+  - ✅ Works even if port assignment changes
+
+### Git SHA Tagging
+
+When building images:
+- Script auto-detects current git commit SHA
+- Checks for uncommitted changes (aborts if found)
+- Creates two image tags:
+  - `{repository}:{environment}` (e.g., `linebot-nextjs:production`)
+  - `{repository}:{git-sha}` (e.g., `linebot-nextjs:a1b2c3d`)
+- Git SHA tag is code-specific, not environment-specific (promotes image reuse)
 
 ## Troubleshooting
 
-See [Troubleshooting Guide](docs/troubleshooting.md) for common issues and solutions.
+### Common Issues
+
+**1. "No environments found in config"**
+- Install `yq` for accurate YAML parsing: `brew install yq`
+- Or ensure environment names are properly indented (2 spaces) in config
+
+**2. "Container not found on Application Server"**
+- Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
+- Verify deploy_path in config matches actual path on server
+
+**3. "Image Tag shows wrong environment"**
+- Install `yq`: `brew install yq`
+- Without yq, the fallback parser may pick the first `image_tag` it finds
+
+**4. "Uncommitted changes" error when building**
+```bash
+# Commit your changes first:
+git add .
+git commit -m "Your changes"
+
+# Or use specific git SHA:
+./deploy/scripts/build-and-push.sh staging abc123
+
+# Or skip git SHA tagging:
+./deploy/scripts/build-and-push.sh staging --skip-git
+```
+
+**5. Health check fails**
+- Verify your app exposes the health endpoint configured in `deploy.config.yml`
+- Check container logs: `./deploy/scripts/logs.sh {environment}`
+- Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ## Contributing
 
