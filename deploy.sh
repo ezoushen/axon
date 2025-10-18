@@ -166,19 +166,19 @@ EOF
     fi
 
     # Add health check
-    local health_test=$(parse_config "docker.health_check.test" "")
-    if [ -n "$health_test" ]; then
+    local health_endpoint=$(parse_config "health_check.endpoint" "")
+    if [ -n "$health_endpoint" ]; then
         echo "" >> "$temp_compose"
         echo "    healthcheck:" >> "$temp_compose"
 
-        # Health check test is already in YAML array format from config
-        # Just use it directly
-        echo "      test: ${health_test}" >> "$temp_compose"
+        # Generate health check test command from endpoint
+        # Using wget to test the health endpoint inside the container
+        echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:3000${health_endpoint}\"]" >> "$temp_compose"
 
-        local health_interval=$(parse_config "docker.health_check.interval" "30s")
-        local health_timeout=$(parse_config "docker.health_check.timeout" "10s")
-        local health_retries=$(parse_config "docker.health_check.retries" "3")
-        local health_start_period=$(parse_config "docker.health_check.start_period" "40s")
+        local health_interval=$(parse_config "health_check.interval" "30s")
+        local health_timeout=$(parse_config "health_check.timeout" "10s")
+        local health_retries=$(parse_config "health_check.retries" "3")
+        local health_start_period=$(parse_config "health_check.start_period" "40s")
 
         echo "      interval: ${health_interval}" >> "$temp_compose"
         echo "      timeout: ${health_timeout}" >> "$temp_compose"
@@ -568,41 +568,47 @@ fi
 echo -e "  ${GREEN}✓ Docker assigned port: ${APP_PORT}${NC}"
 echo ""
 
-# Step 6: Wait for health check on Application Server
+# Step 5: Wait for Docker health check on Application Server
 echo -e "${BLUE}Step 5/10: Waiting for health check on Application Server...${NC}"
 
 RETRY_COUNT=0
-HEALTH_URL="http://localhost:${APP_PORT}${HEALTH_ENDPOINT}"
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    HEALTH_CHECK=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-        "curl -f -s --max-time 5 '$HEALTH_URL' > /dev/null 2>&1 && echo 'OK' || echo 'FAIL'")
+    # Query Docker's health status for the container
+    HEALTH_STATUS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker inspect --format='{{.State.Health.Status}}' ${CONTAINER_NAME} 2>/dev/null || echo 'none'")
 
-    if [ "$HEALTH_CHECK" = "OK" ]; then
+    if [ "$HEALTH_STATUS" = "healthy" ]; then
         echo -e "${GREEN}  ✓ Health check passed!${NC}"
+        break
+    elif [ "$HEALTH_STATUS" = "none" ]; then
+        echo -e "${YELLOW}  Warning: Container has no health check configured${NC}"
+        echo -e "${YELLOW}  Proceeding anyway...${NC}"
         break
     fi
 
     RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo -e "  Attempt $RETRY_COUNT/$MAX_RETRIES..."
+    if [ "$HEALTH_STATUS" = "unhealthy" ]; then
+        echo -e "  ${RED}Attempt $RETRY_COUNT/$MAX_RETRIES (status: unhealthy)${NC}"
+    else
+        echo -e "  Attempt $RETRY_COUNT/$MAX_RETRIES (status: $HEALTH_STATUS)..."
+    fi
     sleep $RETRY_INTERVAL
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo -e "${RED}Error: Health check failed after $MAX_RETRIES attempts${NC}"
-    echo -e "${RED}URL: $HEALTH_URL${NC}"
+    echo -e "${RED}Error: Container failed to become healthy after $MAX_RETRIES attempts${NC}"
+    echo -e "${RED}Final status: $HEALTH_STATUS${NC}"
 
     if [ "$AUTO_ROLLBACK" == "true" ]; then
         echo -e "${YELLOW}Auto-rollback enabled. Stopping new container...${NC}"
 
         ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-# Stop and remove the specific failed container
-FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
-
-if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
-    echo "  Stopping \${FAILED_CONTAINER}..."
-    docker stop "\${FAILED_CONTAINER}" 2>/dev/null || true
-    docker rm "\${FAILED_CONTAINER}" 2>/dev/null || true
+# Stop and remove the failed container
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
+    echo "  Stopping ${CONTAINER_NAME}..."
+    docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+    docker rm "${CONTAINER_NAME}" 2>/dev/null || true
 fi
 EOF
 
