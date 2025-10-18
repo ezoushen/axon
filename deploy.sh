@@ -101,6 +101,7 @@ generate_docker_compose_from_config() {
     local full_image=$3
     local env_file=$4
     local network_name=$5
+    local container_port=$6
 
     # Create temporary docker-compose file
     local temp_compose=$(mktemp /tmp/docker-compose-XXXXXX.yml)
@@ -120,10 +121,10 @@ EOF
     # Add port mapping
     if [ "$app_port" = "auto" ]; then
         echo "    ports:" >> "$temp_compose"
-        echo "      - \"3000\"" >> "$temp_compose"
+        echo "      - \"${container_port}\"" >> "$temp_compose"
     else
         echo "    ports:" >> "$temp_compose"
-        echo "      - \"${app_port}:3000\"" >> "$temp_compose"
+        echo "      - \"${app_port}:${container_port}\"" >> "$temp_compose"
     fi
 
     # Add env_file
@@ -173,7 +174,7 @@ EOF
 
         # Generate health check test command from endpoint
         # Using wget to test the health endpoint inside the container
-        echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:3000${health_endpoint}\"]" >> "$temp_compose"
+        echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:${container_port}${health_endpoint}\"]" >> "$temp_compose"
 
         local health_interval=$(parse_config "health_check.interval" "30s")
         local health_timeout=$(parse_config "health_check.timeout" "10s")
@@ -220,6 +221,7 @@ build_docker_run_command() {
     local full_image=$3
     local env_file=$4
     local network_name=$5
+    local container_port=$6
 
     # Check if decomposerize is available (optional but recommended)
     if ! command -v decomposerize &> /dev/null; then
@@ -229,7 +231,7 @@ build_docker_run_command() {
 
         # Fallback to basic command generation
         local cmd="docker run -d --name $container_name --network $network_name"
-        [ "$app_port" = "auto" ] && cmd="$cmd -p 3000" || cmd="$cmd -p $app_port:3000"
+        [ "$app_port" = "auto" ] && cmd="$cmd -p $container_port" || cmd="$cmd -p $app_port:$container_port"
         cmd="$cmd --env-file $env_file"
         cmd="$cmd --restart $(parse_config 'docker.restart_policy' 'unless-stopped')"
         cmd="$cmd $full_image"
@@ -243,7 +245,8 @@ build_docker_run_command() {
         "$app_port" \
         "$full_image" \
         "$env_file" \
-        "$network_name")
+        "$network_name" \
+        "$container_port")
 
     # Debug: Show generated compose file
     if [ -n "$DEBUG" ]; then
@@ -272,7 +275,7 @@ build_docker_run_command() {
     # Fix port mapping for auto-assignment if needed
     if [ "$app_port" = "auto" ]; then
         # Ensure no host port is specified (decomposerize might add one)
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/-p [0-9]*:3000/-p 3000/')
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:${container_port}/-p ${container_port}/")
     fi
 
     # Fix health check format (decomposerize outputs CMD,wget,... but docker expects space-separated)
@@ -342,6 +345,9 @@ RETRY_INTERVAL=$(parse_config "health_check.retry_interval" "2")
 # Deployment config
 DRAIN_TIME=$(parse_config "deployment.connection_drain_time" "5")
 AUTO_ROLLBACK=$(parse_config "deployment.enable_auto_rollback" "true")
+
+# Docker config
+CONTAINER_PORT=$(parse_config "docker.container_port" "3000")
 
 # Validate required configuration
 MISSING_CONFIG=()
@@ -513,7 +519,8 @@ DOCKER_RUN_CMD=$(build_docker_run_command \
     "auto" \
     "$FULL_IMAGE" \
     "$ENV_FILE" \
-    "$NETWORK_NAME")
+    "$NETWORK_NAME" \
+    "$CONTAINER_PORT")
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 set -e
@@ -556,7 +563,7 @@ echo ""
 
 # Query Docker for the assigned port
 APP_PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker port ${CONTAINER_NAME} 3000 | cut -d: -f2")
+    "docker port ${CONTAINER_NAME} ${CONTAINER_PORT} | cut -d: -f2")
 
 if [ -z "$APP_PORT" ]; then
     echo -e "${RED}Error: Could not determine assigned port${NC}"
