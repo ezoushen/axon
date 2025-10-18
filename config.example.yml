@@ -86,7 +86,7 @@ docker:
 
   # Common environment variables for all environments
   # These are set in the container, separate from .env files
-  common_env_vars:
+  env_vars:
     NODE_ENV: "production"
     PORT: "3000"
 

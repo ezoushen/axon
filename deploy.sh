@@ -132,14 +132,14 @@ EOF
     echo "      - ${env_file}" >> "$temp_compose"
 
     # Add common environment variables from config
-    local common_env_vars=$(parse_config "docker.common_env_vars" "")
+    local common_env_vars=$(parse_config "docker.env_vars" "")
     if [ -n "$common_env_vars" ]; then
         echo "" >> "$temp_compose"
         echo "    environment:" >> "$temp_compose"
 
         local env_keys=$(echo "$common_env_vars" | grep -E "^[A-Z_]+:" | sed 's/://' || true)
         for key in $env_keys; do
-            local value=$(parse_config "docker.common_env_vars.$key" "")
+            local value=$(parse_config "docker.env_vars.$key" "")
             if [ -n "$value" ]; then
                 echo "      - ${key}=${value}" >> "$temp_compose"
             fi
