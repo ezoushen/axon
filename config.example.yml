@@ -21,16 +21,16 @@ aws:
 servers:
   # System Server (runs nginx + SSL)
   system:
-    host: "system-server-ip-or-hostname"  # System Server IP or hostname
-    user: "deploy"                         # SSH user with nginx permissions
-    ssh_key: "~/.ssh/deployment_key"       # Path to SSH private key
+    host: "system-server-ip-or-hostname"     # System Server IP or hostname
+    user: "root"                              # SSH user (e.g., root, ubuntu)
+    ssh_key: "~/.ssh/system_server_key"      # SSH private key (must exist)
 
   # Application Server (runs Docker containers)
   application:
-    host: "application-server-ip"          # Application Server IP
-    user: "ubuntu"                         # SSH user for Application Server
-    ssh_key: "~/.ssh/application_server_key"  # Path to SSH private key for Application Server
-    deploy_path: "/home/ubuntu/my-product"    # Path where app code is deployed on Application Server
+    host: "application-server-ip"             # Application Server IP
+    user: "ubuntu"                            # SSH user
+    ssh_key: "~/.ssh/application_server_key" # SSH private key (must exist)
+    deploy_path: "/home/ubuntu/my-product"   # Deployment directory on Application Server
 
 # Environment Configurations
 environments:

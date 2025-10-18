@@ -77,8 +77,8 @@ APP_SERVER_SSH_KEY=$(parse_config ".servers.application.ssh_key" "~/.ssh/applica
 APP_SERVER_DEPLOY_PATH=$(parse_config ".servers.application.deploy_path" "/home/ubuntu/app")
 
 SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "deploy")
-SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "~/.ssh/deployment_key")
+SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
+SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "~/.ssh/system_server_key")
 
 AWS_PROFILE=$(parse_config ".aws.profile" "default")
 
@@ -91,7 +91,7 @@ echo -e "  System Server: ${CYAN}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC
 echo ""
 
 # Step 1: Check local machine prerequisites
-echo -e "${BLUE}Step 1/8: Checking local machine prerequisites...${NC}"
+echo -e "${BLUE}Step 1/6: Checking local machine prerequisites...${NC}"
 
 if ! command_exists ssh; then
     echo -e "  ${RED}✗ SSH client not found${NC}"
@@ -109,86 +109,65 @@ echo -e "  ${GREEN}✓ SCP installed${NC}"
 
 echo ""
 
-# Step 2: Generate/check SSH key for Application Server
-echo -e "${BLUE}Step 2/8: Checking SSH key for Application Server...${NC}"
+# Step 2: Check SSH keys exist
+echo -e "${BLUE}Step 2/6: Checking SSH keys...${NC}"
 
-if [ -f "$APP_SERVER_SSH_KEY" ]; then
-    echo -e "  ${GREEN}✓ SSH key exists${NC}"
-    echo -e "  Location: ${CYAN}${APP_SERVER_SSH_KEY}${NC}"
+# Application Server SSH key
+if [ ! -f "$APP_SERVER_SSH_KEY" ]; then
+    echo -e "  ${RED}✗ Application Server SSH key not found: ${APP_SERVER_SSH_KEY}${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Please create the SSH key first:${NC}"
+    echo -e "  ${CYAN}ssh-keygen -t ed25519 -C 'application-server-key' -f ${APP_SERVER_SSH_KEY}${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Then add the public key to Application Server:${NC}"
+    echo -e "  ${CYAN}ssh-copy-id -i ${APP_SERVER_SSH_KEY}.pub ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
+    echo ""
+    exit 1
+fi
 
-    # Check permissions
-    KEY_PERMS=$(stat -c %a "$APP_SERVER_SSH_KEY" 2>/dev/null || stat -f %A "$APP_SERVER_SSH_KEY" 2>/dev/null)
-    if [ "$KEY_PERMS" = "600" ]; then
-        echo -e "  ${GREEN}✓ Correct permissions (600)${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ Fixing permissions...${NC}"
-        chmod 600 "$APP_SERVER_SSH_KEY"
-        echo -e "  ${GREEN}✓ Permissions fixed${NC}"
-    fi
+echo -e "  ${GREEN}✓ Application Server SSH key exists${NC}"
+echo -e "    Location: ${CYAN}${APP_SERVER_SSH_KEY}${NC}"
+
+# Check permissions
+KEY_PERMS=$(stat -c %a "$APP_SERVER_SSH_KEY" 2>/dev/null || stat -f %A "$APP_SERVER_SSH_KEY" 2>/dev/null)
+if [ "$KEY_PERMS" = "600" ]; then
+    echo -e "    ${GREEN}✓ Correct permissions (600)${NC}"
 else
-    echo -e "  ${YELLOW}✗ SSH key not found${NC}"
-    echo -e "  ${YELLOW}Generating new SSH key for Application Server...${NC}"
-
-    SSH_KEY_DIR=$(dirname "$APP_SERVER_SSH_KEY")
-    mkdir -p "$SSH_KEY_DIR"
-
-    ssh-keygen -t ed25519 -C "application-server-key" -f "$APP_SERVER_SSH_KEY" -N ""
+    echo -e "    ${YELLOW}⚠ Fixing permissions...${NC}"
     chmod 600 "$APP_SERVER_SSH_KEY"
-
-    echo -e "  ${GREEN}✓ SSH key generated${NC}"
-    echo -e "  Location: ${CYAN}${APP_SERVER_SSH_KEY}${NC}"
-    echo ""
-    echo -e "  ${YELLOW}IMPORTANT: Add this public key to Application Server:${NC}"
-    echo -e "  ${CYAN}$(cat ${APP_SERVER_SSH_KEY}.pub)${NC}"
-    echo ""
-    echo -e "  Run on Application Server:"
-    echo -e "  ${CYAN}echo '$(cat ${APP_SERVER_SSH_KEY}.pub)' >> ~/.ssh/authorized_keys${NC}"
-    echo ""
+    echo -e "    ${GREEN}✓ Permissions fixed${NC}"
 fi
 
-echo ""
+# System Server SSH key
+if [ ! -f "$SYSTEM_SERVER_SSH_KEY" ]; then
+    echo -e "  ${RED}✗ System Server SSH key not found: ${SYSTEM_SERVER_SSH_KEY}${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Please create the SSH key first:${NC}"
+    echo -e "  ${CYAN}ssh-keygen -t ed25519 -C 'system-server-key' -f ${SYSTEM_SERVER_SSH_KEY}${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Then add the public key to System Server:${NC}"
+    echo -e "  ${CYAN}ssh-copy-id -i ${SYSTEM_SERVER_SSH_KEY}.pub ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
+    echo ""
+    exit 1
+fi
 
-# Step 3: Generate/check SSH key for System Server
-echo -e "${BLUE}Step 3/8: Checking SSH key for System Server...${NC}"
+echo -e "  ${GREEN}✓ System Server SSH key exists${NC}"
+echo -e "    Location: ${CYAN}${SYSTEM_SERVER_SSH_KEY}${NC}"
 
-if [ -f "$SYSTEM_SERVER_SSH_KEY" ]; then
-    echo -e "  ${GREEN}✓ SSH key exists${NC}"
-    echo -e "  Location: ${CYAN}${SYSTEM_SERVER_SSH_KEY}${NC}"
-
-    # Check permissions
-    KEY_PERMS=$(stat -c %a "$SYSTEM_SERVER_SSH_KEY" 2>/dev/null || stat -f %A "$SYSTEM_SERVER_SSH_KEY" 2>/dev/null)
-    if [ "$KEY_PERMS" = "600" ]; then
-        echo -e "  ${GREEN}✓ Correct permissions (600)${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ Fixing permissions...${NC}"
-        chmod 600 "$SYSTEM_SERVER_SSH_KEY"
-        echo -e "  ${GREEN}✓ Permissions fixed${NC}"
-    fi
+# Check permissions
+KEY_PERMS=$(stat -c %a "$SYSTEM_SERVER_SSH_KEY" 2>/dev/null || stat -f %A "$SYSTEM_SERVER_SSH_KEY" 2>/dev/null)
+if [ "$KEY_PERMS" = "600" ]; then
+    echo -e "    ${GREEN}✓ Correct permissions (600)${NC}"
 else
-    echo -e "  ${YELLOW}✗ SSH key not found${NC}"
-    echo -e "  ${YELLOW}Generating new SSH key for System Server...${NC}"
-
-    SSH_KEY_DIR=$(dirname "$SYSTEM_SERVER_SSH_KEY")
-    mkdir -p "$SSH_KEY_DIR"
-
-    ssh-keygen -t ed25519 -C "system-server-key" -f "$SYSTEM_SERVER_SSH_KEY" -N ""
+    echo -e "    ${YELLOW}⚠ Fixing permissions...${NC}"
     chmod 600 "$SYSTEM_SERVER_SSH_KEY"
-
-    echo -e "  ${GREEN}✓ SSH key generated${NC}"
-    echo -e "  Location: ${CYAN}${SYSTEM_SERVER_SSH_KEY}${NC}"
-    echo ""
-    echo -e "  ${YELLOW}IMPORTANT: Add this public key to System Server:${NC}"
-    echo -e "  ${CYAN}$(cat ${SYSTEM_SERVER_SSH_KEY}.pub)${NC}"
-    echo ""
-    echo -e "  Run on System Server (as deploy user):"
-    echo -e "  ${CYAN}echo '$(cat ${SYSTEM_SERVER_SSH_KEY}.pub)' >> /home/${SYSTEM_SERVER_USER}/.ssh/authorized_keys${NC}"
-    echo ""
+    echo -e "    ${GREEN}✓ Permissions fixed${NC}"
 fi
 
 echo ""
 
-# Step 4: Test SSH connection to Application Server
-echo -e "${BLUE}Step 4/8: Testing SSH connection to Application Server...${NC}"
+# Step 3: Test SSH connection to Application Server
+echo -e "${BLUE}Step 3/6: Testing SSH connection to Application Server...${NC}"
 
 if [ -z "$APP_SERVER_HOST" ]; then
     echo -e "  ${RED}✗ Application Server host not configured in deploy.config.yml${NC}"
@@ -206,19 +185,18 @@ else
     echo -e "  ${YELLOW}To fix:${NC}"
     echo -e "  1. Ensure Application Server is running and accessible"
     echo -e "  2. Add the public key to Application Server:"
-    echo -e "     ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
-    echo -e "     ${CYAN}mkdir -p ~/.ssh && chmod 700 ~/.ssh${NC}"
-    echo -e "     ${CYAN}echo '$(cat ${APP_SERVER_SSH_KEY}.pub)' >> ~/.ssh/authorized_keys${NC}"
-    echo -e "     ${CYAN}chmod 600 ~/.ssh/authorized_keys${NC}"
-    echo -e "  3. Re-run this setup script"
+    echo -e "     ${CYAN}ssh-copy-id -i ${APP_SERVER_SSH_KEY}.pub ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
+    echo -e "  Or manually:"
+    echo -e "     ${CYAN}cat ${APP_SERVER_SSH_KEY}.pub | ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} \\${NC}"
+    echo -e "     ${CYAN}  'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'${NC}"
     echo ""
     exit 1
 fi
 
 echo ""
 
-# Step 5: Check Docker on Application Server
-echo -e "${BLUE}Step 5/8: Checking Docker on Application Server...${NC}"
+# Step 4: Check Docker on Application Server
+echo -e "${BLUE}Step 4/6: Checking Docker on Application Server...${NC}"
 
 DOCKER_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
     'docker --version 2>&1' || echo "NOT_INSTALLED")
@@ -235,7 +213,7 @@ if [[ "$DOCKER_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$DOCKER_CHECK" == *"command
     echo ""
     exit 1
 else
-    DOCKER_VERSION=$(echo "$DOCKER_CHECK" | grep -oP 'version \K[0-9.]+' | head -1)
+    DOCKER_VERSION=$(echo "$DOCKER_CHECK" | grep -o 'version [0-9.]*' | head -1 | awk '{print $2}')
     echo -e "  ${GREEN}✓ Docker is installed${NC} (version: ${DOCKER_VERSION})"
 fi
 
@@ -250,11 +228,7 @@ else
     echo -e "  Start Docker: ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} 'sudo systemctl start docker'${NC}"
 fi
 
-echo ""
-
-# Step 6: Check Docker Compose on Application Server
-echo -e "${BLUE}Step 6/8: Checking Docker Compose on Application Server...${NC}"
-
+# Check Docker Compose
 COMPOSE_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
     'docker compose version 2>&1 || docker-compose --version 2>&1' || echo "NOT_INSTALLED")
 
@@ -271,14 +245,14 @@ if [[ "$COMPOSE_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$COMPOSE_CHECK" == *"comma
     echo ""
     exit 1
 else
-    COMPOSE_VERSION=$(echo "$COMPOSE_CHECK" | grep -oP 'version \K[^ ,]+' | head -1)
+    COMPOSE_VERSION=$(echo "$COMPOSE_CHECK" | grep -o 'version [^ ,]*' | head -1 | awk '{print $2}')
     echo -e "  ${GREEN}✓ Docker Compose is installed${NC} (version: ${COMPOSE_VERSION})"
 fi
 
 echo ""
 
-# Step 7: Check AWS CLI on Application Server
-echo -e "${BLUE}Step 7/8: Checking AWS CLI on Application Server...${NC}"
+# Step 5: Check AWS CLI on Application Server
+echo -e "${BLUE}Step 5/6: Checking AWS CLI on Application Server...${NC}"
 
 AWS_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
     'aws --version 2>&1' || echo "NOT_INSTALLED")
@@ -295,7 +269,7 @@ if [[ "$AWS_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$AWS_CHECK" == *"command not f
     echo ""
     exit 1
 else
-    AWS_VERSION=$(echo "$AWS_CHECK" | grep -oP 'aws-cli/\K[^ ]+' | head -1)
+    AWS_VERSION=$(echo "$AWS_CHECK" | grep -o 'aws-cli/[^ ]*' | head -1 | cut -d'/' -f2)
     echo -e "  ${GREEN}✓ AWS CLI is installed${NC} (version: ${AWS_VERSION})"
 fi
 
@@ -307,14 +281,14 @@ if [[ "$AWS_CREDS_CHECK" == *"NOT_CONFIGURED"* ]] || [[ "$AWS_CREDS_CHECK" == *"
     echo -e "  ${YELLOW}⚠ AWS credentials not configured for profile: ${AWS_PROFILE}${NC}"
     echo -e "  Configure with: ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} 'aws configure --profile ${AWS_PROFILE}'${NC}"
 else
-    AWS_ACCOUNT=$(echo "$AWS_CREDS_CHECK" | grep -oP '"Account": "\K[0-9]+'  | head -1)
+    AWS_ACCOUNT=$(echo "$AWS_CREDS_CHECK" | grep -o '"Account": "[0-9]*"' | head -1 | sed 's/"Account": "\([0-9]*\)"/\1/')
     echo -e "  ${GREEN}✓ AWS credentials configured${NC} (profile: ${AWS_PROFILE}, account: ${AWS_ACCOUNT})"
 fi
 
 echo ""
 
-# Step 8: Test SSH connection to System Server
-echo -e "${BLUE}Step 8/8: Testing SSH connection to System Server...${NC}"
+# Step 6: Test SSH connection to System Server
+echo -e "${BLUE}Step 6/6: Testing SSH connection to System Server...${NC}"
 
 if [ -z "$SYSTEM_SERVER_HOST" ]; then
     echo -e "  ${YELLOW}⚠ System Server host not configured in deploy.config.yml${NC}"
@@ -328,11 +302,13 @@ else
     else
         echo -e "  ${YELLOW}⚠ SSH connection failed${NC}"
         echo ""
-        echo -e "  ${YELLOW}To fix (run System Server setup first):${NC}"
-        echo -e "  1. Copy and run System Server setup script"
-        echo -e "  2. Add the public key to System Server deploy user:"
-        echo -e "     ${CYAN}echo '$(cat ${SYSTEM_SERVER_SSH_KEY}.pub)' | ssh root@${SYSTEM_SERVER_HOST} \\${NC}"
-        echo -e "     ${CYAN}  'tee -a /home/${SYSTEM_SERVER_USER}/.ssh/authorized_keys'${NC}"
+        echo -e "  ${YELLOW}To fix:${NC}"
+        echo -e "  1. Ensure System Server is running and accessible"
+        echo -e "  2. Add the public key to System Server:"
+        echo -e "     ${CYAN}ssh-copy-id -i ${SYSTEM_SERVER_SSH_KEY}.pub ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
+        echo -e "  Or manually:"
+        echo -e "     ${CYAN}cat ${SYSTEM_SERVER_SSH_KEY}.pub | ssh ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST} \\${NC}"
+        echo -e "     ${CYAN}  'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'${NC}"
         echo ""
     fi
 fi
@@ -341,12 +317,12 @@ echo ""
 
 # Summary
 echo -e "${GREEN}==================================================${NC}"
-echo -e "${GREEN}✓ Application Server setup complete!${NC}"
+echo -e "${GREEN}✓ Setup validation complete!${NC}"
 echo -e "${GREEN}==================================================${NC}"
 echo ""
 
 echo -e "${CYAN}Configuration Summary:${NC}"
-echo -e "  Local Machine:     ${YELLOW}$(hostname)${NC}"
+echo -e "  Local Machine:      ${YELLOW}$(hostname)${NC}"
 echo -e "  Application Server: ${YELLOW}${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
 echo -e "  System Server:      ${YELLOW}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
 echo -e "  App SSH Key:        ${YELLOW}${APP_SERVER_SSH_KEY}${NC}"
@@ -355,10 +331,8 @@ echo ""
 
 echo -e "${CYAN}Next steps:${NC}"
 echo ""
-echo -e "1. Run System Server setup (if not done yet):"
-echo -e "   ${CYAN}scp ${SCRIPT_DIR}/setup-system-server.sh ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}:/tmp/${NC}"
-echo -e "   ${CYAN}ssh ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
-echo -e "   ${CYAN}sudo PRODUCT_NAME=my-product APPLICATION_SERVER_IP=${APP_SERVER_HOST} /tmp/setup-system-server.sh${NC}"
+echo -e "1. Run System Server setup:"
+echo -e "   ${CYAN}./deploy/setup/setup-system-server.sh${NC}"
 echo ""
 echo -e "2. Ensure code is deployed to Application Server at:"
 echo -e "   ${YELLOW}${APP_SERVER_DEPLOY_PATH}${NC}"

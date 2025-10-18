@@ -98,8 +98,8 @@ ECR_REPOSITORY=$(parse_config "aws.ecr_repository" "$PRODUCT_NAME")
 
 # System Server config
 SYSTEM_SERVER_HOST=$(parse_config "servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config "servers.system.user" "deploy")
-SYSTEM_SSH_KEY=$(parse_config "servers.system.ssh_key" "~/.ssh/deployment_key")
+SYSTEM_SERVER_USER=$(parse_config "servers.system.user" "root")
+SYSTEM_SSH_KEY=$(parse_config "servers.system.ssh_key" "~/.ssh/system_server_key")
 SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"  # Expand ~
 
 # Application Server config
