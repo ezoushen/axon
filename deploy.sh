@@ -309,7 +309,7 @@ fi
 
 # Step 4: Start new container on Application Server
 echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
-echo -e "  Container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}${NC}"
+echo -e "  Container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}${NC}"
 echo -e "  Port: ${YELLOW}${APP_PORT}${NC}"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
@@ -373,7 +373,7 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 
         ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 # Stop and remove the specific failed container
-FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}"
+FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
 
 if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
     echo "  Stopping \${FAILED_CONTAINER}..."
@@ -425,7 +425,7 @@ if [ $? -ne 0 ]; then
     echo -e "${YELLOW}Stopping new container on Application Server...${NC}"
     ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 # Stop and remove the specific failed container
-FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}"
+FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
 
 if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
     echo "  Stopping \${FAILED_CONTAINER}..."
@@ -461,11 +461,11 @@ echo ""
 
 # Step 11: Stop old container on Application Server
 echo -e "${BLUE}Step 10/10: Stopping old container on Application Server...${NC}"
-echo -e "  Old container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_SLOT}${NC} (port $CURRENT_PORT)"
+echo -e "  Old container: ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_PORT}${NC} (port $CURRENT_PORT)"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 # Stop and remove the specific old container
-OLD_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_SLOT}"
+OLD_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${CURRENT_PORT}"
 
 if docker ps -a --format '{{.Names}}' | grep -q "^\${OLD_CONTAINER}\$"; then
     echo "  Stopping \${OLD_CONTAINER}..."
@@ -490,13 +490,13 @@ echo -e "${CYAN}Deployment Summary:${NC}"
 echo -e "  Product:          ${YELLOW}${PRODUCT_NAME}${NC}"
 echo -e "  Environment:      ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "  Active Slot:      ${GREEN}${DEPLOYMENT_SLOT}${NC} (port $APP_PORT)"
-echo -e "  Container:        ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}${NC}"
+echo -e "  Container:        ${YELLOW}${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}${NC}"
 echo -e "  Image:            ${YELLOW}${FULL_IMAGE}${NC}"
 echo -e "  Downtime:         ${GREEN}0 seconds${NC} ⚡"
 echo ""
 
 echo -e "${CYAN}Useful Commands:${NC}"
-echo -e "  View logs:        ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker logs -f ${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}'${NC}"
+echo -e "  View logs:        ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker logs -f ${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}'${NC}"
 echo -e "  Container status: ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker ps | grep ${PRODUCT_NAME}-${ENVIRONMENT}'${NC}"
 echo -e "  nginx upstream:   ${BLUE}ssh -i $SYSTEM_SSH_KEY $SYSTEM_SERVER 'cat $NGINX_UPSTREAM_FILE'${NC}"
 echo ""
@@ -511,10 +511,10 @@ echo ""
 # Display recent logs from Application Server
 echo -e "${CYAN}Recent Logs (last 20 lines):${NC}"
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "if docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}' --format '{{.Names}}' | grep -q .; then \
-        docker logs --tail=20 '${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT}' 2>&1 | head -20; \
+    "if docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}' --format '{{.Names}}' | grep -q .; then \
+        docker logs --tail=20 '${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}' 2>&1 | head -20; \
     else \
-        echo 'Container ${PRODUCT_NAME}-${ENVIRONMENT}-${DEPLOYMENT_SLOT} not found'; \
+        echo 'Container ${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT} not found'; \
     fi"
 echo ""
 
