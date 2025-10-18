@@ -23,6 +23,9 @@ source "$MODULE_DIR/lib/config-parser.sh"
 # Load product name
 PRODUCT_NAME=$(parse_yaml_key "product.name" "my-product")
 
+# Parse arguments
+ENVIRONMENT=${1:-all}
+
 # Get Application Server SSH details
 APP_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
 APP_SERVER_USER=$(parse_yaml_key ".servers.application.user" "ubuntu")
@@ -41,15 +44,25 @@ fi
 
 APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
 
+# Build container name filter based on environment
+if [ "$ENVIRONMENT" == "all" ]; then
+    CONTAINER_FILTER="${PRODUCT_NAME}"
+    ENV_DISPLAY="All Environments"
+else
+    CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
+    ENV_DISPLAY="${ENVIRONMENT^} Environment"
+fi
+
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}Docker Containers Status - ${PRODUCT_NAME}${NC}"
+echo -e "${BLUE}${ENV_DISPLAY}${NC}"
 echo -e "${BLUE}On Application Server: ${APP_SERVER}${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 
-# Get all containers for this product from Application Server
+# Get containers for this product/environment from Application Server
 CONTAINERS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${PRODUCT_NAME}' --format '{{.Names}}' | sort")
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}' | sort")
 
 if [ -z "$CONTAINERS" ]; then
     echo -e "${YELLOW}No containers found for ${PRODUCT_NAME}${NC}"
@@ -64,7 +77,7 @@ fi
 echo -e "${CYAN}Container Summary:${NC}"
 echo ""
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${PRODUCT_NAME}' \
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}' \
      --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
 echo ""
 
@@ -74,8 +87,8 @@ echo ""
 
 # Get detailed info for all containers in one SSH call
 CONTAINER_DETAILS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<'EOF_REMOTE'
-PRODUCT_NAME="'"$PRODUCT_NAME"'"
-CONTAINERS=$(docker ps -a --filter "name=${PRODUCT_NAME}" --format "{{.Names}}" | sort)
+CONTAINER_FILTER="'"$CONTAINER_FILTER"'"
+CONTAINERS=$(docker ps -a --filter "name=${CONTAINER_FILTER}" --format "{{.Names}}" | sort)
 
 for CONTAINER in $CONTAINERS; do
     # Parse environment from container name
@@ -159,7 +172,17 @@ done <<< "$CONTAINER_DETAILS"
 # Resource usage
 echo -e "${CYAN}Resource Usage:${NC}"
 echo ""
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker stats --no-stream --filter 'name=${PRODUCT_NAME}' \
-     --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}'"
+
+# Get container names and pass them directly to docker stats
+# (--filter not supported in older Docker versions)
+# Convert newlines to spaces so they're passed as separate arguments, not separate commands
+CONTAINER_NAMES=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    "docker ps --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
+
+if [ -n "$CONTAINER_NAMES" ]; then
+    ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' ${CONTAINER_NAMES}"
+else
+    echo -e "${YELLOW}No running containers to show stats${NC}"
+fi
 echo ""

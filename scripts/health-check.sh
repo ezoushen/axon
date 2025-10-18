@@ -49,12 +49,24 @@ check_environment() {
 
     APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
 
-    # Get port from running container via SSH
+    # Find the most recent container for this environment (timestamp-based naming)
+    # Container name format: ${PRODUCT_NAME}-${env}-${timestamp}
+    CONTAINER_NAME=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker ps -a --filter 'name=${PRODUCT_NAME}-${env}-' --format '{{.Names}}' | sort -r | head -n 1" 2>/dev/null)
+
+    if [ -z "$CONTAINER_NAME" ]; then
+        echo -e "  Status: ${YELLOW}⚠ Container not found on Application Server${NC}"
+        return 1
+    fi
+
+    echo -e "  Container:      ${CYAN}${CONTAINER_NAME}${NC}"
+
+    # Get port from the container
     PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-        "docker ps --filter 'name=${PRODUCT_NAME}-${env}' --format '{{.Ports}}' | grep -o '[0-9]*->' | head -1 | tr -d '->' " 2>/dev/null)
+        "docker port '${CONTAINER_NAME}' 3000 2>/dev/null | cut -d: -f2" 2>/dev/null)
 
     if [ -z "$PORT" ]; then
-        echo -e "  Status: ${YELLOW}⚠ Container not found on Application Server${NC}"
+        echo -e "  Status: ${YELLOW}⚠ Container port not found${NC}"
         return 1
     fi
 
@@ -82,15 +94,38 @@ echo ""
 
 if [ "$ENVIRONMENT" == "all" ]; then
     # Check all configured environments
-    ENVS=$(grep -E "^\s+[a-z]+:" "$CONFIG_FILE" | grep -A1 "environments:" | tail -n +2 | awk '{print $1}' | tr -d ':')
+    # Try using yq first (if available), otherwise use awk
+    if command -v yq &> /dev/null; then
+        ENVS=$(yq eval '.environments | keys | .[]' "$CONFIG_FILE" 2>/dev/null)
+    else
+        # Fallback: Use awk to extract environment names
+        # Look for lines that are 2-space indented under environments: section
+        ENVS=$(awk '
+            /^environments:/ { in_envs=1; next }
+            in_envs && /^[a-z]/ { in_envs=0 }
+            in_envs && /^  [a-z]/ {
+                gsub(/:.*/, "")
+                gsub(/^  /, "")
+                print
+            }
+        ' "$CONFIG_FILE")
+    fi
+
+    if [ -z "$ENVS" ]; then
+        echo -e "${YELLOW}No environments found in config${NC}"
+        echo -e "${YELLOW}Tried to read from: $CONFIG_FILE${NC}"
+        exit 1
+    fi
 
     FAILED=0
     for env in $ENVS; do
         check_environment "$env"
-        [ $? -ne 0 ] && FAILED=$((FAILED + 1))
+        RESULT=$?
+        [ $RESULT -ne 0 ] && FAILED=$((FAILED + 1))
         echo ""
     done
 
+    echo -e "${BLUE}==================================================${NC}"
     if [ $FAILED -eq 0 ]; then
         echo -e "${GREEN}✓ All environments healthy${NC}"
         exit 0
