@@ -94,111 +94,195 @@ parse_config() {
     fi
 }
 
-# Function to build docker run command from docker-compose.yml using decomposerize
-# This keeps docker-compose.yml as the single source of truth
+# Function to generate temporary docker-compose.yml from config
+generate_docker_compose_from_config() {
+    local container_name=$1
+    local app_port=$2
+    local full_image=$3
+    local env_file=$4
+    local network_name=$5
+
+    # Create temporary docker-compose file
+    local temp_compose=$(mktemp /tmp/docker-compose-XXXXXX.yml)
+
+    # Build docker-compose.yml content
+    cat > "$temp_compose" <<EOF
+version: '3.8'
+
+services:
+  app:
+    container_name: ${container_name}
+    image: ${full_image}
+
+    # Port mapping
+EOF
+
+    # Add port mapping
+    if [ "$app_port" = "auto" ]; then
+        echo "    ports:" >> "$temp_compose"
+        echo "      - \"3000\"" >> "$temp_compose"
+    else
+        echo "    ports:" >> "$temp_compose"
+        echo "      - \"${app_port}:3000\"" >> "$temp_compose"
+    fi
+
+    # Add env_file
+    echo "" >> "$temp_compose"
+    echo "    env_file:" >> "$temp_compose"
+    echo "      - ${env_file}" >> "$temp_compose"
+
+    # Add common environment variables from config
+    local common_env_vars=$(parse_config "docker.common_env_vars" "")
+    if [ -n "$common_env_vars" ]; then
+        echo "" >> "$temp_compose"
+        echo "    environment:" >> "$temp_compose"
+
+        local env_keys=$(echo "$common_env_vars" | grep -E "^[A-Z_]+:" | sed 's/://' || true)
+        for key in $env_keys; do
+            local value=$(parse_config "docker.common_env_vars.$key" "")
+            if [ -n "$value" ]; then
+                echo "      - ${key}=${value}" >> "$temp_compose"
+            fi
+        done
+    fi
+
+    # Add restart policy
+    local restart_policy=$(parse_config "docker.restart_policy" "unless-stopped")
+    echo "" >> "$temp_compose"
+    echo "    restart: ${restart_policy}" >> "$temp_compose"
+
+    # Add extra hosts
+    local extra_hosts=$(parse_config "docker.extra_hosts" "" | grep -E "^\s*-\s*" | sed 's/^\s*-\s*//' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)
+    if [ -n "$extra_hosts" ]; then
+        echo "" >> "$temp_compose"
+        echo "    extra_hosts:" >> "$temp_compose"
+        while IFS= read -r host_mapping; do
+            if [ -n "$host_mapping" ]; then
+                # Remove quotes if already present in config
+                host_mapping=$(echo "$host_mapping" | sed 's/^"//; s/"$//')
+                echo "      - \"${host_mapping}\"" >> "$temp_compose"
+            fi
+        done <<< "$extra_hosts"
+    fi
+
+    # Add health check
+    local health_test=$(parse_config "docker.health_check.test" "")
+    if [ -n "$health_test" ]; then
+        echo "" >> "$temp_compose"
+        echo "    healthcheck:" >> "$temp_compose"
+
+        # Health check test is already in YAML array format from config
+        # Just use it directly
+        echo "      test: ${health_test}" >> "$temp_compose"
+
+        local health_interval=$(parse_config "docker.health_check.interval" "30s")
+        local health_timeout=$(parse_config "docker.health_check.timeout" "10s")
+        local health_retries=$(parse_config "docker.health_check.retries" "3")
+        local health_start_period=$(parse_config "docker.health_check.start_period" "40s")
+
+        echo "      interval: ${health_interval}" >> "$temp_compose"
+        echo "      timeout: ${health_timeout}" >> "$temp_compose"
+        echo "      retries: ${health_retries}" >> "$temp_compose"
+        echo "      start_period: ${health_start_period}" >> "$temp_compose"
+    fi
+
+    # Add logging
+    local log_driver=$(parse_config "docker.logging.driver" "json-file")
+    local log_max_size=$(parse_config "docker.logging.max_size" "10m")
+    local log_max_file=$(parse_config "docker.logging.max_file" "3")
+
+    echo "" >> "$temp_compose"
+    echo "    logging:" >> "$temp_compose"
+    echo "      driver: ${log_driver}" >> "$temp_compose"
+    echo "      options:" >> "$temp_compose"
+    echo "        max-size: \"${log_max_size}\"" >> "$temp_compose"
+    echo "        max-file: \"${log_max_file}\"" >> "$temp_compose"
+
+    # Add network
+    echo "" >> "$temp_compose"
+    echo "    networks:" >> "$temp_compose"
+    echo "      - ${network_name}" >> "$temp_compose"
+
+    # Add networks section
+    echo "" >> "$temp_compose"
+    echo "networks:" >> "$temp_compose"
+    echo "  ${network_name}:" >> "$temp_compose"
+    echo "    external: true" >> "$temp_compose"
+
+    echo "$temp_compose"
+}
+
+# Function to build docker run command from deploy.config.yml using decomposerize
+# This generates a temporary docker-compose.yml and converts it to docker run
 build_docker_run_command() {
-    local compose_file=$1
-    local container_name=$2
-    local app_port=$3
-    local full_image=$4
-    local env_file=$5
-    local network_name=$6
+    local container_name=$1
+    local app_port=$2
+    local full_image=$3
+    local env_file=$4
+    local network_name=$5
 
-    # Export required variables for docker-compose config
-    export AWS_ACCOUNT_ID AWS_REGION ECR_REPOSITORY IMAGE_TAG
-    export PRODUCT_NAME ENVIRONMENT APP_PORT
-
-    # Check if decomposerize is available (required)
+    # Check if decomposerize is available (optional but recommended)
     if ! command -v decomposerize &> /dev/null; then
-        echo -e "${RED}Error: decomposerize is required but not installed${NC}" >&2
-        echo ""
-        echo -e "Please install decomposerize:"
-        echo -e "  ${CYAN}npm install -g decomposerize${NC}"
-        echo ""
-        echo -e "decomposerize converts docker-compose files to docker run commands,"
-        echo -e "ensuring accurate and reliable container configuration."
-        echo ""
-        exit 1
+        echo -e "${YELLOW}Warning: decomposerize not found, using basic docker run generation${NC}" >&2
+        echo -e "${YELLOW}Install decomposerize for full Docker feature support:${NC}" >&2
+        echo -e "${YELLOW}  npm install -g decomposerize${NC}" >&2
+
+        # Fallback to basic command generation
+        local cmd="docker run -d --name $container_name --network $network_name"
+        [ "$app_port" = "auto" ] && cmd="$cmd -p 3000" || cmd="$cmd -p $app_port:3000"
+        cmd="$cmd --env-file $env_file"
+        cmd="$cmd --restart $(parse_config 'docker.restart_policy' 'unless-stopped')"
+        cmd="$cmd $full_image"
+        echo "$cmd"
+        return 0
     fi
 
-    # Use docker-compose config to render the final compose file with variables substituted
-    local rendered_compose=$(cd "$PRODUCT_ROOT" && docker-compose -f "$compose_file" config 2>/dev/null)
+    # Generate temporary docker-compose.yml from config
+    local temp_compose=$(generate_docker_compose_from_config \
+        "$container_name" \
+        "$app_port" \
+        "$full_image" \
+        "$env_file" \
+        "$network_name")
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: Failed to render docker-compose file${NC}" >&2
-        echo -e "Compose file: $compose_file"
-        exit 1
+    # Debug: Show generated compose file
+    if [ -n "$DEBUG" ]; then
+        echo "Generated docker-compose.yml:" >&2
+        cat "$temp_compose" >&2
     fi
 
-    # Use decomposerize to convert compose file to docker run command
-    # decomposerize outputs multiple lines (network create, docker run, etc.)
-    # We only need the docker run command
-    local docker_run_cmd=$(echo "$rendered_compose" | decomposerize 2>/dev/null | grep "^docker run")
+    # Use decomposerize to convert to docker run command
+    local docker_run_cmd=$(decomposerize < "$temp_compose" 2>&1 | grep "^docker run")
+
+    # Clean up temp file
+    rm -f "$temp_compose"
 
     if [ -z "$docker_run_cmd" ]; then
         echo -e "${RED}Error: decomposerize failed to generate docker run command${NC}" >&2
-        echo -e "This may indicate an issue with the docker-compose file format."
-        exit 1
+        return 1
     fi
 
-    # Post-process the generated command to ensure our specific requirements
-    # Replace the auto-generated container name with our deployment-specific name (includes port)
-    docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name [^ ]*/--name \"$container_name\"/")
-
-    # Replace the image if decomposerize output doesn't match
-    if ! echo "$docker_run_cmd" | grep -q "$full_image"; then
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|[^ ]*$|\"$full_image\"|")
-    fi
+    # Post-process the generated command for our specific requirements
 
     # Ensure detached mode (-d)
     if ! echo "$docker_run_cmd" | grep -q " -d "; then
         docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/^docker run /docker run -d /')
     fi
 
-    # Add port mapping if missing (decomposerize sometimes omits it)
+    # Fix port mapping for auto-assignment if needed
     if [ "$app_port" = "auto" ]; then
-        # Let Docker assign random port - use -p 3000 (no host port specified)
-        if ! echo "$docker_run_cmd" | grep -q " -p "; then
-            # Insert port mapping after container name
-            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p 3000/")
-        else
-            # Replace existing port mapping to let Docker auto-assign
-            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p 3000/")
-        fi
-    else
-        # Use specified port
-        if ! echo "$docker_run_cmd" | grep -q " -p "; then
-            # Insert port mapping after container name
-            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" -p \"$app_port:3000\"/")
-        else
-            # Replace existing port mapping with our specified port
-            docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:3000/-p \"$app_port:3000\"/")
-        fi
+        # Ensure no host port is specified (decomposerize might add one)
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/-p [0-9]*:3000/-p 3000/')
     fi
 
-    # Fix health check format (decomposerize outputs CMD,wget,--quiet,... but docker expects space-separated)
-    # Extract the health-cmd value, remove CMD prefix, replace commas with spaces
+    # Fix health check format (decomposerize outputs CMD,wget,... but docker expects space-separated)
     if echo "$docker_run_cmd" | grep -q -- "--health-cmd"; then
-        # Get the health-cmd value (everything between --health-cmd and next --)
         local health_value=$(echo "$docker_run_cmd" | sed -n 's/.*--health-cmd \([^ ]*\).*/\1/p' | sed 's/^CMD,//' | tr ',' ' ')
-        # Replace the old health-cmd with the fixed one (use | as delimiter to avoid conflicts with URLs)
         docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|--health-cmd [^ ]*|--health-cmd \"$health_value\"|")
     fi
 
     # Fix log options (decomposerize may output: --log-opt max-file=3,max-size=10m)
-    # Should be: --log-opt max-file=3 --log-opt max-size=10m
-    # Replace comma with space and add --log-opt prefix before each key=value after the first
     docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/--log-opt \([^,]*\),\([a-z-]*=\)/--log-opt \1 --log-opt \2/g')
-
-    # Replace network with our specific network
-    if echo "$docker_run_cmd" | grep -q " --net "; then
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--net [^ ]*/--network \"$network_name\"/")
-    elif echo "$docker_run_cmd" | grep -q " --network "; then
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--network [^ ]*/--network \"$network_name\"/")
-    else
-        # Add network if missing
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/--name \"$container_name\"/--name \"$container_name\" --network \"$network_name\"/")
-    fi
 
     echo "$docker_run_cmd"
 }
@@ -249,7 +333,6 @@ NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
 NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
 ENV_FILE=$(parse_config "environments.${ENVIRONMENT}.env_file" ".env.${ENVIRONMENT}")
 IMAGE_TAG=$(parse_config "environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
-DOCKER_COMPOSE_FILE=$(parse_config "environments.${ENVIRONMENT}.docker_compose_file" "docker-compose.${ENVIRONMENT}.yml")
 
 # Health check config
 HEALTH_ENDPOINT=$(parse_config "health_check.endpoint" "/api/health")
@@ -337,25 +420,11 @@ echo -e "  New container:       ${GREEN}$NEW_CONTAINER${NC}"
 echo -e "  Port:                ${GREEN}Auto-assigned by Docker${NC}"
 echo ""
 
-# Step 3: Prepare deployment files on Application Server
-echo -e "${BLUE}Step 2/10: Preparing deployment files on Application Server...${NC}"
+# Step 2: Check deployment files on Application Server
+echo -e "${BLUE}Step 2/10: Checking deployment files on Application Server...${NC}"
 
 # Create deployment directory if it doesn't exist
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" "mkdir -p $APP_DEPLOY_PATH"
-
-# Copy docker-compose file from local machine
-echo -e "  Copying docker-compose file..."
-if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
-    echo -e "${RED}Error: Docker Compose file not found locally: ${DOCKER_COMPOSE_FILE}${NC}"
-    exit 1
-fi
-
-scp -i "$APP_SSH_KEY" "$DOCKER_COMPOSE_FILE" "${APP_SERVER}:${APP_DEPLOY_PATH}/"
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Failed to copy docker-compose file to Application Server${NC}"
-    exit 1
-fi
-echo -e "  ✓ Docker Compose copied: ${DOCKER_COMPOSE_FILE}"
 
 # Check if .env file exists on Application Server (don't copy - may contain secrets)
 ENV_EXISTS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" "[ -f '$APP_DEPLOY_PATH/$ENV_FILE' ] && echo 'YES' || echo 'NO'")
@@ -428,15 +497,18 @@ echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
 echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
 echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
-# Build docker run command from docker-compose.yml
+# Build docker run command from deploy.config.yml
 FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
 CONTAINER_NAME="${NEW_CONTAINER}"
-NETWORK_NAME="${PRODUCT_NAME}_${ENVIRONMENT}-network"
 
-# Build the docker run command from docker-compose.yml (single source of truth)
+# Get network name from config with template substitution
+NETWORK_NAME_TEMPLATE=$(parse_config "docker.network_name" "${PRODUCT_NAME}-${ENVIRONMENT}-network")
+NETWORK_NAME="${NETWORK_NAME_TEMPLATE//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
+NETWORK_NAME="${NETWORK_NAME//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
+
+# Build the docker run command from deploy.config.yml (single source of truth)
 # Note: We pass "auto" for app_port to let Docker assign a random port
 DOCKER_RUN_CMD=$(build_docker_run_command \
-    "$DOCKER_COMPOSE_FILE" \
     "$CONTAINER_NAME" \
     "auto" \
     "$FULL_IMAGE" \
