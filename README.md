@@ -25,6 +25,7 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 **Key Concepts:**
 - **Auto-assigned Ports**: Docker assigns random ephemeral ports (no manual port management)
 - **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
+- **Network Aliases**: Stable DNS names for container-to-container communication (e.g., `http://app:3000`)
 - **Rolling Updates**: New container starts → health check passes → nginx switches → old container stops
 - **Config-driven**: Single `deploy.config.yml` defines all Docker runtime settings
 
@@ -100,94 +101,7 @@ deployment-module/
 
 ### Configuration File (`deploy.config.yml`)
 
-Each product creates a `deploy.config.yml` in their repository root. This is the **single source of truth** for all deployment settings:
-
-```yaml
-# Product Information
-product:
-  name: "linebot-nextjs"
-  description: "LINE Bot Next.js Application"
-
-# AWS Configuration
-aws:
-  profile: "lastlonger"
-  region: "ap-northeast-1"
-  account_id: "948190058961"
-  ecr_repository: "linebot-nextjs"
-
-# Server Configuration
-servers:
-  # System Server (nginx + SSL)
-  system:
-    host: "master.goodtogo.tw"
-    user: "ubuntu"
-    ssh_key: "~/.ssh/GoodToGo.pem"
-
-  # Application Server (Docker containers)
-  application:
-    host: "server.goodtogo.tw"              # Public IP/hostname for SSH
-    private_ip: "server"                     # Private IP for nginx upstream
-    user: "ubuntu"
-    ssh_key: "~/.ssh/GoodToGo.pem"
-    deploy_path: "/home/ubuntu/apps/linebot-nextjs"
-
-# Environment Configurations
-environments:
-  production:
-    env_file: ".env.production"              # Runtime env vars on App Server
-    image_tag: "production"                  # ECR image tag
-
-  staging:
-    env_file: ".env.staging"
-    image_tag: "staging"
-
-# Health Check Configuration
-health_check:
-  endpoint: "/api/health"                    # Health check endpoint
-
-  # Docker container health check (used by Docker daemon)
-  interval: "30s"                            # How often Docker checks
-  timeout: "10s"                             # Max time to wait
-  retries: 3                                 # Failed checks before unhealthy
-  start_period: "40s"                        # Grace period on startup
-
-  # Deployment verification (script polls Docker's health status)
-  max_retries: 30                            # Max polling attempts
-  retry_interval: 2                          # Seconds between polls
-
-# Deployment Options
-deployment:
-  connection_drain_time: 5                   # Seconds to wait before stopping old container
-  enable_auto_rollback: true                 # Rollback on failure
-
-# Docker Configuration
-docker:
-  # Image template (supports variable substitution)
-  image_template: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-
-  # Container runtime
-  container_port: 3000                       # Internal port app listens on
-  restart_policy: "unless-stopped"
-
-  # Network (template variables: ${PRODUCT_NAME}, ${ENVIRONMENT})
-  network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
-  network_driver: "bridge"
-
-  # Environment variables (set in container, separate from .env files)
-  env_vars:
-    NODE_ENV: "production"
-    PORT: "3000"
-
-  # Extra hosts
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
-
-  # Logging
-  logging:
-    driver: "json-file"
-    max_size: "10m"
-    max_file: 3
-```
+Each product creates a `deploy.config.yml` in their repository root. This is the **single source of truth** for all deployment settings
 
 ### No Docker Compose Files Needed!
 
@@ -318,8 +232,11 @@ This creates two image tags:
 6. **Update nginx**: Update upstream on System Server to point to new port
 7. **Test nginx Config**: Validate before reloading
 8. **Reload nginx**: Zero-downtime reload
-9. **Connection Draining**: Wait for existing connections to complete
-10. **Cleanup**: Stop and remove old containers
+9. **Graceful Shutdown**: Shutdown old containers gracefully
+   - Send SIGTERM to old container (graceful shutdown signal)
+   - Wait up to `graceful_shutdown_timeout` seconds (default: 30s)
+   - Application can finish current requests, close connections, cleanup resources
+   - Send SIGKILL if still running after timeout
 
 **Total Downtime: 0 seconds** ⚡
 
@@ -343,6 +260,102 @@ When building images:
   - `{repository}:{environment}` (e.g., `linebot-nextjs:production`)
   - `{repository}:{git-sha}` (e.g., `linebot-nextjs:a1b2c3d`)
 - Git SHA tag is code-specific, not environment-specific (promotes image reuse)
+
+### Network Aliases for Container Communication
+
+Each container gets a **stable DNS name** within its network, solving the dynamic container naming problem:
+
+**The Problem:**
+- Container names include timestamps: `linebot-nextjs-production-1760809226`
+- Names change on every deployment
+- Hard to reference from other containers
+
+**The Solution:**
+- Configure a network alias in `deploy.config.yml`:
+  ```yaml
+  docker:
+    network_alias: "app"  # Stable DNS name
+  ```
+
+**How to Use:**
+- Containers on the same network can communicate using the alias:
+  ```bash
+  # From another container on the same network:
+  curl http://app:3000/api/health
+
+  # Works even though actual container name is:
+  # linebot-nextjs-production-1760809226
+  ```
+
+**Benefits:**
+- ✅ No need to know the dynamic container name
+- ✅ Works across deployments (name stays the same)
+- ✅ Network-isolated (production and staging have separate networks)
+- ✅ Perfect for multi-container setups (app + database, app + redis, etc.)
+
+**Example Multi-Container Setup:**
+```yaml
+# deploy.config.yml
+docker:
+  network_alias: "web"  # Your app is accessible as "web"
+
+# Another container on the same network can:
+# - Connect to database: postgres:5432
+# - Connect to your app: web:3000
+# - Connect to redis: redis:6379
+```
+
+**Note:** This only works for container-to-container communication on the same Docker network. External access still uses the exposed port managed by nginx.
+
+### Graceful Shutdown
+
+When deploying a new container, the old container is shut down gracefully to ensure:
+- Current requests finish processing
+- Database connections are closed properly
+- Resources are cleaned up
+- Logs are flushed
+
+**How it works:**
+1. After nginx switches to the new container, the deployment script sends **SIGTERM** to the old container
+2. The application receives the signal and can handle it (e.g., stop accepting new requests, finish current work)
+3. Docker waits up to `graceful_shutdown_timeout` seconds (default: 30s)
+4. If the container is still running after timeout, Docker sends **SIGKILL** (force kill)
+
+**Configuration:**
+```yaml
+# deploy.config.yml
+deployment:
+  graceful_shutdown_timeout: 30  # Seconds to wait before force kill
+```
+
+**Application Support:**
+
+For Node.js apps, handle SIGTERM gracefully:
+```javascript
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, starting graceful shutdown...');
+
+  server.close(() => {
+    console.log('HTTP server closed');
+
+    // Close database connections, etc.
+    process.exit(0);
+  });
+
+  // Force exit if graceful shutdown takes too long
+  setTimeout(() => {
+    console.error('Forced shutdown due to timeout');
+    process.exit(1);
+  }, 28000); // Slightly less than Docker's timeout
+});
+```
+
+**Benefits:**
+- ✅ No abrupt connection terminations
+- ✅ Prevents data loss or corruption
+- ✅ Clean resource cleanup
+- ✅ Configurable timeout for different application needs
 
 ## Troubleshooting
 

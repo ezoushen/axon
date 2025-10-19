@@ -88,7 +88,7 @@ health_check:
 
 # Deployment Options
 deployment:
-  connection_drain_time: 5
+  graceful_shutdown_timeout: 30  # Seconds to wait for old container to shutdown gracefully
   enable_auto_rollback: true
 
 # Docker Configuration
@@ -98,6 +98,7 @@ docker:
   restart_policy: "unless-stopped"
   network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
   network_driver: "bridge"
+  network_alias: "app"  # Stable DNS name for container-to-container communication
   env_vars:
     NODE_ENV: "production"
     PORT: "3000"
@@ -111,6 +112,7 @@ docker:
 
 **Key Concepts:**
 - **Auto-assigned Ports**: Docker automatically assigns random ephemeral ports (no manual port configuration)
+- **Network Aliases**: Stable DNS names (e.g., `app`) for container-to-container communication
 - **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
 - **Config-driven**: All Docker runtime settings in this file (no docker-compose files needed)
 
@@ -263,8 +265,7 @@ git commit -m "Update deployment module"
 4. **Wait for Health Check**: Query Docker's health status (native health check)
 5. **Update nginx**: Update upstream on System Server to point to new port
 6. **Test & Reload nginx**: Zero-downtime reload
-7. **Connection Draining**: Wait for existing connections to complete
-8. **Cleanup**: Stop and remove old containers
+7. **Graceful Shutdown**: Shutdown old containers with configurable timeout (SIGTERM → SIGKILL)
 
 **Total Downtime: 0 seconds** ⚡
 
@@ -288,6 +289,32 @@ When building images:
   - `{repository}:{environment}` (e.g., `my-product:production`)
   - `{repository}:{git-sha}` (e.g., `my-product:a1b2c3d`)
 - Git SHA tag is code-specific, not environment-specific (promotes image reuse)
+
+### Network Aliases
+
+**Problem:** Container names change on every deployment due to timestamps.
+
+**Solution:** Configure a stable DNS name via `network_alias`:
+
+```yaml
+# deploy.config.yml
+docker:
+  network_alias: "app"
+```
+
+**Usage from other containers:**
+```bash
+# Other containers on the same network can use the alias
+curl http://app:3000/api/health
+
+# Instead of the changing container name
+curl http://my-product-production-1760809226:3000/api/health
+```
+
+**Benefits:**
+- Stable DNS name across deployments
+- Perfect for multi-container setups (app + database, app + redis)
+- Network-isolated (production/staging separate)
 
 ## Troubleshooting
 

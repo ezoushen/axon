@@ -199,10 +199,22 @@ EOF
     echo "        max-size: \"${log_max_size}\"" >> "$temp_compose"
     echo "        max-file: \"${log_max_file}\"" >> "$temp_compose"
 
-    # Add network
+    # Add network with alias
+    local network_alias_template=$(parse_config "docker.network_alias" "")
+    local network_alias="$network_alias_template"
+    # Substitute template variables
+    network_alias="${network_alias//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
+    network_alias="${network_alias//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
+
     echo "" >> "$temp_compose"
     echo "    networks:" >> "$temp_compose"
-    echo "      - ${network_name}" >> "$temp_compose"
+    if [ -n "$network_alias" ]; then
+        echo "      ${network_name}:" >> "$temp_compose"
+        echo "        aliases:" >> "$temp_compose"
+        echo "          - ${network_alias}" >> "$temp_compose"
+    else
+        echo "      - ${network_name}" >> "$temp_compose"
+    fi
 
     # Add networks section
     echo "" >> "$temp_compose"
@@ -231,6 +243,15 @@ build_docker_run_command() {
 
         # Fallback to basic command generation
         local cmd="docker run -d --name $container_name --network $network_name"
+
+        # Add network alias if configured
+        local network_alias_template=$(parse_config "docker.network_alias" "")
+        local network_alias="$network_alias_template"
+        # Substitute template variables
+        network_alias="${network_alias//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
+        network_alias="${network_alias//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
+        [ -n "$network_alias" ] && cmd="$cmd --network-alias $network_alias"
+
         [ "$app_port" = "auto" ] && cmd="$cmd -p $container_port" || cmd="$cmd -p $app_port:$container_port"
         cmd="$cmd --env-file $env_file"
         cmd="$cmd --restart $(parse_config 'docker.restart_policy' 'unless-stopped')"
@@ -343,7 +364,7 @@ MAX_RETRIES=$(parse_config "health_check.max_retries" "30")
 RETRY_INTERVAL=$(parse_config "health_check.retry_interval" "2")
 
 # Deployment config
-DRAIN_TIME=$(parse_config "deployment.connection_drain_time" "5")
+GRACEFUL_SHUTDOWN_TIMEOUT=$(parse_config "deployment.graceful_shutdown_timeout" "30")
 AUTO_ROLLBACK=$(parse_config "deployment.enable_auto_rollback" "true")
 
 # Docker config
@@ -398,7 +419,7 @@ if [ ! -f "$APP_SSH_KEY" ]; then
 fi
 
 # Step 1: Detect current deployment
-echo -e "${BLUE}Step 1/10: Detecting current deployment...${NC}"
+echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
 
 # Try to get current port from nginx upstream file
 CURRENT_PORT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" \
@@ -427,7 +448,7 @@ echo -e "  Port:                ${GREEN}Auto-assigned by Docker${NC}"
 echo ""
 
 # Step 2: Check deployment files on Application Server
-echo -e "${BLUE}Step 2/10: Checking deployment files on Application Server...${NC}"
+echo -e "${BLUE}Step 2/9: Checking deployment files on Application Server...${NC}"
 
 # Create deployment directory if it doesn't exist
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" "mkdir -p $APP_DEPLOY_PATH"
@@ -445,7 +466,7 @@ echo -e "  ✓ Environment file exists: ${ENV_FILE}"
 echo ""
 
 # Step 4: Authenticate with ECR on Application Server and pull latest image
-echo -e "${BLUE}Step 3/10: Pulling latest image from ECR on Application Server...${NC}"
+echo -e "${BLUE}Step 3/9: Pulling latest image from ECR on Application Server...${NC}"
 echo -e "  Image: ${YELLOW}${FULL_IMAGE}${NC}"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
@@ -499,7 +520,7 @@ EOF
 fi
 
 # Step 4: Start new container on Application Server
-echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
+echo -e "${BLUE}Step 4/9: Starting new container on Application Server...${NC}"
 echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
 echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
@@ -576,7 +597,7 @@ echo -e "  ${GREEN}✓ Docker assigned port: ${APP_PORT}${NC}"
 echo ""
 
 # Step 5: Wait for Docker health check on Application Server
-echo -e "${BLUE}Step 5/10: Waiting for health check on Application Server...${NC}"
+echo -e "${BLUE}Step 5/9: Waiting for health check on Application Server...${NC}"
 
 RETRY_COUNT=0
 
@@ -627,7 +648,7 @@ fi
 echo ""
 
 # Step 7: Update nginx upstream on System Server
-echo -e "${BLUE}Step 6/10: Updating System Server nginx...${NC}"
+echo -e "${BLUE}Step 6/9: Updating System Server nginx...${NC}"
 
 UPSTREAM_CONFIG="upstream $NGINX_UPSTREAM_NAME {
     server $APP_UPSTREAM_IP:$APP_PORT;
@@ -644,7 +665,7 @@ echo -e "  ✓ nginx upstream updated to port $APP_PORT"
 echo ""
 
 # Step 8: Test nginx configuration on System Server
-echo -e "${BLUE}Step 7/10: Testing nginx configuration on System Server...${NC}"
+echo -e "${BLUE}Step 7/9: Testing nginx configuration on System Server...${NC}"
 
 NGINX_TEST_OUTPUT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1)
 
@@ -682,7 +703,7 @@ echo -e "  ✓ nginx configuration is valid"
 echo ""
 
 # Step 9: Reload nginx (ZERO DOWNTIME!)
-echo -e "${BLUE}Step 8/10: Reloading nginx on System Server (zero-downtime)...${NC}"
+echo -e "${BLUE}Step 8/9: Reloading nginx on System Server (zero-downtime)...${NC}"
 
 ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -s reload"
 
@@ -695,36 +716,40 @@ echo -e "${GREEN}  ✓ nginx reloaded successfully!${NC}"
 echo -e "${GREEN}  ✓ Traffic now flows to new container (port $APP_PORT)${NC}"
 echo ""
 
-# Step 10: Connection draining
-echo -e "${BLUE}Step 9/10: Waiting for connection draining (${DRAIN_TIME}s)...${NC}"
-sleep $DRAIN_TIME
-echo ""
-
-# Step 11: Stop old containers on Application Server
-echo -e "${BLUE}Step 10/10: Cleaning up old containers on Application Server...${NC}"
+# Step 9: Graceful shutdown of old containers
+echo -e "${BLUE}Step 9/9: Gracefully shutting down old containers (timeout: ${GRACEFUL_SHUTDOWN_TIMEOUT}s)...${NC}"
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 # Find all containers for this product/environment except the new one
 NEW_CONTAINER="${CONTAINER_NAME}"
 PRODUCT_ENV_PREFIX="${PRODUCT_NAME}-${ENVIRONMENT}"
+TIMEOUT="${GRACEFUL_SHUTDOWN_TIMEOUT}"
 
 # Get list of all containers for this product/environment
 OLD_CONTAINERS=\$(docker ps -a --filter "name=\${PRODUCT_ENV_PREFIX}" --format '{{.Names}}' | grep -v "^\${NEW_CONTAINER}\$" || true)
 
 if [ -z "\$OLD_CONTAINERS" ]; then
-    echo "  No old containers to clean up"
+    echo "  No old containers to shutdown"
 else
-    echo "  Cleaning up old containers:"
+    echo "  Initiating graceful shutdown of old containers:"
     for container in \$OLD_CONTAINERS; do
-        echo "    Stopping \$container..."
-        docker stop "\$container" 2>/dev/null || true
+        echo "    Sending SIGTERM to \$container..."
+        echo "    Waiting up to \${TIMEOUT}s for graceful shutdown..."
+
+        # docker stop sends SIGTERM, waits for timeout, then sends SIGKILL if needed
+        # This gives the application time to:
+        # - Finish processing current requests
+        # - Close database connections
+        # - Clean up resources
+        # - Flush logs
+        docker stop --time "\${TIMEOUT}" "\$container" 2>/dev/null || true
         docker rm "\$container" 2>/dev/null || true
-        echo "    ✓ \$container removed"
+        echo "    ✓ \$container shutdown complete"
     done
 fi
 EOF
 
-echo -e "  ✓ Cleanup complete"
+echo -e "  ✓ Graceful shutdown complete"
 echo ""
 
 # Success!

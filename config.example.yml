@@ -66,10 +66,8 @@ health_check:
 
 # Deployment Options
 deployment:
-  connection_drain_time: 5
+  graceful_shutdown_timeout: 30  # Seconds to wait for old container to shutdown gracefully (SIGTERM → SIGKILL)
   enable_auto_rollback: true
-  keep_old_images: 3
-  log_retention: 30
 
 # Docker Configuration
 docker:
@@ -84,6 +82,7 @@ docker:
   # Template variables: ${PRODUCT_NAME}, ${ENVIRONMENT}
   network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
   network_driver: "bridge"
+  network_alias: "app"  # Stable DNS name (supports ${PRODUCT_NAME}, ${ENVIRONMENT} variables)
 
   # Common environment variables for all environments
   # These are set in the container, separate from .env files
