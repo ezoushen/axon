@@ -162,19 +162,19 @@ deploy.config.yml
 
 ```bash
 # Auto-detect git SHA (aborts if uncommitted changes)
-./axon.sh production
+./axon production
 
 # Use custom config file
-./axon.sh --config my-config.yml production
+./axon --config my-config.yml production
 
 # Use specific git SHA (ignores uncommitted changes)
-./axon.sh production abc123
+./axon production abc123
 
 # Skip git SHA tagging
-./axon.sh --skip-git production
+./axon --skip-git production
 
 # Skip build, only deploy (use existing image)
-./axon.sh --skip-build staging
+./axon --skip-build staging
 ```
 
 ### Separate Steps
@@ -233,7 +233,7 @@ deploy.config.yml
 your-product/
 ├──                          # AXON (git submodule)
 │   ├── README.md                  # Module documentation
-│   ├── axon.sh                    # Main entry point: build → push → deploy
+│   ├── axon                    # Main entry point: build → push → deploy
 │   ├── config.example.yml         # Example configuration
 │   ├── tools/
 │   │   ├── build.sh              # Build Docker image
@@ -370,7 +370,7 @@ Check SSH key path in `deploy.config.yml` and ensure you have access to Applicat
 3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
 4. **Monitor deployments** - Watch logs during deployment: `./tools/logs.sh production follow`
 5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
-6. **Use full pipeline** - `./axon.sh` handles everything (build → push → deploy)
+6. **Use full pipeline** - `./axon` handles everything (build → push → deploy)
 
 ## Example Deployment Workflow
 
@@ -380,14 +380,14 @@ git add .
 git commit -m "Add new feature"
 
 # 2. Full pipeline: build, push, and deploy to staging
-./axon.sh staging
+./axon staging
 
 # 3. Verify staging deployment
 ./tools/health-check.sh staging
 ./tools/logs.sh staging
 
 # 4. If staging looks good, deploy to production
-./axon.sh production
+./axon production
 
 # 5. Monitor production
 ./tools/status.sh production
@@ -411,7 +411,7 @@ git commit -m "Add new feature"
 
 # Deploy same image to production without rebuilding
 # (manually tag the staging image as production in ECR first)
-./axon.sh --skip-build production
+./axon --skip-build production
 ```
 
 ### Multiple Products on Same Servers

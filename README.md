@@ -103,8 +103,8 @@ EOF
 
 ```bash
 # Full pipeline
-./axon.sh production
-./axon.sh --config my-config.yml staging
+./axon production
+./axon --config my-config.yml staging
 
 # Individual steps
 ./tools/build.sh production
@@ -117,7 +117,7 @@ EOF
 ```
 axon/
 ├── README.md                    # This file
-├── axon.sh                      # Main entry point: build → push → deploy
+├── axon                      # Main entry point: build → push → deploy
 ├── config.example.yml           # Example configuration (copy to deploy.config.yml)
 ├── setup/
 │   └── setup-local-machine.sh  # Install required tools on local machine
@@ -153,10 +153,10 @@ See `deploy/config.example.yml` for all available options with `[REQUIRED]` and 
 ### Deploy
 
 ```bash
-./axon.sh production                    # Full pipeline with git SHA
-./axon.sh --skip-git staging           # Skip git SHA tagging
-./axon.sh --skip-build production      # Deploy only (use existing image)
-./axon.sh --config custom.yml staging  # Custom config
+./axon production                    # Full pipeline with git SHA
+./axon --skip-git staging           # Skip git SHA tagging
+./axon --skip-build production      # Deploy only (use existing image)
+./axon --config custom.yml staging  # Custom config
 ```
 
 ### Build & Push

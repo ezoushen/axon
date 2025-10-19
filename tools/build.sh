@@ -258,7 +258,7 @@ fi
 echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
 echo ""
 
-# Output git SHA for capture by parent script (e.g., axon.sh)
+# Output git SHA for capture by parent script (e.g., axon)
 # Format: GIT_SHA_DETECTED=<sha>
 if [ -n "$GIT_SHA" ]; then
     echo "GIT_SHA_DETECTED=${GIT_SHA}"

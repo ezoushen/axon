@@ -312,7 +312,7 @@ if [ ${#MISSING_TOOLS[@]} -eq 0 ]; then
     echo "   cp config.example.yml deploy.config.yml"
     echo ""
     echo "4. Run deployment:"
-    echo "   ./axon.sh production"
+    echo "   ./axon production"
     echo ""
 else
     echo -e "${RED}==================================================${NC}"

@@ -2,10 +2,10 @@
 # AXON - Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
 # Runs from LOCAL MACHINE
 #
-# Usage: ./axon.sh [OPTIONS] <environment>
-# Example: ./axon.sh production
-# Example: ./axon.sh --skip-build staging
-# Example: ./axon.sh --config custom.yml production abc123
+# Usage: ./axon [OPTIONS] <environment>
+# Example: ./axon production
+# Example: ./axon --skip-build staging
+# Example: ./axon --config custom.yml production abc123
 
 set -e
 
