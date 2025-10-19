@@ -71,17 +71,14 @@ deployment:
 
 # Docker Configuration
 docker:
-  # Image configuration (template variables: ${AWS_ACCOUNT_ID}, ${AWS_REGION}, ${ECR_REPOSITORY}, ${IMAGE_TAG})
-  image_template: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-
   # Container runtime configuration
   container_port: 3000                      # Internal port the app listens on inside container
   restart_policy: "unless-stopped"
 
   # Network configuration
   # Template variables: ${PRODUCT_NAME}, ${ENVIRONMENT}
-  network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
   network_driver: "bridge"
+  network_name: "application"
   network_alias: "app"  # Stable DNS name (supports ${PRODUCT_NAME}, ${ENVIRONMENT} variables)
 
   # Common environment variables for all environments

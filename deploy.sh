@@ -101,10 +101,11 @@ generate_docker_compose_from_config() {
     local full_image=$3
     local env_file=$4
     local network_name=$5
-    local container_port=$6
+    local network_alias=$6
+    local container_port=$7
 
     # Create temporary docker-compose file
-    local temp_compose=$(mktemp /tmp/docker-compose-XXXXXX.yml)
+    local temp_compose=$(mktemp /tmp/docker-compose.XXXXXX)
 
     # Build docker-compose.yml content
     cat > "$temp_compose" <<EOF
@@ -199,13 +200,6 @@ EOF
     echo "        max-size: \"${log_max_size}\"" >> "$temp_compose"
     echo "        max-file: \"${log_max_file}\"" >> "$temp_compose"
 
-    # Add network with alias
-    local network_alias_template=$(parse_config "docker.network_alias" "")
-    local network_alias="$network_alias_template"
-    # Substitute template variables
-    network_alias="${network_alias//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
-    network_alias="${network_alias//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
-
     echo "" >> "$temp_compose"
     echo "    networks:" >> "$temp_compose"
     if [ -n "$network_alias" ]; then
@@ -233,31 +227,15 @@ build_docker_run_command() {
     local full_image=$3
     local env_file=$4
     local network_name=$5
-    local container_port=$6
+    local network_alias=$6
+    local container_port=$7
 
     # Check if decomposerize is available (optional but recommended)
     if ! command -v decomposerize &> /dev/null; then
-        echo -e "${YELLOW}Warning: decomposerize not found, using basic docker run generation${NC}" >&2
-        echo -e "${YELLOW}Install decomposerize for full Docker feature support:${NC}" >&2
-        echo -e "${YELLOW}  npm install -g decomposerize${NC}" >&2
-
-        # Fallback to basic command generation
-        local cmd="docker run -d --name $container_name --network $network_name"
-
-        # Add network alias if configured
-        local network_alias_template=$(parse_config "docker.network_alias" "")
-        local network_alias="$network_alias_template"
-        # Substitute template variables
-        network_alias="${network_alias//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
-        network_alias="${network_alias//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
-        [ -n "$network_alias" ] && cmd="$cmd --network-alias $network_alias"
-
-        [ "$app_port" = "auto" ] && cmd="$cmd -p $container_port" || cmd="$cmd -p $app_port:$container_port"
-        cmd="$cmd --env-file $env_file"
-        cmd="$cmd --restart $(parse_config 'docker.restart_policy' 'unless-stopped')"
-        cmd="$cmd $full_image"
-        echo "$cmd"
-        return 0
+        echo -e "${RED}Error: decomposerize not found, using basic docker run generation${NC}" >&2
+        echo -e "${RED}Install decomposerize for full Docker feature support:${NC}" >&2
+        echo -e "${RED}  npm install -g decomposerize${NC}" >&2
+        return 1
     fi
 
     # Generate temporary docker-compose.yml from config
@@ -267,6 +245,7 @@ build_docker_run_command() {
         "$full_image" \
         "$env_file" \
         "$network_name" \
+        "$network_alias" \
         "$container_port")
 
     # Debug: Show generated compose file
@@ -529,9 +508,12 @@ FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITO
 CONTAINER_NAME="${NEW_CONTAINER}"
 
 # Get network name from config with template substitution
-NETWORK_NAME_TEMPLATE=$(parse_config "docker.network_name" "${PRODUCT_NAME}-${ENVIRONMENT}-network")
-NETWORK_NAME="${NETWORK_NAME_TEMPLATE//\$\{PRODUCT_NAME\}/$PRODUCT_NAME}"
-NETWORK_NAME="${NETWORK_NAME//\$\{ENVIRONMENT\}/$ENVIRONMENT}"
+NETWORK_NAME_TEMPLATE=$(parse_config "docker.network_name" "")
+eval "NETWORK_NAME=\"$NETWORK_NAME_TEMPLATE\""
+
+# Add network alias if configured
+NETWORK_ALIAS_TEMPLATE=$(parse_config "docker.network_alias" "")
+eval "NETWORK_ALIAS=\"$NETWORK_ALIAS_TEMPLATE\""
 
 # Build the docker run command from deploy.config.yml (single source of truth)
 # Note: We pass "auto" for app_port to let Docker assign a random port
@@ -541,6 +523,7 @@ DOCKER_RUN_CMD=$(build_docker_run_command \
     "$FULL_IMAGE" \
     "$ENV_FILE" \
     "$NETWORK_NAME" \
+    "$NETWORK_ALIAS" \
     "$CONTAINER_PORT")
 
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
