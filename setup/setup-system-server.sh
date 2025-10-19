@@ -112,8 +112,8 @@ APP_SERVER_HOST=$(parse_config ".servers.application.host" "")
 APP_SERVER_PRIVATE_IP=$(parse_config ".servers.application.private_ip" "")
 
 SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
-SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "~/.ssh/system_server_key")
+SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "")
+SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "")
 
 # Allow environment variable override
 UPSTREAM_DIR=${UPSTREAM_DIR:-"/etc/nginx/upstreams"}

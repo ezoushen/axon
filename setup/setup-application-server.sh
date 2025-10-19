@@ -108,13 +108,13 @@ fi
 # Load configuration
 echo -e "${BLUE}Loading configuration...${NC}"
 APP_SERVER_HOST=$(parse_config ".servers.application.host" "")
-APP_SERVER_USER=$(parse_config ".servers.application.user" "ubuntu")
-APP_SERVER_SSH_KEY=$(parse_config ".servers.application.ssh_key" "~/.ssh/application_server_key")
-APP_SERVER_DEPLOY_PATH=$(parse_config ".servers.application.deploy_path" "/home/ubuntu/app")
+APP_SERVER_USER=$(parse_config ".servers.application.user" "")
+APP_SERVER_SSH_KEY=$(parse_config ".servers.application.ssh_key" "")
+APP_SERVER_DEPLOY_PATH=$(parse_config ".servers.application.deploy_path" "")
 
 SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
-SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "~/.ssh/system_server_key")
+SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "")
+SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "")
 
 AWS_PROFILE=$(parse_config ".aws.profile" "default")
 

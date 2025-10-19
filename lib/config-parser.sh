@@ -123,14 +123,14 @@ load_config() {
 
     # Application Server config
     export APPLICATION_SERVER_HOST=$(parse_yaml_key "servers.application.host" "")
-    export APPLICATION_SERVER_USER=$(parse_yaml_key "servers.application.user" "ubuntu")
+    export APPLICATION_SERVER_USER=$(parse_yaml_key "servers.application.user" "")
     export APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key "servers.application.ssh_key" "")
     export APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
     export APPLICATION_SERVER_PRIVATE_IP=$(parse_yaml_key "servers.application.private_ip" "")
 
     # Environment-specific config
     export DOMAIN=$(parse_yaml_key "environments.${env}.domain" "")
-    export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_path" "/home/ubuntu/app/.env.${env}")
+    export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_path" "")
     export IMAGE_TAG=$(parse_yaml_key "environments.${env}.image_tag" "$env")
 
     # Health check config
