@@ -42,6 +42,7 @@ GLOBAL OPTIONS:
   -h, --help               Show help for command
   -v, --verbose            Verbose output
   --dry-run                Show what would be done without executing
+  --version                Show AXON version
 
 EXAMPLES:
   axon build production --skip-git

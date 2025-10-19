@@ -1,4 +1,4 @@
-# AXON v2.0
+# AXON
 
 Zero-downtime deployment orchestration for Docker + nginx. Deploy instantly, switch seamlessly.
 
@@ -237,6 +237,7 @@ axon setup app-server --config custom.yml
 -v, --verbose          # Verbose output
 --dry-run              # Show what would be done
 -h, --help             # Show help
+--version              # Show AXON version
 ```
 
 ### Command-Specific Help

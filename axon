@@ -464,9 +464,20 @@ if [ $# -eq 0 ]; then
     exit 0
 fi
 
-# Check for global --help or -h
+# Check for global --help or --version
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     show_help
+    exit 0
+fi
+
+if [ "$1" = "--version" ]; then
+    VERSION_FILE="$SCRIPT_DIR/VERSION"
+    if [ -f "$VERSION_FILE" ]; then
+        VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+        echo "AXON version $VERSION"
+    else
+        echo "AXON version unknown (VERSION file not found)"
+    fi
     exit 0
 fi
 
