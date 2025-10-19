@@ -115,12 +115,18 @@ load_config() {
     export AWS_ACCOUNT_ID=$(parse_yaml_key "aws.account_id" "")
     export ECR_REPOSITORY=$(parse_yaml_key "aws.ecr_repository" "$PRODUCT_NAME")
 
-    # Server config
+    # System Server config
     export SYSTEM_SERVER_HOST=$(parse_yaml_key "servers.system.host" "")
     export SYSTEM_SERVER_USER=$(parse_yaml_key "servers.system.user" "")
     export SSH_KEY=$(parse_yaml_key "servers.system.ssh_key" "")
     export SSH_KEY="${SSH_KEY/#\~/$HOME}"
-    export APPLICATION_SERVER_IP=$(parse_yaml_key "servers.application.host" "localhost")
+
+    # Application Server config
+    export APPLICATION_SERVER_HOST=$(parse_yaml_key "servers.application.host" "")
+    export APPLICATION_SERVER_USER=$(parse_yaml_key "servers.application.user" "ubuntu")
+    export APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key "servers.application.ssh_key" "")
+    export APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
+    export APPLICATION_SERVER_PRIVATE_IP=$(parse_yaml_key "servers.application.private_ip" "")
 
     # Environment-specific config
     export DOMAIN=$(parse_yaml_key "environments.${env}.domain" "")
@@ -131,4 +137,11 @@ load_config() {
     export HEALTH_ENDPOINT=$(parse_yaml_key "health_check.endpoint" "/api/health")
     export MAX_RETRIES=$(parse_yaml_key "health_check.max_retries" "30")
     export RETRY_INTERVAL=$(parse_yaml_key "health_check.retry_interval" "2")
+
+    # Deployment config
+    export GRACEFUL_SHUTDOWN_TIMEOUT=$(parse_yaml_key "deployment.graceful_shutdown_timeout" "30")
+    export AUTO_ROLLBACK=$(parse_yaml_key "deployment.enable_auto_rollback" "true")
+
+    # Docker config
+    export CONTAINER_PORT=$(parse_yaml_key "docker.container_port" "3000")
 }

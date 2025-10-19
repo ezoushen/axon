@@ -100,6 +100,7 @@ fi
 source "$MODULE_DIR/lib/config-parser.sh"
 
 # Wrapper function for backward compatibility (parse_config uses different syntax than parse_yaml_key)
+# Still needed for Docker-specific config that's not in load_config
 parse_config() {
     local key=$1
     local default=$2
@@ -327,56 +328,32 @@ if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
     exit 1
 fi
 
-# Product config
-PRODUCT_NAME=$(parse_config ".product.name" "")
+# Load all common configuration using load_config
+load_config "$ENVIRONMENT"
+
+# Additional product-specific config not in load_config
 PRODUCT_DESC=$(parse_config ".product.description" "")
 
-# AWS config
-AWS_PROFILE=$(parse_config ".aws.profile" "")
-AWS_REGION=$(parse_config ".aws.region" "")
-AWS_ACCOUNT_ID=$(parse_config ".aws.account_id" "")
-ECR_REPOSITORY=$(parse_config ".aws.ecr_repository" "$PRODUCT_NAME")
-
-# System Server config
-SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
-SYSTEM_SSH_KEY=$(parse_config ".servers.system.ssh_key" "")
-SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"
-
-# Application Server config
-APP_SERVER_HOST=$(parse_config ".servers.application.host" "")
-APP_SERVER_PRIVATE_IP=$(parse_config ".servers.application.private_ip" "")
-APP_SERVER_USER=$(parse_config ".servers.application.user" "ubuntu")
-APP_SSH_KEY=$(parse_config ".servers.application.ssh_key" "")
-APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
+# Use consistent variable names with load_config (for backward compatibility with this script)
+APP_SERVER_HOST="$APPLICATION_SERVER_HOST"
+APP_SERVER_USER="$APPLICATION_SERVER_USER"
+APP_SSH_KEY="$APPLICATION_SERVER_SSH_KEY"
+APP_SERVER_PRIVATE_IP="$APPLICATION_SERVER_PRIVATE_IP"
 
 # Use private IP for nginx upstream (falls back to public host if not set)
 APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 
-# Environment-specific config
-DOMAIN=$(parse_config ".environments.${ENVIRONMENT}.domain" "")
 # Auto-generate nginx upstream file path and name (same logic as setup script)
 # File path: /etc/nginx/upstreams/{product}-{environment}.conf (keeps hyphens)
 # Upstream name: {product}_{environment}_backend (hyphens converted to underscores)
 NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
 NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
-ENV_PATH=$(parse_config ".environments.${ENVIRONMENT}.env_path" "")
-IMAGE_TAG=$(parse_config ".environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
+
+# Use ENV_FILE_PATH from load_config, rename to ENV_PATH for this script
+ENV_PATH="$ENV_FILE_PATH"
 
 # Extract directory from env_path for deployment operations
 APP_DEPLOY_PATH=$(dirname "$ENV_PATH")
-
-# Health check config
-HEALTH_ENDPOINT=$(parse_config ".health_check.endpoint" "")
-MAX_RETRIES=$(parse_config ".health_check.max_retries" "30")
-RETRY_INTERVAL=$(parse_config ".health_check.retry_interval" "2")
-
-# Deployment config
-GRACEFUL_SHUTDOWN_TIMEOUT=$(parse_config ".deployment.graceful_shutdown_timeout" "30")
-AUTO_ROLLBACK=$(parse_config ".deployment.enable_auto_rollback" "true")
-
-# Docker config
-CONTAINER_PORT=$(parse_config ".docker.container_port" "3000")
 
 # Validate required configuration
 MISSING_CONFIG=()
@@ -414,8 +391,8 @@ ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 FULL_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
 # Check SSH keys exist
-if [ ! -f "$SYSTEM_SSH_KEY" ]; then
-    echo -e "${RED}Error: System Server SSH key not found: $SYSTEM_SSH_KEY${NC}"
+if [ ! -f "$SSH_KEY" ]; then
+    echo -e "${RED}Error: System Server SSH key not found: $SSH_KEY${NC}"
     echo "Please run setup scripts first or check your configuration."
     exit 1
 fi
@@ -430,7 +407,7 @@ fi
 echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
 
 # Try to get current port from nginx upstream file
-CURRENT_PORT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" \
+CURRENT_PORT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" \
     "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null" || echo "")
 
 # Try to find current container (may have timestamp suffix)
@@ -666,7 +643,7 @@ UPSTREAM_CONFIG="upstream $NGINX_UPSTREAM_NAME {
     server $APP_UPSTREAM_IP:$APP_PORT;
 }"
 
-ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
+ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Failed to update nginx upstream file${NC}"
@@ -679,7 +656,7 @@ echo ""
 # Step 8: Test nginx configuration on System Server
 echo -e "${BLUE}Step 7/9: Testing nginx configuration on System Server...${NC}"
 
-NGINX_TEST_OUTPUT=$(ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1)
+NGINX_TEST_OUTPUT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1)
 
 if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
     echo -e "${RED}Error: nginx configuration test failed!${NC}"
@@ -693,7 +670,7 @@ if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
     ROLLBACK_CONFIG="upstream $NGINX_UPSTREAM_NAME {
     server $APP_UPSTREAM_IP:$CURRENT_PORT;
 }"
-    ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
+    ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
 
     # Stop new container
     echo -e "${YELLOW}Stopping new container on Application Server...${NC}"
@@ -717,7 +694,7 @@ echo ""
 # Step 9: Reload nginx (ZERO DOWNTIME!)
 echo -e "${BLUE}Step 8/9: Reloading nginx on System Server (zero-downtime)...${NC}"
 
-ssh -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -s reload"
+ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -s reload"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: nginx reload failed!${NC}"
@@ -782,7 +759,7 @@ echo ""
 echo -e "${CYAN}Useful Commands:${NC}"
 echo -e "  View logs:        ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker logs -f ${CONTAINER_NAME}'${NC}"
 echo -e "  Container status: ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker ps | grep ${PRODUCT_NAME}-${ENVIRONMENT}'${NC}"
-echo -e "  nginx upstream:   ${BLUE}ssh -i $SYSTEM_SSH_KEY $SYSTEM_SERVER 'cat $NGINX_UPSTREAM_FILE'${NC}"
+echo -e "  nginx upstream:   ${BLUE}ssh -i $SSH_KEY $SYSTEM_SERVER 'cat $NGINX_UPSTREAM_FILE'${NC}"
 echo ""
 
 # Display container status on Application Server

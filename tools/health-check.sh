@@ -79,35 +79,30 @@ fi
 # Source config parser
 source "$MODULE_DIR/lib/config-parser.sh"
 
-# Get Application Server SSH details
-APP_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
-APP_SERVER_USER=$(parse_yaml_key ".servers.application.user" "ubuntu")
-APP_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "~/.ssh/application_server_key")
-APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
-
 check_environment() {
     local env=$1
 
+    # Load all config for this environment
     load_config "$env"
 
     echo -e "${BLUE}Checking ${PRODUCT_NAME} - ${env}:${NC}"
 
     # Check via Application Server (container directly via localhost)
-    if [ -z "$APP_SERVER_HOST" ]; then
+    if [ -z "$APPLICATION_SERVER_HOST" ]; then
         echo -e "  ${YELLOW}⚠ Application Server not configured${NC}"
         return 1
     fi
 
-    if [ ! -f "$APP_SSH_KEY" ]; then
-        echo -e "  ${RED}✗ SSH key not found: $APP_SSH_KEY${NC}"
+    if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
+        echo -e "  ${RED}✗ SSH key not found: $APPLICATION_SERVER_SSH_KEY${NC}"
         return 1
     fi
 
-    APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
+    APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
 
     # Find the most recent container for this environment (timestamp-based naming)
     # Container name format: ${PRODUCT_NAME}-${env}-${timestamp}
-    CONTAINER_NAME=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    CONTAINER_NAME=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps -a --filter 'name=${PRODUCT_NAME}-${env}-' --format '{{.Names}}' | sort -r | head -n 1" 2>/dev/null)
 
     if [ -z "$CONTAINER_NAME" ]; then
@@ -118,7 +113,7 @@ check_environment() {
     echo -e "  Container:      ${CYAN}${CONTAINER_NAME}${NC}"
 
     # Get port from the container
-    PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    PORT=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker port '${CONTAINER_NAME}' 3000 2>/dev/null | cut -d: -f2" 2>/dev/null)
 
     if [ -z "$PORT" ]; then
@@ -131,7 +126,7 @@ check_environment() {
     echo -e "  Health URL:     ${CYAN}${URL}${NC} (on Application Server)"
 
     # Perform health check via SSH
-    HTTP_CODE=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    HTTP_CODE=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$URL' 2>/dev/null")
 
     if [ "$HTTP_CODE" == "200" ]; then

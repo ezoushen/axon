@@ -79,26 +79,27 @@ fi
 # Source config parser
 source "$MODULE_DIR/lib/config-parser.sh"
 
-# Load product name
+# Load product name only for initial setup (don't need full config yet)
 PRODUCT_NAME=$(parse_yaml_key "product.name" "my-product")
 
 # Get Application Server SSH details
-APP_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
-APP_SERVER_USER=$(parse_yaml_key ".servers.application.user" "ubuntu")
-APP_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "~/.ssh/application_server_key")
-APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
+# We load these early since they're needed for all environments
+APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
+APPLICATION_SERVER_USER=$(parse_yaml_key ".servers.application.user" "ubuntu")
+APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "~/.ssh/application_server_key")
+APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
 
-if [ -z "$APP_SERVER_HOST" ]; then
+if [ -z "$APPLICATION_SERVER_HOST" ]; then
     echo -e "${RED}Error: Application Server host not configured${NC}"
     exit 1
 fi
 
-if [ ! -f "$APP_SSH_KEY" ]; then
-    echo -e "${RED}Error: SSH key not found: $APP_SSH_KEY${NC}"
+if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
+    echo -e "${RED}Error: SSH key not found: $APPLICATION_SERVER_SSH_KEY${NC}"
     exit 1
 fi
 
-APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
+APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
 
 # Build container name filter based on environment
 if [ "$ENVIRONMENT" == "all" ]; then
@@ -117,7 +118,7 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Get containers for this product/environment from Application Server
-CONTAINERS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+CONTAINERS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}' | sort")
 
 if [ -z "$CONTAINERS" ]; then
@@ -132,7 +133,7 @@ fi
 # Summary
 echo -e "${CYAN}Container Summary:${NC}"
 echo ""
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}' \
      --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
 echo ""
@@ -142,7 +143,7 @@ echo -e "${CYAN}Detailed Status:${NC}"
 echo ""
 
 # Get detailed info for all containers in one SSH call
-CONTAINER_DETAILS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<'EOF_REMOTE'
+CONTAINER_DETAILS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<'EOF_REMOTE'
 CONTAINER_FILTER="'"$CONTAINER_FILTER"'"
 CONTAINERS=$(docker ps -a --filter "name=${CONTAINER_FILTER}" --format "{{.Names}}" | sort)
 
@@ -232,11 +233,11 @@ echo ""
 # Get container names and pass them directly to docker stats
 # (--filter not supported in older Docker versions)
 # Convert newlines to spaces so they're passed as separate arguments, not separate commands
-CONTAINER_NAMES=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+CONTAINER_NAMES=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
 
 if [ -n "$CONTAINER_NAMES" ]; then
-    ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' ${CONTAINER_NAMES}"
 else
     echo -e "${YELLOW}No running containers to show stats${NC}"
