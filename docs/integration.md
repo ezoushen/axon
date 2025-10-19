@@ -4,7 +4,7 @@ How to integrate the deployment module into your product.
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
+- Docker installed
 - AWS CLI configured with appropriate profile
 - SSH access between Application Server and System Server
 - nginx running on System Server
@@ -38,126 +38,178 @@ cp deploy/config.example.yml deploy.config.yml
 Edit `deploy.config.yml` with your product's settings:
 
 ```yaml
+# Product Information
 product:
-  name: "my-product"              # Change to your product name
+  name: "my-product"
   description: "My Product"
 
+# AWS Configuration
 aws:
-  profile: "default"               # Your AWS CLI profile
-  region: "ap-northeast-1"        # Your AWS region
-  account_id: "123456789012"      # Your AWS account ID
-  ecr_repository: "my-product"    # Your ECR repository name
+  profile: "default"
+  region: "ap-northeast-1"
+  account_id: "123456789012"
+  ecr_repository: "my-product"
 
+# Server Configuration
 servers:
+  # System Server (nginx + SSL)
   system:
-    host: "system-server-ip"      # System Server IP
-    user: "deploy"                # SSH user
-    ssh_key: "~/.ssh/deployment_key"
+    host: "system.example.com"
+    user: "ubuntu"
+    ssh_key: "~/.ssh/system_server_key"
 
+  # Application Server (Docker containers)
   application:
-    host: "app-server-ip"         # Application Server IP
+    host: "app.example.com"              # Public IP/hostname for SSH
+    private_ip: "10.0.1.10"              # Private IP for nginx upstream
+    user: "ubuntu"
+    ssh_key: "~/.ssh/app_server_key"
+    deploy_path: "/home/ubuntu/apps/my-product"
 
+# Environment Configurations
 environments:
   production:
-    blue_port: 5100
-    green_port: 5102
-    domain: "production.example.com"
-    nginx_upstream_file: "/etc/nginx/upstreams/myproduct-production.conf"
-    nginx_upstream_name: "myproduct_production_backend"
     env_file: ".env.production"
     image_tag: "production"
-    docker_compose_file: "docker-compose.production.yml"
 
   staging:
-    blue_port: 5101
-    green_port: 5103
-    domain: "staging.example.com"
-    nginx_upstream_file: "/etc/nginx/upstreams/myproduct-staging.conf"
-    nginx_upstream_name: "myproduct_staging_backend"
     env_file: ".env.staging"
     image_tag: "staging"
-    docker_compose_file: "docker-compose.staging.yml"
+
+# Health Check Configuration
+health_check:
+  endpoint: "/api/health"
+  interval: "30s"
+  timeout: "10s"
+  retries: 3
+  start_period: "40s"
+  max_retries: 30
+  retry_interval: 2
+
+# Deployment Options
+deployment:
+  connection_drain_time: 5
+  enable_auto_rollback: true
+
+# Docker Configuration
+docker:
+  image_template: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+  container_port: 3000
+  restart_policy: "unless-stopped"
+  network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
+  network_driver: "bridge"
+  env_vars:
+    NODE_ENV: "production"
+    PORT: "3000"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  logging:
+    driver: "json-file"
+    max_size: "10m"
+    max_file: 3
 ```
 
-## Step 3: Update Docker Compose Files
+**Key Concepts:**
+- **Auto-assigned Ports**: Docker automatically assigns random ephemeral ports (no manual port configuration)
+- **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
+- **Config-driven**: All Docker runtime settings in this file (no docker-compose files needed)
 
-Add environment variables for blue-green deployment:
+## Step 3: Set Up Environment Files
 
-```yaml
-# docker-compose.production.yml
-services:
-  app:
-    container_name: ${PRODUCT_NAME}-production-${DEPLOYMENT_SLOT:-blue}
-    ports:
-      - "${APP_PORT:-5100}:3000"
-    # ... rest of your config
+Create environment-specific `.env` files on your **Application Server**:
+
+```bash
+# SSH to Application Server
+ssh ubuntu@your-app-server
+
+# Create .env files in deploy path
+cat > /home/ubuntu/apps/my-product/.env.production <<EOF
+DATABASE_URL=your-production-db-url
+API_KEY=your-production-api-key
+EOF
+
+cat > /home/ubuntu/apps/my-product/.env.staging <<EOF
+DATABASE_URL=your-staging-db-url
+API_KEY=your-staging-api-key
+EOF
 ```
 
-```yaml
-# docker-compose.staging.yml
-services:
-  app:
-    container_name: ${PRODUCT_NAME}-staging-${DEPLOYMENT_SLOT:-blue}
-    ports:
-      - "${APP_PORT:-5101}:3000"
-    # ... rest of your config
-```
+**Important Notes:**
+- `.env` files live on the Application Server, not in your repository
+- No need for AWS variables in `.env` files (they're in `deploy.config.yml`)
+- These files contain runtime secrets and should never be committed to Git
 
-**Important:** Only change:
-- `container_name`: Add `${PRODUCT_NAME}-` prefix and `-${DEPLOYMENT_SLOT:-blue}` suffix
-- `ports`: Wrap port in `${APP_PORT:-XXXX}`
-
-Everything else stays the same!
-
-## Step 4: Update Environment Files
-
-Ensure your `.env.production` and `.env.staging` files have required AWS variables:
-
-```env
-# .env.production
-AWS_ACCOUNT_ID=123456789012
-AWS_REGION=ap-northeast-1
-ECR_REPOSITORY=my-product
-IMAGE_TAG=production
-AWS_PROFILE=default
-
-# Your other product-specific variables
-NEXT_PUBLIC_LIFF_ID=...
-API_SERVER_URL=...
-```
-
-## Step 5: Add to .gitignore
+## Step 4: Add to .gitignore
 
 ```bash
 # .gitignore
 
-# Deployment configuration (contains secrets)
+# Deployment configuration (contains server IPs and secrets)
 deploy.config.yml
+
+# Environment files (contain secrets)
+.env.production
+.env.staging
 
 # But keep the example in Git
 !deploy/config.example.yml
 ```
 
-## Step 6: Deploy!
+## Step 5: Build, Push, and Deploy
+
+### Full Pipeline (Build → Push → Deploy)
 
 ```bash
-# Deploy production
-./deploy/deploy.sh production
+# Auto-detect git SHA (aborts if uncommitted changes)
+./deploy/deploy-full.sh production
 
-# Deploy staging
-./deploy/deploy.sh staging
+# Use specific git SHA (ignores uncommitted changes)
+./deploy/deploy-full.sh production abc123
 
-# Build and push new image
+# Skip git SHA tagging
+./deploy/deploy-full.sh production --skip-git
+
+# Skip build, only deploy (use existing image)
+./deploy/deploy-full.sh staging --skip-build
+```
+
+### Separate Steps
+
+**Build and Push:**
+```bash
+# Auto-detect git SHA
 ./deploy/scripts/build-and-push.sh production
 
+# Use specific git SHA
+./deploy/scripts/build-and-push.sh production abc123
+
+# Skip git SHA
+./deploy/scripts/build-and-push.sh production --skip-git
+```
+
+**Deploy Only:**
+```bash
+./deploy/deploy.sh production
+./deploy/deploy.sh staging
+```
+
+### Monitoring
+
+```bash
 # View logs
 ./deploy/scripts/logs.sh production
+./deploy/scripts/logs.sh staging follow
 
 # Check status
 ./deploy/scripts/status.sh
+./deploy/scripts/status.sh production
 
 # Health check
-./deploy/scripts/health-check.sh all
+./deploy/scripts/health-check.sh
+./deploy/scripts/health-check.sh staging
+
+# Restart container
+./deploy/scripts/restart.sh production
 ```
 
 ## Directory Structure After Integration
@@ -165,25 +217,29 @@ deploy.config.yml
 ```
 your-product/
 ├── deploy/                         # Deployment module (git submodule)
+│   ├── README.md                  # Module documentation
 │   ├── deploy.sh                  # Main deployment script
+│   ├── deploy-full.sh             # Full pipeline
+│   ├── config.example.yml         # Example configuration
 │   ├── scripts/
-│   │   ├── build-and-push.sh
-│   │   ├── logs.sh
-│   │   ├── status.sh
-│   │   ├── restart.sh
-│   │   └── health-check.sh
+│   │   ├── build-and-push.sh     # Build and push to ECR
+│   │   ├── logs.sh               # View logs
+│   │   ├── status.sh             # Check status
+│   │   ├── restart.sh            # Restart containers
+│   │   └── health-check.sh       # Health check
 │   ├── lib/
-│   │   └── config-parser.sh
-│   ├── docs/
-│   └── config.example.yml
+│   │   └── config-parser.sh      # YAML parser
+│   └── docs/
+│       ├── integration.md        # This file
+│       └── setup.md              # Server setup guide
 │
 ├── deploy.config.yml              # Your product configuration (gitignored)
-├── docker-compose.production.yml  # Updated with env vars
-├── docker-compose.staging.yml     # Updated with env vars
-├── .env.production                # With AWS variables
-├── .env.staging                   # With AWS variables
+├── .env.production                # On Application Server (gitignored)
+├── .env.staging                   # On Application Server (gitignored)
 └── ... (rest of your product files)
 ```
+
+**Note:** No docker-compose files needed! All Docker configuration is in `deploy.config.yml`.
 
 ## Updating the Deployment Module
 
@@ -197,27 +253,84 @@ git add deploy
 git commit -m "Update deployment module"
 ```
 
+## How It Works
+
+### Deployment Flow
+
+1. **Pull Image**: Pull latest image from ECR on Application Server
+2. **Generate Container Name**: Create timestamp-based name (`{product}-{env}-{timestamp}`)
+3. **Start New Container**: Docker auto-assigns port from ephemeral range (32768-60999)
+4. **Wait for Health Check**: Query Docker's health status (native health check)
+5. **Update nginx**: Update upstream on System Server to point to new port
+6. **Test & Reload nginx**: Zero-downtime reload
+7. **Connection Draining**: Wait for existing connections to complete
+8. **Cleanup**: Stop and remove old containers
+
+**Total Downtime: 0 seconds** ⚡
+
+### Health Check Approach
+
+The deployment leverages **Docker's native health check**:
+- Docker continuously checks container health using `wget` to test your health endpoint
+- Deployment script queries Docker's health status with `docker inspect`
+- Benefits:
+  - ✅ Single source of truth (Docker's health status)
+  - ✅ No manual URL construction or port management
+  - ✅ More reliable (Docker handles retries internally)
+  - ✅ Works even if port assignment changes
+
+### Git SHA Tagging
+
+When building images:
+- Script auto-detects current git commit SHA
+- Checks for uncommitted changes (aborts if found)
+- Creates two image tags:
+  - `{repository}:{environment}` (e.g., `my-product:production`)
+  - `{repository}:{git-sha}` (e.g., `my-product:a1b2c3d`)
+- Git SHA tag is code-specific, not environment-specific (promotes image reuse)
+
 ## Troubleshooting
 
 ### "Configuration file not found"
 Ensure `deploy.config.yml` exists in your product root, not in the `deploy/` directory.
 
-### "Container name not found"
-Make sure you've updated docker-compose files with `${PRODUCT_NAME}` and `${DEPLOYMENT_SLOT}` variables.
+### "Container not found on Application Server"
+- Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
+- Verify deploy_path in config matches actual path on server
 
-### "SSH connection failed"
-Check SSH key path in `deploy.config.yml` and ensure you have access to System Server.
+### "Image Tag shows wrong environment"
+- Install `yq`: `brew install yq` (macOS) or `sudo apt install yq` (Ubuntu)
+- Without yq, the fallback parser may pick the first `image_tag` it finds
+
+### "Uncommitted changes" error when building
+```bash
+# Commit your changes first:
+git add .
+git commit -m "Your changes"
+
+# Or use specific git SHA:
+./deploy/scripts/build-and-push.sh staging abc123
+
+# Or skip git SHA tagging:
+./deploy/scripts/build-and-push.sh staging --skip-git
+```
 
 ### "Health check failed"
-Verify the health check endpoint in your application responds with HTTP 200.
+- Verify your app exposes the health endpoint configured in `deploy.config.yml`
+- Check container logs: `./deploy/scripts/logs.sh {environment}`
+- Test health endpoint locally: `curl http://localhost:3000/api/health`
+
+### "SSH connection failed"
+Check SSH key path in `deploy.config.yml` and ensure you have access to Application Server and System Server.
 
 ## Best Practices
 
 1. **Keep deploy.config.yml out of Git** - It contains server IPs and paths
 2. **Test in staging first** - Always deploy to staging before production
-3. **Use Git SHA tags** - `./deploy/scripts/build-and-push.sh production $(git rev-parse --short HEAD)`
+3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
 4. **Monitor deployments** - Watch logs during deployment: `./deploy/scripts/logs.sh production follow`
-5. **Health checks** - Ensure your app has a `/api/health` endpoint that returns 200
+5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
+6. **Use full pipeline** - `./deploy/deploy-full.sh` handles everything (build → push → deploy)
 
 ## Example Deployment Workflow
 
@@ -226,23 +339,50 @@ Verify the health check endpoint in your application responds with HTTP 200.
 git add .
 git commit -m "Add new feature"
 
-# 2. Build and push image
-./deploy/scripts/build-and-push.sh production $(git rev-parse --short HEAD)
+# 2. Full pipeline: build, push, and deploy to staging
+./deploy/deploy-full.sh staging
 
-# 3. Deploy to production (zero-downtime)
-./deploy/deploy.sh production
+# 3. Verify staging deployment
+./deploy/scripts/health-check.sh staging
+./deploy/scripts/logs.sh staging
 
-# 4. Verify deployment
+# 4. If staging looks good, deploy to production
+./deploy/deploy-full.sh production
+
+# 5. Monitor production
+./deploy/scripts/status.sh production
 ./deploy/scripts/health-check.sh production
-./deploy/scripts/logs.sh production
-
-# 5. Monitor
-./deploy/scripts/status.sh
 ```
+
+## Advanced Usage
+
+### Deploy Existing Image (Skip Build)
+
+```bash
+# Build and push once
+./deploy/scripts/build-and-push.sh staging
+
+# Deploy to staging
+./deploy/deploy.sh staging
+
+# Deploy same image to production (no rebuild)
+./deploy/scripts/build-and-push.sh production --skip-build
+./deploy/deploy.sh production
+```
+
+### Multiple Products on Same Servers
+
+Each product gets its own:
+- `deploy.config.yml` in its repository root
+- Environment files on Application Server
+- Upstream files on System Server (`/etc/nginx/upstreams/{product}-{env}.conf`)
+
+Just ensure each product has a unique `product.name` in its config.
 
 ## Support
 
 If you encounter issues with the deployment module, check:
 1. Module documentation: `deploy/README.md`
 2. Configuration example: `deploy/config.example.yml`
-3. Your product configuration: `deploy.config.yml`
+3. Server setup guide: `deploy/docs/setup.md`
+4. Your product configuration: `deploy.config.yml`
