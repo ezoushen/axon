@@ -226,7 +226,6 @@ else
 fi
 echo -e "  Deployment:  ${GREEN}✓ Completed${NC}"
 echo -e "  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "  Downtime:    ${GREEN}0 seconds${NC} ⚡"
 echo ""
 
 exit 0

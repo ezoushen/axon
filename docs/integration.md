@@ -281,8 +281,6 @@ git commit -m "Update AXON"
 6. **Test & Reload nginx**: Zero-downtime reload
 7. **Graceful Shutdown**: Shutdown old containers with configurable timeout (SIGTERM → SIGKILL)
 
-**Total Downtime: 0 seconds** ⚡
-
 ### Health Check Approach
 
 The deployment leverages **Docker's native health check**:

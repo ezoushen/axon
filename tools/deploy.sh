@@ -753,7 +753,6 @@ echo -e "  Environment:      ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "  Active Port:      ${GREEN}${APP_PORT}${NC}"
 echo -e "  Container:        ${YELLOW}${CONTAINER_NAME}${NC}"
 echo -e "  Image:            ${YELLOW}${FULL_IMAGE}${NC}"
-echo -e "  Downtime:         ${GREEN}0 seconds${NC} ⚡"
 echo ""
 
 echo -e "${CYAN}Useful Commands:${NC}"
