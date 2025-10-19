@@ -34,7 +34,16 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 ## Quick Start
 
-### 1. Add as Git Submodule
+### 1. Install Prerequisites
+
+```bash
+# macOS
+brew install yq
+
+# Linux - see https://github.com/mikefarah/yq#install
+```
+
+### 2. Add as Git Submodule
 
 ```bash
 cd your-product
@@ -42,14 +51,14 @@ git submodule add git@github.com:your-org/axon.git deploy
 git submodule update --init --recursive
 ```
 
-### 2. Create Product Configuration
+### 3. Create Product Configuration
 
 ```bash
 cp config.example.yml deploy.config.yml
 # Edit deploy.config.yml with your product settings
 ```
 
-### 3. Set Up Environment Files
+### 4. Set Up Environment Files
 
 Create environment-specific `.env` files on your Application Server:
 
@@ -69,7 +78,7 @@ API_KEY=your-staging-api-key
 EOF
 ```
 
-### 4. Build, Push, and Deploy
+### 5. Build, Push, and Deploy
 
 ```bash
 # Full pipeline: build → push → deploy (uses deploy.config.yml by default)
@@ -251,6 +260,7 @@ Build, push to ECR, and deploy with zero downtime:
 - Network access to System Server
 
 ### Local Machine
+- **yq** installed (YAML processor) - `brew install yq`
 - Docker installed
 - AWS CLI configured
 - SSH access to Application Server
@@ -303,19 +313,15 @@ When building images:
 
 ### Common Issues
 
-**1. "No environments found in config"**
-- Install `yq` for accurate YAML parsing: `brew install yq`
-- Or ensure environment names are properly indented (2 spaces) in config
+**1. "yq is not installed" error**
+- Install `yq` for YAML parsing: `brew install yq` (macOS)
+- Linux: See https://github.com/mikefarah/yq#install
 
 **2. "Container not found on Application Server"**
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
 - Verify env_path in config points to the correct .env file location
 
-**3. "Image Tag shows wrong environment"**
-- Install `yq`: `brew install yq`
-- Without yq, the fallback parser may pick the first `image_tag` it finds
-
-**4. "Uncommitted changes" error when building**
+**3. "Uncommitted changes" error when building**
 ```bash
 # Commit your changes first:
 git add .
@@ -328,7 +334,7 @@ git commit -m "Your changes"
 ./tools/build-and-push.sh --skip-git staging
 ```
 
-**5. Health check fails**
+**4. Health check fails**
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
 - Check container logs: `./tools/logs.sh {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`

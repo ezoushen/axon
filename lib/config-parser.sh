@@ -1,6 +1,23 @@
 #!/bin/bash
 # Configuration Parser Library
 # Provides functions to parse deploy.config.yml
+# Requires: yq (YAML processor) - Install with: brew install yq
+
+# Check if yq is installed
+check_yq() {
+    if ! command -v yq &> /dev/null; then
+        echo -e "${RED}Error: yq is not installed${NC}" >&2
+        echo "" >&2
+        echo "yq is required for parsing YAML configuration files." >&2
+        echo "" >&2
+        echo "Install it with:" >&2
+        echo "  macOS:   brew install yq" >&2
+        echo "  Linux:   https://github.com/mikefarah/yq#install" >&2
+        echo "" >&2
+        return 1
+    fi
+    return 0
+}
 
 # Function to parse YAML config
 parse_yaml_key() {
@@ -8,21 +25,22 @@ parse_yaml_key() {
     local default=$2
     local config_file=${3:-$CONFIG_FILE}
 
-    # Try yq if available
-    if command -v yq &> /dev/null; then
-        value=$(yq eval "$key" "$config_file" 2>/dev/null || echo "")
-        if [ "$value" != "null" ] && [ -n "$value" ]; then
-            echo "$value"
-            return
-        fi
+    # Ensure yq is available
+    if ! check_yq; then
+        exit 1
     fi
 
-    # Fallback: Simple grep/awk parser
-    local search_key=$(echo "$key" | awk -F'.' '{print $NF}')
-    value=$(grep -E "^\s*${search_key}:" "$config_file" | head -1 | \
-            awk -F': ' '{print $2}' | sed 's/["'\'']//g' | tr -d ' ' || echo "")
+    # Parse using yq (yq v4 requires leading dot in path expressions)
+    # Ensure key has leading dot
+    local yq_key="$key"
+    if [[ "$yq_key" != .* ]]; then
+        yq_key=".$yq_key"
+    fi
 
-    if [ -n "$value" ]; then
+    value=$(yq eval "$yq_key" "$config_file" 2>/dev/null || echo "")
+
+    # Return value or default
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
         echo "$value"
     else
         echo "$default"
