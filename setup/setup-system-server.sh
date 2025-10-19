@@ -322,7 +322,7 @@ echo -e "   ${CYAN}ssh ${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST} '${USE_SUDO} 
 echo ""
 
 echo -e "3. Test deployment from local machine:"
-echo -e "   ${CYAN}./deploy.sh staging${NC}"
+echo -e "   ${CYAN}./tools/deploy.sh staging${NC}"
 echo ""
 
 echo -e "${GREEN}System Server is ready for zero-downtime deployments!${NC}"

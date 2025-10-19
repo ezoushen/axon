@@ -2,9 +2,9 @@
 # AXON - Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
 # Runs from LOCAL MACHINE
 #
-# Usage: ./deploy-full.sh <environment> [--skip-build]
-# Example: ./deploy-full.sh production
-# Example: ./deploy-full.sh staging --skip-build  # Skip build if image already pushed
+# Usage: ./axon.sh <environment> [--skip-build]
+# Example: ./axon.sh production
+# Example: ./axon.sh staging --skip-build  # Skip build if image already pushed
 
 set -e
 
@@ -64,9 +64,9 @@ else
 
     # Call build-and-push.sh with optional git SHA argument
     if [ -n "$GIT_SHA_OR_FLAG" ]; then
-        "$SCRIPT_DIR/scripts/build-and-push.sh" "$ENVIRONMENT" "$GIT_SHA_OR_FLAG"
+        "$SCRIPT_DIR/tools/build-and-push.sh" "$ENVIRONMENT" "$GIT_SHA_OR_FLAG"
     else
-        "$SCRIPT_DIR/scripts/build-and-push.sh" "$ENVIRONMENT"
+        "$SCRIPT_DIR/tools/build-and-push.sh" "$ENVIRONMENT"
     fi
 
     if [ $? -ne 0 ]; then

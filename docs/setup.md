@@ -509,12 +509,12 @@ After completing setup:
 
 3. ✅ **Test deployment**
    ```bash
-   ./deploy.sh staging
+   ./tools/deploy.sh staging
    ```
 
 4. ✅ **Monitor first deployment**
    ```bash
-   ./scripts/logs.sh staging follow
+   ./tools/logs.sh staging follow
    ```
 
 5. ✅ **Verify zero-downtime**
@@ -523,7 +523,7 @@ After completing setup:
    while true; do curl -s https://staging.yourdomain.com/api/health || echo "FAIL"; sleep 0.1; done
 
    # Terminal 2: Deploy
-   ./deploy.sh staging
+   ./tools/deploy.sh staging
 
    # Terminal 1 should show zero failures ✅
    ```

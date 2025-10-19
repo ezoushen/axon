@@ -73,11 +73,11 @@ EOF
 
 ```bash
 # Full pipeline: build → push → deploy
-./deploy-full.sh production
+./axon.sh production
 
 # Or run steps separately:
-./scripts/build-and-push.sh production  # Build and push image
-./deploy.sh production                  # Deploy with zero downtime
+./tools/build-and-push.sh production  # Build and push image
+./tools/deploy.sh production          # Deploy with zero downtime
 ```
 
 ## Directory Structure
@@ -85,10 +85,10 @@ EOF
 ```
 axon/
 ├── README.md                    # This file
-├── deploy.sh                    # Main deployment script (zero-downtime)
-├── deploy-full.sh               # Full pipeline: build → push → deploy
+├── axon.sh                      # Main entry point: build → push → deploy
 ├── config.example.yml           # Example configuration (copy to deploy.config.yml)
-├── scripts/
+├── tools/
+│   ├── deploy.sh               # Deployment script (zero-downtime)
 │   ├── build-and-push.sh       # Build Docker image and push to ECR
 │   ├── health-check.sh         # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
@@ -139,16 +139,16 @@ Build, push to ECR, and deploy with zero downtime:
 
 ```bash
 # Auto-detect git SHA (aborts if uncommitted changes)
-./deploy-full.sh production
+./axon.sh production
 
 # Use specific git SHA (ignores uncommitted changes)
-./deploy-full.sh production abc123
+./axon.sh production abc123
 
 # Skip git SHA tagging
-./deploy-full.sh production --skip-git
+./axon.sh production --skip-git
 
 # Skip build, only deploy (use existing image)
-./deploy-full.sh staging --skip-build
+./axon.sh staging --skip-build
 ```
 
 ### Separate Steps
@@ -156,13 +156,13 @@ Build, push to ECR, and deploy with zero downtime:
 **Build and Push Image:**
 ```bash
 # Auto-detect git SHA
-./scripts/build-and-push.sh staging
+./tools/build-and-push.sh staging
 
 # Use specific git SHA
-./scripts/build-and-push.sh staging abc123
+./tools/build-and-push.sh staging abc123
 
 # Skip git SHA
-./scripts/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh staging --skip-git
 ```
 
 This creates two image tags:
@@ -171,35 +171,35 @@ This creates two image tags:
 
 **Deploy Only:**
 ```bash
-./deploy.sh production
-./deploy.sh staging
+./tools/deploy.sh production
+./tools/deploy.sh staging
 ```
 
 ### Monitoring
 
 **View Logs:**
 ```bash
-./scripts/logs.sh production           # Last 50 lines
-./scripts/logs.sh staging follow       # Follow in real-time
-./scripts/logs.sh all                  # All environments
+./tools/logs.sh production           # Last 50 lines
+./tools/logs.sh staging follow       # Follow in real-time
+./tools/logs.sh all                  # All environments
 ```
 
 **Check Status:**
 ```bash
-./scripts/status.sh                    # All environments
-./scripts/status.sh production         # Specific environment
+./tools/status.sh                    # All environments
+./tools/status.sh production         # Specific environment
 ```
 
 **Health Check:**
 ```bash
-./scripts/health-check.sh              # Check all environments
-./scripts/health-check.sh staging      # Check specific environment
+./tools/health-check.sh              # Check all environments
+./tools/health-check.sh staging      # Check specific environment
 ```
 
 **Restart Container:**
 ```bash
-./scripts/restart.sh production
-./scripts/restart.sh all
+./tools/restart.sh production
+./tools/restart.sh all
 ```
 
 ## Requirements
@@ -288,15 +288,15 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./scripts/build-and-push.sh staging abc123
+./tools/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./scripts/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh staging --skip-git
 ```
 
 **5. Health check fails**
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./scripts/logs.sh {environment}`
+- Check container logs: `./tools/logs.sh {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ## Contributing

@@ -162,16 +162,16 @@ deploy.config.yml
 
 ```bash
 # Auto-detect git SHA (aborts if uncommitted changes)
-./deploy-full.sh production
+./axon.sh production
 
 # Use specific git SHA (ignores uncommitted changes)
-./deploy-full.sh production abc123
+./axon.sh production abc123
 
 # Skip git SHA tagging
-./deploy-full.sh production --skip-git
+./axon.sh production --skip-git
 
 # Skip build, only deploy (use existing image)
-./deploy-full.sh staging --skip-build
+./axon.sh staging --skip-build
 ```
 
 ### Separate Steps
@@ -179,38 +179,38 @@ deploy.config.yml
 **Build and Push:**
 ```bash
 # Auto-detect git SHA
-./scripts/build-and-push.sh production
+./tools/build-and-push.sh production
 
 # Use specific git SHA
-./scripts/build-and-push.sh production abc123
+./tools/build-and-push.sh production abc123
 
 # Skip git SHA
-./scripts/build-and-push.sh production --skip-git
+./tools/build-and-push.sh production --skip-git
 ```
 
 **Deploy Only:**
 ```bash
-./deploy.sh production
-./deploy.sh staging
+./tools/deploy.sh production
+./tools/deploy.sh staging
 ```
 
 ### Monitoring
 
 ```bash
 # View logs
-./scripts/logs.sh production
-./scripts/logs.sh staging follow
+./tools/logs.sh production
+./tools/logs.sh staging follow
 
 # Check status
-./scripts/status.sh
-./scripts/status.sh production
+./tools/status.sh
+./tools/status.sh production
 
 # Health check
-./scripts/health-check.sh
-./scripts/health-check.sh staging
+./tools/health-check.sh
+./tools/health-check.sh staging
 
 # Restart container
-./scripts/restart.sh production
+./tools/restart.sh production
 ```
 
 ## Directory Structure After Integration
@@ -219,10 +219,10 @@ deploy.config.yml
 your-product/
 ├──                          # AXON (git submodule)
 │   ├── README.md                  # Module documentation
-│   ├── deploy.sh                  # Main deployment script
-│   ├── deploy-full.sh             # Full pipeline
+│   ├── axon.sh                    # Main entry point: build → push → deploy
 │   ├── config.example.yml         # Example configuration
-│   ├── scripts/
+│   ├── tools/
+│   │   ├── deploy.sh             # Deployment script (zero-downtime)
 │   │   ├── build-and-push.sh     # Build and push to ECR
 │   │   ├── logs.sh               # View logs
 │   │   ├── status.sh             # Check status
@@ -335,15 +335,15 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./scripts/build-and-push.sh staging abc123
+./tools/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./scripts/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh staging --skip-git
 ```
 
 ### "Health check failed"
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./scripts/logs.sh {environment}`
+- Check container logs: `./tools/logs.sh {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ### "SSH connection failed"
@@ -354,9 +354,9 @@ Check SSH key path in `deploy.config.yml` and ensure you have access to Applicat
 1. **Keep deploy.config.yml out of Git** - It contains server IPs and paths
 2. **Test in staging first** - Always deploy to staging before production
 3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
-4. **Monitor deployments** - Watch logs during deployment: `./scripts/logs.sh production follow`
+4. **Monitor deployments** - Watch logs during deployment: `./tools/logs.sh production follow`
 5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
-6. **Use full pipeline** - `./deploy-full.sh` handles everything (build → push → deploy)
+6. **Use full pipeline** - `./axon.sh` handles everything (build → push → deploy)
 
 ## Example Deployment Workflow
 
@@ -366,18 +366,18 @@ git add .
 git commit -m "Add new feature"
 
 # 2. Full pipeline: build, push, and deploy to staging
-./deploy-full.sh staging
+./axon.sh staging
 
 # 3. Verify staging deployment
-./scripts/health-check.sh staging
-./scripts/logs.sh staging
+./tools/health-check.sh staging
+./tools/logs.sh staging
 
 # 4. If staging looks good, deploy to production
-./deploy-full.sh production
+./axon.sh production
 
 # 5. Monitor production
-./scripts/status.sh production
-./scripts/health-check.sh production
+./tools/status.sh production
+./tools/health-check.sh production
 ```
 
 ## Advanced Usage
@@ -386,14 +386,14 @@ git commit -m "Add new feature"
 
 ```bash
 # Build and push once
-./scripts/build-and-push.sh staging
+./tools/build-and-push.sh staging
 
 # Deploy to staging
-./deploy.sh staging
+./tools/deploy.sh staging
 
 # Deploy same image to production (no rebuild)
-./scripts/build-and-push.sh production --skip-build
-./deploy.sh production
+./tools/build-and-push.sh production --skip-build
+./tools/deploy.sh production
 ```
 
 ### Multiple Products on Same Servers
