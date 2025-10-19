@@ -196,8 +196,9 @@ axon/
 │   └── update-homebrew-sha.sh  # Manual Homebrew formula update
 ├── lib/
 │   └── command-parser.sh       # Command parsing and help system
-├── homebrew/
-│   └── axon.rb                 # Homebrew formula
+├── homebrew-tap/               # Homebrew tap repository (submodule)
+│   └── Formula/
+│       └── axon.rb             # Homebrew formula (single source of truth)
 └── docs/
     ├── integration.md          # Integration guide
     ├── setup.md                # Server setup guide

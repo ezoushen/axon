@@ -207,4 +207,4 @@ After releasing:
 - **release/create-release.sh**: Automate version tagging and release (primary tool)
 - **release/update-homebrew-sha.sh**: Manual Homebrew formula SHA256 update (rarely needed - GitHub Actions does this automatically)
 
-The create-release.sh script is all you need for normal releases. The update-homebrew-sha.sh script is only useful if you need to manually fix the Homebrew formula outside of the normal release process.
+The create-release.sh script is all you need for normal releases. The update-homebrew-sha.sh script is only useful if you need to manually update the Homebrew formula outside of the normal release process.

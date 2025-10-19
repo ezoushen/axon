@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for changelog generation
+          submodules: true  # Checkout homebrew-tap submodule
 
       - name: Generate changelog
         id: changelog
@@ -54,7 +55,6 @@ jobs:
             VERSION
             install.sh
             uninstall.sh
-            homebrew/axon.rb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -81,30 +81,44 @@ jobs:
           echo "SHA256: $SHA256"
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
 
-          # Update homebrew/axon.rb
-          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" homebrew/axon.rb
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/axon.rb
-          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|" homebrew/axon.rb
+          # Update formula in homebrew-tap submodule
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" homebrew-tap/Formula/axon.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew-tap/Formula/axon.rb
+          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|" homebrew-tap/Formula/axon.rb
 
-          echo "✓ Updated homebrew/axon.rb"
+          echo "✓ Updated homebrew-tap/Formula/axon.rb"
 
       - name: Commit and push Homebrew formula update
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG_NAME#v}
 
+          # Configure git for tap submodule
+          cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add homebrew/axon.rb
-
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
+          # Check if there are changes
+          if git diff --quiet Formula/axon.rb; then
+            echo "No changes to formula"
           else
-            git commit -m "Update Homebrew formula SHA256 for ${TAG_NAME}"
+            git add Formula/axon.rb
+            git commit -m "Update AXON formula for ${TAG_NAME}"
+            git push origin main
+            echo "✓ Pushed formula update to homebrew-axon tap"
+          fi
+
+          # Update submodule reference in main repo
+          cd ..
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add homebrew-tap
+
+          if git diff --staged --quiet; then
+            echo "No submodule changes to commit"
+          else
+            git commit -m "Update homebrew-tap submodule for ${TAG_NAME}"
             git push origin HEAD:main
-            echo "✓ Pushed Homebrew formula update"
+            echo "✓ Updated submodule reference in main repo"
           fi
 
       - name: Release summary
@@ -122,5 +136,8 @@ jobs:
           echo ""
           echo "SHA256: ${{ steps.update_formula.outputs.sha256 }}"
           echo ""
-          echo "Homebrew formula updated automatically!"
+          echo "Homebrew formula updated automatically:"
+          echo "  - Tap repo: https://github.com/ezoushen/homebrew-axon"
+          echo ""
+          echo "Install with: brew tap ezoushen/axon && brew install axon"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
