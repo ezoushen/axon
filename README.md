@@ -140,6 +140,12 @@ axon/
 
 All deployment settings are in `deploy.config.yml` (product root). The system auto-generates docker commands from config - no docker-compose files needed.
 
+**Key configurables:**
+- Dockerfile path (supports custom locations like `docker/Dockerfile.prod`)
+- Container ports, networking, health checks
+- Environment variables, logging, restart policies
+- AWS ECR settings, SSH keys, server hosts
+
 See `deploy/config.example.yml` for all available options with `[REQUIRED]` and `[OPTIONAL]` markings.
 
 ## Usage

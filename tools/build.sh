@@ -197,8 +197,16 @@ if ! docker info &> /dev/null; then
     exit 1
 fi
 
+# Check if Dockerfile exists
+if [ ! -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
+    echo -e "${RED}Error: Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH${NC}"
+    echo "Please check docker.dockerfile in $CONFIG_FILE"
+    exit 1
+fi
+
 # Build Docker image
 echo -e "${GREEN}Building Docker image...${NC}"
+echo -e "Using Dockerfile: ${YELLOW}${DOCKERFILE_PATH}${NC}"
 echo -e "${YELLOW}This may take a few minutes...${NC}"
 echo ""
 
@@ -207,6 +215,7 @@ cd "$PRODUCT_ROOT"
 docker build \
     --build-arg BUILD_STANDALONE=true \
     --platform linux/amd64 \
+    -f "$DOCKERFILE_PATH" \
     -t "$FULL_IMAGE_NAME" \
     .
 

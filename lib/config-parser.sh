@@ -143,4 +143,5 @@ load_config() {
 
     # Docker config
     export CONTAINER_PORT=$(parse_yaml_key "docker.container_port" "3000")
+    export DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile")
 }

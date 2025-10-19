@@ -281,6 +281,16 @@ echo ""
 echo -e "${BLUE}Docker Configuration${NC}"
 echo ""
 validate_optional "docker.container_port" "Container port" "3000"
+validate_optional "docker.dockerfile" "Dockerfile path" "Dockerfile"
+
+# Validate Dockerfile exists if specified
+DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile" "$CONFIG_FILE")
+if [ -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
+    report_success "Dockerfile exists: $DOCKERFILE_PATH ✓"
+else
+    report_warning "Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH"
+fi
+
 validate_optional "docker.restart_policy" "Restart policy" "unless-stopped"
 validate_optional "docker.network_name" "Network name" "(auto)"
 validate_optional "docker.network_alias" "Network alias" "(none)"

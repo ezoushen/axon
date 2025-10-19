@@ -92,6 +92,10 @@ deployment:
 # Docker Configuration
 # ==============================================================================
 docker:
+  # Build configuration
+  dockerfile: "Dockerfile"                  # [OPTIONAL] Path to Dockerfile (default: Dockerfile)
+                                            # Can be relative to product root (e.g., "docker/Dockerfile.prod")
+
   # Container runtime configuration
   container_port: 3000                      # [OPTIONAL] Internal port the app listens on (default: 3000)
   restart_policy: "unless-stopped"          # [OPTIONAL] Docker restart policy (default: unless-stopped)
