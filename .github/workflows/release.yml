@@ -117,6 +117,9 @@ jobs:
           if git diff --quiet Formula/axon.rb; then
             echo "No changes to formula"
           else
+            # Ensure we're on main branch in submodule
+            git checkout main
+            git pull origin main
             git add Formula/axon.rb
             git commit -m "Update AXON formula for ${TAG_NAME}"
             git push origin main
@@ -125,13 +128,17 @@ jobs:
 
           # Update submodule reference in main repo
           cd ..
+
+          # Ensure we're on main branch
+          git checkout main
+          git pull origin main
           git add homebrew-tap
 
           if git diff --staged --quiet; then
             echo "No submodule changes to commit"
           else
             git commit -m "Update homebrew-tap submodule for ${TAG_NAME}"
-            git push origin HEAD:main
+            git push origin main
             echo "✓ Updated submodule reference in main repo"
           fi
 
