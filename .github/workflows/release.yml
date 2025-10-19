@@ -72,11 +72,10 @@ jobs:
           echo "Waiting for GitHub to generate release tarball..."
           sleep 10
 
-      - name: Update Homebrew formula with SHA256
-        id: update_formula
+      - name: Calculate SHA256 for release
+        id: calculate_sha
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG_NAME#v}
           TARBALL_URL="https://github.com/ezoushen/axon/archive/refs/tags/${TAG_NAME}.tar.gz"
 
           echo "Downloading tarball and calculating SHA256..."
@@ -89,19 +88,16 @@ jobs:
 
           echo "SHA256: $SHA256"
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-
-          # Update formula in homebrew-tap submodule
-          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" homebrew-tap/Formula/axon.rb
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew-tap/Formula/axon.rb
-          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|" homebrew-tap/Formula/axon.rb
-
-          echo "✓ Updated homebrew-tap/Formula/axon.rb"
+          echo "tarball_url=$TARBALL_URL" >> $GITHUB_OUTPUT
 
       - name: Commit and push Homebrew formula update
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SHA256: ${{ steps.calculate_sha.outputs.sha256 }}
+          TARBALL_URL: ${{ steps.calculate_sha.outputs.tarball_url }}
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
 
           # Configure git globally for both repos
           git config --global user.name "github-actions[bot]"
@@ -113,13 +109,21 @@ jobs:
           # Update tap submodule
           cd homebrew-tap
 
+          # Ensure we're on main branch in submodule
+          git checkout main
+          git pull origin main
+
+          # Update formula with new version and SHA256
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Formula/axon.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/axon.rb
+          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|" Formula/axon.rb
+
+          echo "✓ Updated Formula/axon.rb with version ${VERSION}"
+
           # Check if there are changes
           if git diff --quiet Formula/axon.rb; then
-            echo "No changes to formula"
+            echo "No changes to formula (already up to date)"
           else
-            # Ensure we're on main branch in submodule
-            git checkout main
-            git pull origin main
             git add Formula/axon.rb
             git commit -m "Update AXON formula for ${TAG_NAME}"
             git push origin main
@@ -155,7 +159,7 @@ jobs:
           echo "Tarball URL:"
           echo "  https://github.com/ezoushen/axon/archive/refs/tags/${TAG_NAME}.tar.gz"
           echo ""
-          echo "SHA256: ${{ steps.update_formula.outputs.sha256 }}"
+          echo "SHA256: ${{ steps.calculate_sha.outputs.sha256 }}"
           echo ""
           echo "Homebrew formula updated automatically:"
           echo "  - Tap repo: https://github.com/ezoushen/homebrew-axon"
