@@ -25,9 +25,10 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 **Key Concepts:**
 - **Auto-assigned Ports**: Docker assigns random ephemeral ports (no manual port management)
 - **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
-- **Network Aliases**: Stable DNS names for container-to-container communication (e.g., `http://app:3000`)
 - **Rolling Updates**: New container starts → health check passes → nginx switches → old container stops
 - **Config-driven**: Single `deploy.config.yml` defines all Docker runtime settings
+
+**Note:** The System Server and Application Server can be the same physical instance. In this configuration, nginx and Docker run on the same machine, simplifying infrastructure management. The deployment scripts still run from your local machine and SSH to the combined server - you'll just configure the same host for both server settings in `deploy.config.yml`. This setup is ideal for smaller deployments while maintaining the same zero-downtime deployment process.
 
 ## Quick Start
 
@@ -232,11 +233,7 @@ This creates two image tags:
 6. **Update nginx**: Update upstream on System Server to point to new port
 7. **Test nginx Config**: Validate before reloading
 8. **Reload nginx**: Zero-downtime reload
-9. **Graceful Shutdown**: Shutdown old containers gracefully
-   - Send SIGTERM to old container (graceful shutdown signal)
-   - Wait up to `graceful_shutdown_timeout` seconds (default: 30s)
-   - Application can finish current requests, close connections, cleanup resources
-   - Send SIGKILL if still running after timeout
+9. **Graceful Shutdown**: Old containers shut down gracefully (see [Graceful Shutdown Guide](docs/graceful-shutdown.md))
 
 **Total Downtime: 0 seconds** ⚡
 
@@ -261,101 +258,10 @@ When building images:
   - `{repository}:{git-sha}` (e.g., `linebot-nextjs:a1b2c3d`)
 - Git SHA tag is code-specific, not environment-specific (promotes image reuse)
 
-### Network Aliases for Container Communication
+## Advanced Topics
 
-Each container gets a **stable DNS name** within its network, solving the dynamic container naming problem:
-
-**The Problem:**
-- Container names include timestamps: `linebot-nextjs-production-1760809226`
-- Names change on every deployment
-- Hard to reference from other containers
-
-**The Solution:**
-- Configure a network alias in `deploy.config.yml`:
-  ```yaml
-  docker:
-    network_alias: "app"  # Stable DNS name
-  ```
-
-**How to Use:**
-- Containers on the same network can communicate using the alias:
-  ```bash
-  # From another container on the same network:
-  curl http://app:3000/api/health
-
-  # Works even though actual container name is:
-  # linebot-nextjs-production-1760809226
-  ```
-
-**Benefits:**
-- ✅ No need to know the dynamic container name
-- ✅ Works across deployments (name stays the same)
-- ✅ Network-isolated (production and staging have separate networks)
-- ✅ Perfect for multi-container setups (app + database, app + redis, etc.)
-
-**Example Multi-Container Setup:**
-```yaml
-# deploy.config.yml
-docker:
-  network_alias: "web"  # Your app is accessible as "web"
-
-# Another container on the same network can:
-# - Connect to database: postgres:5432
-# - Connect to your app: web:3000
-# - Connect to redis: redis:6379
-```
-
-**Note:** This only works for container-to-container communication on the same Docker network. External access still uses the exposed port managed by nginx.
-
-### Graceful Shutdown
-
-When deploying a new container, the old container is shut down gracefully to ensure:
-- Current requests finish processing
-- Database connections are closed properly
-- Resources are cleaned up
-- Logs are flushed
-
-**How it works:**
-1. After nginx switches to the new container, the deployment script sends **SIGTERM** to the old container
-2. The application receives the signal and can handle it (e.g., stop accepting new requests, finish current work)
-3. Docker waits up to `graceful_shutdown_timeout` seconds (default: 30s)
-4. If the container is still running after timeout, Docker sends **SIGKILL** (force kill)
-
-**Configuration:**
-```yaml
-# deploy.config.yml
-deployment:
-  graceful_shutdown_timeout: 30  # Seconds to wait before force kill
-```
-
-**Application Support:**
-
-For Node.js apps, handle SIGTERM gracefully:
-```javascript
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, starting graceful shutdown...');
-
-  server.close(() => {
-    console.log('HTTP server closed');
-
-    // Close database connections, etc.
-    process.exit(0);
-  });
-
-  // Force exit if graceful shutdown takes too long
-  setTimeout(() => {
-    console.error('Forced shutdown due to timeout');
-    process.exit(1);
-  }, 28000); // Slightly less than Docker's timeout
-});
-```
-
-**Benefits:**
-- ✅ No abrupt connection terminations
-- ✅ Prevents data loss or corruption
-- ✅ Clean resource cleanup
-- ✅ Configurable timeout for different application needs
+- **[Network Aliases](docs/network-aliases.md)** - Stable DNS names for container-to-container communication
+- **[Graceful Shutdown](docs/graceful-shutdown.md)** - Proper shutdown handling for zero data loss
 
 ## Troubleshooting
 
