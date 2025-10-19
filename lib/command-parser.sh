@@ -30,7 +30,7 @@ UTILITY COMMANDS:
   restart <env>            Restart container
   health [env]             Check container health status
   validate                 Validate configuration file
-  init-config              Generate deploy.config.yml file
+  init-config              Generate axon.config.yml file
 
 SETUP COMMANDS:
   setup local              Setup local machine (install required tools)
@@ -38,7 +38,7 @@ SETUP COMMANDS:
   setup system-server      Setup System Server (nginx, upstreams)
 
 GLOBAL OPTIONS:
-  -c, --config FILE        Config file path (default: deploy.config.yml)
+  -c, --config FILE        Config file path (default: axon.config.yml)
   -h, --help               Show help for command
   -v, --verbose            Verbose output
   --dry-run                Show what would be done without executing
@@ -78,7 +78,7 @@ Usage: axon build <environment> [options]
 Build Docker image locally with optional git SHA tagging.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   --skip-git           Don't tag image with git SHA
   --sha <hash>         Use specific git SHA for tagging
   --no-cache           Build without Docker cache
@@ -98,7 +98,7 @@ Usage: axon push <environment> [options]
 Push Docker image to AWS ECR. Requires image to be built first.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   --sha <hash>         Also push specific SHA tag
   -h, --help           Show this help
 
@@ -115,7 +115,7 @@ Usage: axon deploy <environment> [options]
 Deploy to server with zero-downtime using image from ECR.
 
 OPTIONS:
-  -c, --config FILE      Config file (default: deploy.config.yml)
+  -c, --config FILE      Config file (default: axon.config.yml)
   -f, --force            Force cleanup of existing containers
   --timeout <seconds>    Health check timeout (default: from config)
   -h, --help             Show this help
@@ -135,7 +135,7 @@ Execute full deployment pipeline: build → push → deploy.
 This is the primary deployment command that orchestrates the complete workflow.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   --skip-git           Don't tag image with git SHA
   --sha <hash>         Use specific git SHA
   -f, --force          Force cleanup during deploy
@@ -157,7 +157,7 @@ Build Docker image and push to ECR without deploying.
 Useful for CI/CD pipelines or when you want to test builds without deployment.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   --skip-git           Don't tag image with git SHA
   --sha <hash>         Use specific git SHA
   --no-cache           Build without Docker cache
@@ -176,7 +176,7 @@ Usage: axon status [environment] [options]
 Show container status for all environments or a specific environment.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   -h, --help           Show this help
 
 EXAMPLES:
@@ -192,7 +192,7 @@ Usage: axon logs <environment> [options]
 View container logs for specified environment.
 
 OPTIONS:
-  -c, --config FILE      Config file (default: deploy.config.yml)
+  -c, --config FILE      Config file (default: axon.config.yml)
   -f, --follow           Follow log output in real-time
   -n, --lines <number>   Number of lines to show (default: from script)
   --since <time>         Show logs since timestamp
@@ -212,7 +212,7 @@ Usage: axon restart <environment> [options]
 Restart container for specified environment.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   -h, --help           Show this help
 
 EXAMPLES:
@@ -227,7 +227,7 @@ Usage: axon health [environment] [options]
 Check container health status for all environments or a specific environment.
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   -h, --help           Show this help
 
 EXAMPLES:
@@ -242,7 +242,7 @@ Usage: axon validate [options]
 Validate AXON configuration file for correctness and completeness.
 
 OPTIONS:
-  -c, --config FILE    Config file to validate (default: deploy.config.yml)
+  -c, --config FILE    Config file to validate (default: axon.config.yml)
   --strict             Treat warnings as errors
   -h, --help           Show this help
 
@@ -256,10 +256,10 @@ EOF
             cat <<EOF
 Usage: axon init-config [options]
 
-Generate deploy.config.yml configuration file for your product.
+Generate axon.config.yml configuration file for your product.
 
 OPTIONS:
-  -f, --file FILE      Output file name (default: deploy.config.yml)
+  -f, --file FILE      Output file name (default: axon.config.yml)
   -i, --interactive    Interactive mode - configure field by field
   -h, --help           Show this help
 
@@ -278,7 +278,7 @@ EXAMPLES:
 
 MODES:
   Default Mode:
-    - Copies config.example.yml to deploy.config.yml
+    - Copies config.example.yml to axon.config.yml
     - Quick setup with placeholder values
     - You edit the file manually afterward
 
@@ -306,7 +306,7 @@ TARGETS:
   system-server      Setup System Server (nginx, upstreams)
 
 OPTIONS:
-  -c, --config FILE    Config file (default: deploy.config.yml)
+  -c, --config FILE    Config file (default: axon.config.yml)
   --auto-install       Automatically install missing tools (local only)
   -h, --help           Show this help
 
@@ -318,7 +318,7 @@ EXAMPLES:
   axon setup local --auto-install
 
   # Setup Application Server using config
-  axon setup app-server --config deploy.config.yml
+  axon setup app-server --config axon.config.yml
 
   # Setup System Server (nginx, upstreams)
   axon setup system-server
@@ -370,7 +370,7 @@ parse_global_options() {
     shift 3
 
     # Defaults
-    _global_config="deploy.config.yml"
+    _global_config="axon.config.yml"
     _global_verbose=false
     _global_dry_run=false
 

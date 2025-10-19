@@ -1,5 +1,5 @@
 #!/bin/bash
-# Configuration Validator for deploy.config.yml
+# Configuration Validator for axon.config.yml
 # Validates that all required fields are present and properly formatted
 
 set -e
@@ -17,7 +17,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default configuration file
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 STRICT_MODE=false
 ERRORS=0
@@ -41,10 +41,10 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
-            echo "Validates deploy.config.yml for required fields and proper formatting"
+            echo "Validates axon.config.yml for required fields and proper formatting"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE       Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE       Specify config file (default: axon.config.yml)"
             echo "  -e, --environment ENV   Validate specific environment only"
             echo "  --strict                Treat warnings as errors"
             echo "  -h, --help              Show this help message"

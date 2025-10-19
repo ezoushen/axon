@@ -1,6 +1,6 @@
 #!/bin/bash
 # Configuration Parser Library
-# Provides functions to parse deploy.config.yml
+# Provides functions to parse axon.config.yml
 # Requires: yq (YAML processor) - Install with: brew install yq
 
 # Check if yq is installed

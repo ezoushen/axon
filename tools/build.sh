@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build Docker image locally
-# Product-agnostic version - uses deploy.config.yml
+# Product-agnostic version - uses axon.config.yml
 
 set -e
 
@@ -17,7 +17,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default values
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 GIT_SHA_ARG=""
 SKIP_GIT=false
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS] <environment> [git-sha]"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
             echo "  --skip-git           Skip git SHA tag"
             echo "  -h, --help           Show this help message"
             echo ""

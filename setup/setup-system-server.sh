@@ -19,7 +19,7 @@ DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 
 # Default configuration file
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Example:"
@@ -97,8 +97,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: Configuration file not found: ${CONFIG_FILE}${NC}"
     echo ""
     echo -e "Please create a configuration file first:"
-    echo -e "${CYAN}cp ${DEPLOY_DIR}/config.example.yml deploy.config.yml${NC}"
-    echo -e "${CYAN}vi deploy.config.yml${NC}"
+    echo -e "${CYAN}cp ${DEPLOY_DIR}/config.example.yml axon.config.yml${NC}"
+    echo -e "${CYAN}vi axon.config.yml${NC}"
     echo ""
     echo -e "Or specify a custom config file:"
     echo -e "${CYAN}$0 --config /path/to/config.yml${NC}"

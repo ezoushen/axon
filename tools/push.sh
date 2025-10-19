@@ -1,6 +1,6 @@
 #!/bin/bash
 # Push Docker image to AWS ECR
-# Product-agnostic version - uses deploy.config.yml
+# Product-agnostic version - uses axon.config.yml
 
 set -e
 
@@ -17,7 +17,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default values
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 GIT_SHA=""
 
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS] <environment> [git-sha]"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Arguments:"

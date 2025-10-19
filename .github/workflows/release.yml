@@ -1,0 +1,126 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v0.1.0, v1.2.3
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          # Generate changelog from commits
+          if [ -n "$PREV_TAG" ]; then
+            echo "## What's Changed" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
+          else
+            echo "## Initial Release" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "First release of AXON - Zero-downtime deployment orchestration for Docker + nginx" >> CHANGELOG.md
+          fi
+
+          # Read VERSION file
+          if [ -f "VERSION" ]; then
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true  # GitHub auto-generates additional notes
+          files: |
+            VERSION
+            install.sh
+            uninstall.sh
+            homebrew/axon.rb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for release assets to be available
+        run: |
+          echo "Waiting for GitHub to generate release tarball..."
+          sleep 10
+
+      - name: Update Homebrew formula with SHA256
+        id: update_formula
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
+          TARBALL_URL="https://github.com/ezoushen/axon/archive/refs/tags/${TAG_NAME}.tar.gz"
+
+          echo "Downloading tarball and calculating SHA256..."
+          SHA256=$(curl -sL "$TARBALL_URL" | sha256sum | awk '{print $1}')
+
+          if [ -z "$SHA256" ]; then
+            echo "Error: Failed to calculate SHA256"
+            exit 1
+          fi
+
+          echo "SHA256: $SHA256"
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+
+          # Update homebrew/axon.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" homebrew/axon.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/axon.rb
+          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|" homebrew/axon.rb
+
+          echo "✓ Updated homebrew/axon.rb"
+
+      - name: Commit and push Homebrew formula update
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add homebrew/axon.rb
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update Homebrew formula SHA256 for ${TAG_NAME}"
+            git push origin HEAD:main
+            echo "✓ Pushed Homebrew formula update"
+          fi
+
+      - name: Release summary
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✓ Release ${TAG_NAME} completed successfully!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Release URL:"
+          echo "  https://github.com/ezoushen/axon/releases/tag/${TAG_NAME}"
+          echo ""
+          echo "Tarball URL:"
+          echo "  https://github.com/ezoushen/axon/archive/refs/tags/${TAG_NAME}.tar.gz"
+          echo ""
+          echo "SHA256: ${{ steps.update_formula.outputs.sha256 }}"
+          echo ""
+          echo "Homebrew formula updated automatically!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

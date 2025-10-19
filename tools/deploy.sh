@@ -24,7 +24,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default values
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 FORCE_CLEANUP=false
 
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS] <environment>"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
             echo "  --force, -f          Force cleanup of existing containers on target port"
             echo "  -h, --help           Show this help message"
             echo ""
@@ -91,7 +91,7 @@ fi
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: Configuration file not found: $CONFIG_FILE${NC}"
     echo ""
-    echo "Please create deploy.config.yml in your product root directory."
+    echo "Please create axon.config.yml in your product root directory."
     echo "You can copy from: $MODULE_DIR/config.example.yml"
     exit 1
 fi
@@ -228,7 +228,7 @@ EOF
     local compose_override=$(parse_config ".docker.compose_override" "")
     if [ -n "$compose_override" ]; then
         echo "" >> "$temp_compose"
-        echo "    # Custom overrides from deploy.config.yml" >> "$temp_compose"
+        echo "    # Custom overrides from axon.config.yml" >> "$temp_compose"
         # Indent the override content by 4 spaces to match service-level
         echo "$compose_override" | sed 's/^/    /' >> "$temp_compose"
     fi
@@ -242,7 +242,7 @@ EOF
     echo "$temp_compose"
 }
 
-# Function to build docker run command from deploy.config.yml using decomposerize
+# Function to build docker run command from axon.config.yml using decomposerize
 # This generates a temporary docker-compose.yml and converts it to docker run
 build_docker_run_command() {
     local container_name=$1
@@ -509,7 +509,7 @@ echo -e "${BLUE}Step 4/9: Starting new container on Application Server...${NC}"
 echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
 echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
-# Build docker run command from deploy.config.yml
+# Build docker run command from axon.config.yml
 FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
 CONTAINER_NAME="${NEW_CONTAINER}"
 
@@ -521,7 +521,7 @@ eval "NETWORK_NAME=\"$NETWORK_NAME_TEMPLATE\""
 NETWORK_ALIAS_TEMPLATE=$(parse_config ".docker.network_alias" "")
 eval "NETWORK_ALIAS=\"$NETWORK_ALIAS_TEMPLATE\""
 
-# Build the docker run command from deploy.config.yml (single source of truth)
+# Build the docker run command from axon.config.yml (single source of truth)
 # Note: We pass "auto" for app_port to let Docker assign a random port
 DOCKER_RUN_CMD=$(build_docker_run_command \
     "$CONTAINER_NAME" \

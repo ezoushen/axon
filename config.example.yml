@@ -1,5 +1,5 @@
 # Deployment Configuration Example
-# Copy this file to your product root as 'deploy.config.yml' and customize
+# Copy this file to your product root as 'axon.config.yml' and customize
 #
 # IMPORTANT: All deployment scripts run from your LOCAL MACHINE
 # and SSH to both Application Server and System Server to execute commands.

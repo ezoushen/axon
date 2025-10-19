@@ -15,10 +15,10 @@ When deploying a new container, the old container is shut down gracefully to ens
 
 ## Configuration
 
-Configure the graceful shutdown timeout in `deploy.config.yml`:
+Configure the graceful shutdown timeout in `axon.config.yml`:
 
 ```yaml
-# deploy.config.yml
+# axon.config.yml
 deployment:
   graceful_shutdown_timeout: 30  # Seconds to wait before force kill
 ```

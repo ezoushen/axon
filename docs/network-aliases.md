@@ -10,7 +10,7 @@ Each container gets a **stable DNS name** within its network, solving the dynami
 
 ## The Solution
 
-Configure a network alias in `deploy.config.yml`:
+Configure a network alias in `axon.config.yml`:
 
 ```yaml
 docker:
@@ -39,7 +39,7 @@ curl http://app:3000/api/health
 ## Example Multi-Container Setup
 
 ```yaml
-# deploy.config.yml
+# axon.config.yml
 docker:
   network_alias: "web"  # Your app is accessible as "web"
 

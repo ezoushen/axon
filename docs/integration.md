@@ -28,14 +28,14 @@ cp -r /path/to/axon deploy
 
 ## Step 2: Create Product Configuration
 
-Create `deploy.config.yml` in your product root:
+Create `axon.config.yml` in your product root:
 
 ```bash
 cd your-product
-cp config.example.yml deploy.config.yml
+cp config.example.yml axon.config.yml
 ```
 
-Edit `deploy.config.yml` with your product's settings:
+Edit `axon.config.yml` with your product's settings:
 
 ```yaml
 # Product Information
@@ -137,7 +137,7 @@ EOF
 
 **Important Notes:**
 - `.env` files live on the Application Server, not in your repository
-- No need for AWS variables in `.env` files (they're in `deploy.config.yml`)
+- No need for AWS variables in `.env` files (they're in `axon.config.yml`)
 - These files contain runtime secrets and should never be committed to Git
 
 ## Step 4: Add to .gitignore
@@ -146,7 +146,7 @@ EOF
 # .gitignore
 
 # Deployment configuration (contains server IPs and secrets)
-deploy.config.yml
+axon.config.yml
 
 # Environment files (contain secrets)
 .env.production
@@ -247,7 +247,7 @@ axon validate --strict
 
 All commands support these global options:
 ```bash
--c, --config FILE      # Config file (default: deploy.config.yml)
+-c, --config FILE      # Config file (default: axon.config.yml)
 -v, --verbose          # Verbose output
 --dry-run              # Show what would be done
 -h, --help             # Show help
@@ -279,13 +279,13 @@ your-product/
 │       ├── graceful-shutdown.md  # Graceful shutdown details
 │       └── network-aliases.md    # Network alias guide
 │
-├── deploy.config.yml              # Your product configuration (gitignored)
+├── axon.config.yml              # Your product configuration (gitignored)
 ├── .env.production                # On Application Server (gitignored)
 ├── .env.staging                   # On Application Server (gitignored)
 └── ... (rest of your product files)
 ```
 
-**Note:** No docker-compose files needed! All Docker configuration is in `deploy.config.yml`.
+**Note:** No docker-compose files needed! All Docker configuration is in `axon.config.yml`.
 
 ## Updating AXON
 
@@ -339,7 +339,7 @@ When building images:
 **Solution:** Configure a stable DNS name via `network_alias`:
 
 ```yaml
-# deploy.config.yml
+# axon.config.yml
 docker:
   network_alias: "app"
 ```
@@ -361,7 +361,7 @@ curl http://my-product-production-1760809226:3000/api/health
 ## Troubleshooting
 
 ### "Configuration file not found"
-Ensure `deploy.config.yml` exists in your product root, not in the `deploy/` directory.
+Ensure `axon.config.yml` exists in your product root, not in the `deploy/` directory.
 
 ### "Container not found on Application Server"
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
@@ -386,16 +386,16 @@ axon build staging --skip-git
 ```
 
 ### "Health check failed"
-- Verify your app exposes the health endpoint configured in `deploy.config.yml`
+- Verify your app exposes the health endpoint configured in `axon.config.yml`
 - Check container logs: `axon logs {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ### "SSH connection failed"
-Check SSH key path in `deploy.config.yml` and ensure you have access to Application Server and System Server.
+Check SSH key path in `axon.config.yml` and ensure you have access to Application Server and System Server.
 
 ## Best Practices
 
-1. **Keep deploy.config.yml out of Git** - It contains server IPs and paths
+1. **Keep axon.config.yml out of Git** - It contains server IPs and paths
 2. **Test in staging first** - Always deploy to staging before production
 3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
 4. **Monitor deployments** - Watch logs during deployment: `axon logs production --follow`
@@ -454,7 +454,7 @@ axon deploy production
 ### Multiple Products on Same Servers
 
 Each product gets its own:
-- `deploy.config.yml` in its repository root
+- `axon.config.yml` in its repository root
 - Environment files on Application Server
 - Upstream files on System Server (`/etc/nginx/upstreams/{product}-{env}.conf`)
 
@@ -466,4 +466,4 @@ If you encounter issues with AXON, check:
 1. Module documentation: `README.md`
 2. Configuration example: `config.example.yml`
 3. Server setup guide: `docs/setup.md`
-4. Your product configuration: `deploy.config.yml`
+4. Your product configuration: `axon.config.yml`

@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/lib/command-parser.sh"
 # Global variables
 COMMAND=""
 ENVIRONMENT=""
-CONFIG_FILE="deploy.config.yml"
+CONFIG_FILE="axon.config.yml"
 VERBOSE=false
 DRY_RUN=false
 

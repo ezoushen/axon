@@ -7,7 +7,7 @@ A reusable, config-driven deployment system for achieving zero-downtime deployme
 ## Features
 
 - ✅ **Zero-downtime deployments** - Docker auto-port assignment with rolling updates
-- ✅ **Config-driven** - All settings in `deploy.config.yml` (no docker-compose files)
+- ✅ **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
 - ✅ **Multi-environment support** - Production, staging, and custom environments
 - ✅ **Product-agnostic** - Reusable across multiple projects
 - ✅ **AWS ECR integration** - Build, push, and pull images from ECR
@@ -29,9 +29,9 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 - **Auto-assigned Ports**: Docker assigns random ephemeral ports (no manual port management)
 - **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
 - **Rolling Updates**: New container starts → health check passes → nginx switches → old container stops
-- **Config-driven**: Single `deploy.config.yml` defines all Docker runtime settings
+- **Config-driven**: Single `axon.config.yml` defines all Docker runtime settings
 
-**Note:** The System Server and Application Server can be the same physical instance. In this configuration, nginx and Docker run on the same machine, simplifying infrastructure management. The deployment scripts still run from your local machine and SSH to the combined server - you'll just configure the same host for both server settings in `deploy.config.yml`. This setup is ideal for smaller deployments while maintaining the same zero-downtime deployment process.
+**Note:** The System Server and Application Server can be the same physical instance. In this configuration, nginx and Docker run on the same machine, simplifying infrastructure management. The deployment scripts still run from your local machine and SSH to the combined server - you'll just configure the same host for both server settings in `axon.config.yml`. This setup is ideal for smaller deployments while maintaining the same zero-downtime deployment process.
 
 ## Installation
 
@@ -108,7 +108,7 @@ git submodule update --init --recursive
 **Quick start (copy example):**
 ```bash
 axon init-config
-# Then edit deploy.config.yml with your product settings
+# Then edit axon.config.yml with your product settings
 ```
 
 **Interactive mode (recommended for first-time setup):**
@@ -173,8 +173,12 @@ axon validate                        # Validate config first
 ```
 axon/
 ├── README.md                    # This file
-├── axon                      # Main entry point: build → push → deploy
-├── config.example.yml           # Example configuration (copy to deploy.config.yml)
+├── axon                         # Main CLI entry point
+├── VERSION                      # Current version number
+├── config.example.yml           # Example configuration (copy to axon.config.yml)
+├── .github/
+│   └── workflows/
+│       └── release.yml          # Automated release workflow
 ├── setup/
 │   └── setup-local-machine.sh  # Install required tools on local machine
 ├── tools/
@@ -182,19 +186,29 @@ axon/
 │   ├── push.sh                 # Push Docker image to ECR
 │   ├── deploy.sh               # Deploy with zero-downtime
 │   ├── validate-config.sh      # Validate configuration file
+│   ├── init-config.sh          # Generate axon.config.yml
 │   ├── health-check.sh         # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
 │   ├── restart.sh              # Restart containers (via SSH)
 │   └── status.sh               # Check container status (via SSH)
-└── lib/
-    └── config-parser.sh        # YAML configuration parser
+├── release/
+│   ├── create-release.sh       # Create new version release
+│   └── update-homebrew-sha.sh  # Manual Homebrew formula update
+├── lib/
+│   └── command-parser.sh       # Command parsing and help system
+├── homebrew/
+│   └── axon.rb                 # Homebrew formula
+└── docs/
+    ├── integration.md          # Integration guide
+    ├── setup.md                # Server setup guide
+    └── RELEASE.md              # Release process documentation
 ```
 
 **Note**: All scripts run from your **local machine** and use SSH to manage remote servers.
 
 ## Configuration
 
-All deployment settings are in `deploy.config.yml` (product root). The system auto-generates docker commands from config - no docker-compose files needed.
+All deployment settings are in `axon.config.yml` (product root). The system auto-generates docker commands from config - no docker-compose files needed.
 
 **Key configurables:**
 - Dockerfile path (supports custom locations like `docker/Dockerfile.prod`)
@@ -250,7 +264,7 @@ axon validate                           # Validate config file
 axon validate --strict                  # Strict validation
 
 # Configuration
-axon init-config                        # Generate deploy.config.yml
+axon init-config                        # Generate axon.config.yml
 axon init-config --interactive          # Interactive config generation
 axon init-config --file custom.yml      # Custom filename
 ```
@@ -271,7 +285,7 @@ axon setup app-server --config custom.yml
 ### Global Options
 
 ```bash
--c, --config FILE      # Config file (default: deploy.config.yml)
+-c, --config FILE      # Config file (default: axon.config.yml)
 -v, --verbose          # Verbose output
 --dry-run              # Show what would be done
 -h, --help             # Show help
@@ -375,6 +389,22 @@ This module is designed to be product-agnostic and reusable. When contributing:
 2. Update documentation
 3. Test with multiple products
 4. Follow existing code style
+
+### Releasing New Versions
+
+AXON uses a fully automated release process. To create a new release:
+
+```bash
+./release/create-release.sh
+```
+
+This will guide you through creating a version tag. Once pushed, GitHub Actions automatically:
+- Creates the GitHub release
+- Generates changelog
+- Calculates SHA256 for Homebrew formula
+- Updates and commits the Homebrew formula
+
+See [docs/RELEASE.md](docs/RELEASE.md) for detailed release documentation.
 
 ## License
 

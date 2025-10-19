@@ -1,7 +1,7 @@
 #!/bin/bash
 # Check status of Docker containers
 # Runs from LOCAL MACHINE and SSHs to Application Server
-# Product-agnostic version - uses deploy.config.yml
+# Product-agnostic version - uses axon.config.yml
 
 # Colors
 RED='\033[0;31m'
@@ -17,7 +17,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default configuration file
-CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 
 # Parse arguments
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS] [environment]"
             echo ""
             echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Arguments:"

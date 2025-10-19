@@ -21,7 +21,7 @@ if [ -z "$ENVIRONMENT" ]; then
   echo "  $0 <environment> [product_name]"
   echo ""
   echo "Arguments:"
-  echo "  environment    Any environment from deploy.config.yml or 'all'"
+  echo "  environment    Any environment from axon.config.yml or 'all'"
   echo "  product_name   Optional: filter by specific product"
   echo ""
   echo "Examples:"
@@ -33,7 +33,7 @@ if [ -z "$ENVIRONMENT" ]; then
 fi
 
 # Note: Environment validation is not needed here
-# The script accepts any environment name defined in deploy.config.yml or "all"
+# The script accepts any environment name defined in axon.config.yml or "all"
 
 # Check if Docker is running
 if ! docker info &> /dev/null 2>&1; then

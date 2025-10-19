@@ -1,6 +1,6 @@
 #!/bin/bash
 # AXON - Initialize Configuration File
-# Generates deploy.config.yml with optional interactive mode
+# Generates axon.config.yml with optional interactive mode
 
 set -e
 
@@ -18,7 +18,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
 # Default values
-OUTPUT_FILE="deploy.config.yml"
+OUTPUT_FILE="axon.config.yml"
 INTERACTIVE=false
 
 # Parse arguments
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  -f, --file FILE      Output file name (default: deploy.config.yml)"
+            echo "  -f, --file FILE      Output file name (default: axon.config.yml)"
             echo "  -i, --interactive    Interactive mode - configure field by field"
             echo "  -h, --help           Show this help message"
             echo ""

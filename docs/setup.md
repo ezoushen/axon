@@ -492,7 +492,7 @@ After completing setup:
 
 1. ✅ **Create product configuration**
    ```bash
-   cp config.example.yml deploy.config.yml
+   cp config.example.yml axon.config.yml
    # Edit with your settings
    ```
 
