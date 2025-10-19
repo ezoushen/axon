@@ -3,111 +3,125 @@
 #
 # IMPORTANT: All deployment scripts run from your LOCAL MACHINE
 # and SSH to both Application Server and System Server to execute commands.
+#
+# LEGEND:
+#   [REQUIRED] - Must be set, deployment will fail if missing
+#   [OPTIONAL] - Can be omitted, will use default value shown in comment
 
+# ==============================================================================
 # Product Information
+# ==============================================================================
 product:
-  name: "my-product"
-  description: "My Application"
+  name: "my-product"              # [REQUIRED] Product name (used for container/image naming)
+  description: "My Application"   # [OPTIONAL] Product description (for documentation only)
 
+# ==============================================================================
 # AWS Configuration
+# ==============================================================================
 aws:
-  profile: "default"
-  region: "ap-northeast-1"
-  account_id: "123456789012"
-  ecr_repository: "my-product"
+  profile: "default"              # [REQUIRED] AWS CLI profile name
+  region: "ap-northeast-1"        # [REQUIRED] AWS region for ECR
+  account_id: "123456789012"      # [REQUIRED] AWS account ID (12 digits)
+  ecr_repository: "my-product"    # [OPTIONAL] ECR repository name (default: product.name)
 
+# ==============================================================================
 # Server Configuration
+# ==============================================================================
 servers:
   # System Server (nginx + SSL)
   system:
-    host: "system.example.com"           # System Server IP or hostname
-    user: "ubuntu"                       # SSH user (must exist, SSH key required)
-    ssh_key: "~/.ssh/system_server_key"  # SSH private key (must exist)
+    host: "system.example.com"           # [REQUIRED] System Server IP or hostname
+    user: "ubuntu"                       # [REQUIRED] SSH user
+    ssh_key: "~/.ssh/system_server_key"  # [REQUIRED] SSH private key path (must exist locally)
 
   # Application Server (Docker containers)
   application:
-    host: "app.example.com"                  # Application Server public IP/hostname (for SSH)
-    private_ip: "10.0.1.10"                  # Private IP within VPC (for nginx upstream)
-    user: "ubuntu"                           # SSH user (must exist, SSH key required)
-    ssh_key: "~/.ssh/app_server_key"         # SSH private key (must exist)
+    host: "app.example.com"              # [REQUIRED] Application Server public IP/hostname (for SSH)
+    private_ip: "10.0.1.10"              # [REQUIRED] Private IP within VPC (for nginx upstream)
+    user: "ubuntu"                       # [REQUIRED] SSH user
+    ssh_key: "~/.ssh/app_server_key"     # [REQUIRED] SSH private key path (must exist locally)
 
+# ==============================================================================
 # Environment Configurations
+# ==============================================================================
 # You can define any number of environments (production, staging, development, qa, etc.)
 # Each environment can have its own configuration
 environments:
   # Production Environment
   production:
-    # Port is auto-assigned by Docker (no manual configuration needed)
-    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-production.conf
-    # nginx backend:  Auto-generated as my_product_production_backend
-    env_path: "/home/ubuntu/apps/my-product/.env.production"  # Full path to .env file on Application Server
-    image_tag: "production"
+    env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED] Full path to .env file on Application Server
+    image_tag: "production"                                   # [OPTIONAL] Docker image tag (default: environment name)
 
   # Staging Environment
   staging:
     # Port is auto-assigned by Docker (no manual configuration needed)
-    # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-staging.conf
-    # nginx backend:  Auto-generated as my_product_staging_backend
-    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # Full path to .env file on Application Server
-    image_tag: "staging"
+    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # [REQUIRED] Full path to .env file on Application Server
+    image_tag: "staging"                                   # [OPTIONAL] Docker image tag (default: environment name)
 
   # Custom Environment Example (optional)
   # You can define any environment name you need
   # development:
-  #   env_path: "/home/ubuntu/apps/my-product/.env.development"
-  #   image_tag: "dev"
+  #   env_path: "/home/ubuntu/apps/my-product/.env.development"  # [REQUIRED]
+  #   image_tag: "dev"                                           # [OPTIONAL]
 
+# ==============================================================================
 # Health Check Configuration
+# ==============================================================================
 health_check:
-  endpoint: "/api/health"                    # Health check endpoint
+  endpoint: "/api/health"                    # [OPTIONAL] Health check endpoint (default: /api/health)
 
   # Docker container health check settings (used by Docker daemon)
-  interval: "30s"                            # How often Docker checks
-  timeout: "10s"                             # Max time to wait for response
-  retries: 3                                 # Failed checks before unhealthy
-  start_period: "40s"                        # Grace period on startup
+  interval: "30s"                            # [OPTIONAL] How often Docker checks (default: 30s)
+  timeout: "10s"                             # [OPTIONAL] Max time to wait for response (default: 10s)
+  retries: 3                                 # [OPTIONAL] Failed checks before unhealthy (default: 3)
+  start_period: "40s"                        # [OPTIONAL] Grace period on startup (default: 40s)
 
   # Deployment verification (script polls Docker's health status)
-  max_retries: 30                            # Max polling attempts
-  retry_interval: 2                          # Seconds between polls
+  max_retries: 30                            # [OPTIONAL] Max polling attempts (default: 30)
+  retry_interval: 2                          # [OPTIONAL] Seconds between polls (default: 2)
 
+# ==============================================================================
 # Deployment Options
+# ==============================================================================
 deployment:
-  graceful_shutdown_timeout: 30  # Seconds to wait for old container to shutdown gracefully (SIGTERM → SIGKILL)
-  enable_auto_rollback: true
+  graceful_shutdown_timeout: 30  # [OPTIONAL] Seconds to wait for old container to shutdown gracefully (default: 30)
+                                 # (SIGTERM → SIGKILL timeout)
+  enable_auto_rollback: true     # [OPTIONAL] Auto rollback on deployment failure (default: true)
 
+# ==============================================================================
 # Docker Configuration
+# ==============================================================================
 docker:
   # Container runtime configuration
-  container_port: 3000                      # Internal port the app listens on inside container
-  restart_policy: "unless-stopped"
+  container_port: 3000                      # [OPTIONAL] Internal port the app listens on (default: 3000)
+  restart_policy: "unless-stopped"          # [OPTIONAL] Docker restart policy (default: unless-stopped)
 
   # Network configuration
   # Template variables: ${PRODUCT_NAME}, ${ENVIRONMENT}
-  network_driver: "bridge"
-  network_name: "application"
-  network_alias: "app"  # Stable DNS name (supports ${PRODUCT_NAME}, ${ENVIRONMENT} variables)
+  network_driver: "bridge"                  # [OPTIONAL] Network driver (default: bridge)
+  network_name: "application"               # [OPTIONAL] Network name (supports template variables)
+  network_alias: "app"                      # [OPTIONAL] Stable DNS name (supports ${PRODUCT_NAME}, ${ENVIRONMENT} variables)
 
   # Common environment variables for all environments
   # These are set in the container, separate from .env files
-  env_vars:
+  env_vars:                                 # [OPTIONAL] Environment variables
     NODE_ENV: "production"
     PORT: "3000"
 
   # Extra hosts mapping (allows container to access host services)
-  extra_hosts:
+  extra_hosts:                              # [OPTIONAL] Extra host mappings
     - "host.docker.internal:host-gateway"
 
   # Logging configuration
-  logging:
-    driver: "json-file"
-    max_size: "10m"
-    max_file: 3
+  logging:                                  # [OPTIONAL] Logging configuration
+    driver: "json-file"                     # [OPTIONAL] Logging driver (default: json-file)
+    max_size: "10m"                         # [OPTIONAL] Max log file size (default: 10m)
+    max_file: 3                             # [OPTIONAL] Max log files to keep (default: 3)
 
   # Advanced: Raw docker-compose override (optional)
   # Add any Docker Compose configuration here - it will be merged directly
   # This gives you full access to all Docker features without modifying scripts
-  # compose_override: |
+  # compose_override: |                     # [OPTIONAL] Raw docker-compose YAML override
   #   volumes:
   #     - ./data:/app/data
   #   cap_add:

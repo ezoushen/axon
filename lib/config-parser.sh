@@ -129,7 +129,6 @@ load_config() {
     export APPLICATION_SERVER_PRIVATE_IP=$(parse_yaml_key "servers.application.private_ip" "")
 
     # Environment-specific config
-    export DOMAIN=$(parse_yaml_key "environments.${env}.domain" "")
     export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_path" "")
     export IMAGE_TAG=$(parse_yaml_key "environments.${env}.image_tag" "$env")
 

@@ -38,12 +38,12 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 **Check what's missing:**
 ```bash
-./deploy/setup/setup-local-machine.sh
+./setup/setup-local-machine.sh
 ```
 
 **Auto-install missing tools:**
 ```bash
-./deploy/setup/setup-local-machine.sh --auto-install
+./setup/setup-local-machine.sh --auto-install
 ```
 
 **Manual installation:**
@@ -67,11 +67,19 @@ git submodule update --init --recursive
 ### 3. Create Product Configuration
 
 ```bash
-cp config.example.yml deploy.config.yml
+cp deploy/config.example.yml deploy.config.yml
 # Edit deploy.config.yml with your product settings
 ```
 
-### 4. Set Up Environment Files
+### 4. Validate Configuration
+
+```bash
+./tools/validate-config.sh
+./tools/validate-config.sh --config my-config.yml
+./tools/validate-config.sh --strict  # Treat warnings as errors
+```
+
+### 5. Set Up Environment Files
 
 Create environment-specific `.env` files on your Application Server:
 
@@ -91,24 +99,17 @@ API_KEY=your-staging-api-key
 EOF
 ```
 
-### 5. Build, Push, and Deploy
+### 6. Build, Push, and Deploy
 
 ```bash
-# Full pipeline: build → push → deploy (uses deploy.config.yml by default)
+# Full pipeline
 ./axon.sh production
+./axon.sh --config my-config.yml staging
 
-# Use custom config file
-./axon.sh --config my-config.yml production
-
-# Or run individual steps:
-./tools/build.sh production           # Build image locally
-./tools/push.sh production            # Push to ECR
-./tools/deploy.sh production          # Deploy with zero downtime
-
-# With custom config
-./tools/build.sh --config my-config.yml production
-./tools/push.sh --config my-config.yml production
-./tools/deploy.sh --config my-config.yml production
+# Individual steps
+./tools/build.sh production
+./tools/push.sh production
+./tools/deploy.sh production
 ```
 
 ## Directory Structure
@@ -124,6 +125,7 @@ axon/
 │   ├── build.sh                # Build Docker image locally
 │   ├── push.sh                 # Push Docker image to ECR
 │   ├── deploy.sh               # Deploy with zero-downtime
+│   ├── validate-config.sh      # Validate configuration file
 │   ├── health-check.sh         # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
 │   ├── restart.sh              # Restart containers (via SSH)
@@ -134,124 +136,39 @@ axon/
 
 **Note**: All scripts run from your **local machine** and use SSH to manage remote servers.
 
-## Product Integration
+## Configuration
 
-### Configuration File (`deploy.config.yml`)
+All deployment settings are in `deploy.config.yml` (product root). The system auto-generates docker commands from config - no docker-compose files needed.
 
-Each product creates a `deploy.config.yml` in their repository root. This is the **single source of truth** for all deployment settings
-
-### No Docker Compose Files Needed!
-
-The deployment system **automatically generates** docker run commands from `deploy.config.yml`. You don't need to maintain docker-compose files - all Docker settings are in the config.
-
-## Setup Guide
-
-### One-Time Setup
-
-1. **Application Server Setup** (15 min)
-   ```bash
-   ./setup/setup-application-server.sh
-   # Or with custom config:
-   ./setup/setup-application-server.sh --config custom.yml
-   ```
-
-2. **System Server Setup** (30 min)
-   ```bash
-   ./setup/setup-system-server.sh
-   # Or with custom config:
-   ./setup/setup-system-server.sh --config custom.yml
-   ```
-
-See [Setup Guide](docs/setup.md) for detailed instructions.
+See `deploy/config.example.yml` for all available options with `[REQUIRED]` and `[OPTIONAL]` markings.
 
 ## Usage
 
-### Full Deployment Pipeline
-
-Build, push to ECR, and deploy with zero downtime:
+### Deploy
 
 ```bash
-# Auto-detect git SHA (aborts if uncommitted changes)
-./axon.sh production
-
-# Use custom config file
-./axon.sh --config my-config.yml production
-
-# Use specific git SHA (ignores uncommitted changes)
-./axon.sh production abc123
-
-# Skip git SHA tagging
-./axon.sh --skip-git production
-
-# Skip build, only deploy (use existing image)
-./axon.sh --skip-build staging
-
-# Combine multiple flags (order doesn't matter)
-./axon.sh --config my-config.yml --skip-git production
+./axon.sh production                    # Full pipeline with git SHA
+./axon.sh --skip-git staging           # Skip git SHA tagging
+./axon.sh --skip-build production      # Deploy only (use existing image)
+./axon.sh --config custom.yml staging  # Custom config
 ```
 
-### Separate Steps
+### Build & Push
 
-**Build Image Locally:**
 ```bash
-# Build with auto-detected git SHA
-./tools/build.sh production
-
-# Build with custom config
-./tools/build.sh --config my-config.yml staging
-
-# Build with specific git SHA
-./tools/build.sh production abc123
-
-# Build without git SHA tag
+./tools/build.sh production        # Build with auto-detected git SHA
 ./tools/build.sh --skip-git staging
+./tools/push.sh production         # Push to ECR
 ```
 
-**Push Image to ECR:**
+### Monitor
+
 ```bash
-# Push environment tag
-./tools/push.sh production
-
-# Push with git SHA tag
-./tools/push.sh production abc123
-
-# Push with custom config
-./tools/push.sh --config my-config.yml staging
-```
-
-**Deploy Only:**
-```bash
-./tools/deploy.sh production
-./tools/deploy.sh --config my-config.yml staging
-```
-
-### Monitoring
-
-**View Logs:**
-```bash
-./tools/logs.sh production           # Last 50 lines
-./tools/logs.sh staging follow       # Follow in real-time
-./tools/logs.sh all                  # All environments
-```
-
-**Check Status:**
-```bash
-./tools/status.sh                    # All environments
-./tools/status.sh production         # Specific environment
-./tools/status.sh --config custom.yml staging  # With custom config
-```
-
-**Health Check:**
-```bash
-./tools/health-check.sh              # Check all environments
-./tools/health-check.sh staging      # Check specific environment
-./tools/health-check.sh --config custom.yml production  # With custom config
-```
-
-**Restart Container:**
-```bash
-./tools/restart.sh production
-./tools/restart.sh all
+./tools/status.sh                  # Check all containers
+./tools/logs.sh production         # View logs
+./tools/logs.sh staging follow     # Follow logs in real-time
+./tools/health-check.sh            # Health check all environments
+./tools/restart.sh production      # Restart container
 ```
 
 ## Requirements
@@ -276,51 +193,19 @@ Build, push to ECR, and deploy with zero downtime:
 - **decomposerize** (docker-compose to docker run converter)
 - **SSH client** (for server access)
 
-**Quick setup:** Run `./deploy/setup/setup-local-machine.sh` to install all tools automatically.
+**Quick setup:** Run `./setup/setup-local-machine.sh` to install all tools automatically.
 
 ## How It Works
 
-### Deployment Flow
+1. Pull image from ECR → Start new container (auto-assigned port) → Wait for health check
+2. Update nginx upstream → Test config → Reload nginx (zero downtime)
+3. Gracefully shutdown old container
 
-1. **Detect Current Deployment**: Query nginx on System Server for active port
-2. **Generate Container Name**: Create timestamp-based name (`{product}-{env}-{timestamp}`)
-3. **Pull Image**: Pull latest image from ECR on Application Server
-4. **Start New Container**:
-   - Docker auto-assigns port (32768-60999)
-   - Container starts with health check configured
-5. **Wait for Health Check**: Query Docker's health status (not manual curl)
-6. **Update nginx**: Update upstream on System Server to point to new port
-7. **Test nginx Config**: Validate before reloading
-8. **Reload nginx**: Zero-downtime reload
-9. **Graceful Shutdown**: Old containers shut down gracefully (see [Graceful Shutdown Guide](docs/graceful-shutdown.md))
-
-**Total Downtime: 0 seconds** ⚡
-
-### Health Check Approach
-
-The deployment leverages **Docker's native health check**:
-- Docker continuously checks container health using `wget` to test your health endpoint
-- Deployment script queries Docker's health status with `docker inspect`
-- Benefits:
-  - ✅ Single source of truth (Docker's health status)
-  - ✅ No manual URL construction or port management
-  - ✅ More reliable (Docker handles retries internally)
-  - ✅ Works even if port assignment changes
-
-### Git SHA Tagging
-
-When building images:
-- Script auto-detects current git commit SHA
-- Checks for uncommitted changes (aborts if found)
-- Creates two image tags:
-  - `{repository}:{environment}` (e.g., `linebot-nextjs:production`)
-  - `{repository}:{git-sha}` (e.g., `linebot-nextjs:a1b2c3d`)
-- Git SHA tag is code-specific, not environment-specific (promotes image reuse)
-
-## Advanced Topics
-
-- **[Network Aliases](docs/network-aliases.md)** - Stable DNS names for container-to-container communication
-- **[Graceful Shutdown](docs/graceful-shutdown.md)** - Proper shutdown handling for zero data loss
+**Key Features:**
+- Docker auto-assigns ports (32768-60999)
+- Timestamp-based container names: `{product}-{env}-{timestamp}`
+- Docker native health checks (no manual curl)
+- Git SHA auto-tagging with uncommitted change detection
 
 ## Troubleshooting
 
@@ -334,24 +219,16 @@ When building images:
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
 - Verify env_path in config points to the correct .env file location
 
-**3. "Uncommitted changes" error when building**
+**3. "Uncommitted changes" error**
 ```bash
-# Commit your changes first:
-git add .
-git commit -m "Your changes"
-
-# Or use specific git SHA:
-./tools/build.sh staging abc123
-./tools/push.sh staging abc123
-
-# Or skip git SHA tagging:
-./tools/build.sh --skip-git staging
+git add . && git commit -m "Your changes"      # Commit first
+./tools/build.sh --skip-git staging    # Or skip git SHA
 ```
 
 **4. Health check fails**
-- Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./tools/logs.sh {environment}`
-- Test health endpoint locally: `curl http://localhost:3000/api/health`
+- Check logs: `./tools/logs.sh production`
+- Verify health endpoint is exposed at configured path
+- Test locally: `curl http://localhost:3000/api/health`
 
 ## Contributing
 

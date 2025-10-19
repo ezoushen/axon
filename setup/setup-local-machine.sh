@@ -309,10 +309,10 @@ if [ ${#MISSING_TOOLS[@]} -eq 0 ]; then
     echo "   (or use existing keys in ~/.ssh/)"
     echo ""
     echo "3. Create your deploy.config.yml:"
-    echo "   cp deploy/config.example.yml deploy.config.yml"
+    echo "   cp config.example.yml deploy.config.yml"
     echo ""
     echo "4. Run deployment:"
-    echo "   ./deploy/axon.sh production"
+    echo "   ./axon.sh production"
     echo ""
 else
     echo -e "${RED}==================================================${NC}"
