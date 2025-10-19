@@ -16,12 +16,45 @@ NC='\033[0m'
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PRODUCT_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 
-# Configuration file
-CONFIG_FILE="${CONFIG_FILE:-$DEPLOY_DIR/../deploy.config.yml}"
+# Default configuration file
+CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
 
-if [ ! -f "$CONFIG_FILE" ]; then
-    CONFIG_FILE="$DEPLOY_DIR/deploy.config.yml"
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Example:"
+            echo "  $0 --config custom.yml"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            echo -e "${RED}Error: Unexpected argument: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
 echo -e "${CYAN}==================================================${NC}"
@@ -63,9 +96,12 @@ parse_config() {
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: Configuration file not found: ${CONFIG_FILE}${NC}"
     echo ""
-    echo -e "Please create deploy.config.yml first:"
+    echo -e "Please create a configuration file first:"
     echo -e "${CYAN}cp ${DEPLOY_DIR}/config.example.yml deploy.config.yml${NC}"
     echo -e "${CYAN}vi deploy.config.yml${NC}"
+    echo ""
+    echo -e "Or specify a custom config file:"
+    echo -e "${CYAN}$0 --config /path/to/config.yml${NC}"
     exit 1
 fi
 
@@ -170,7 +206,7 @@ echo ""
 echo -e "${BLUE}Step 3/6: Testing SSH connection to Application Server...${NC}"
 
 if [ -z "$APP_SERVER_HOST" ]; then
-    echo -e "  ${RED}✗ Application Server host not configured in deploy.config.yml${NC}"
+    echo -e "  ${RED}✗ Application Server host not configured in config file${NC}"
     exit 1
 fi
 
@@ -291,7 +327,7 @@ echo ""
 echo -e "${BLUE}Step 6/6: Testing SSH connection to System Server...${NC}"
 
 if [ -z "$SYSTEM_SERVER_HOST" ]; then
-    echo -e "  ${YELLOW}⚠ System Server host not configured in deploy.config.yml${NC}"
+    echo -e "  ${YELLOW}⚠ System Server host not configured in config file${NC}"
     echo -e "  You'll need to configure this before deployment"
 else
     echo -e "  Testing: ${CYAN}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"

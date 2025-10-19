@@ -15,7 +15,66 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
+
+# Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+ENVIRONMENT=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] [environment]"
+            echo ""
+            echo "Options:"
+            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Environment to check (default: all)"
+            echo ""
+            echo "Examples:"
+            echo "  $0                   # Check all environments"
+            echo "  $0 production        # Check production only"
+            echo "  $0 --config custom.yml staging"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional argument
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Default environment to 'all'
+ENVIRONMENT=${ENVIRONMENT:-all}
+
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+fi
+
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+    exit 1
+fi
 
 # Source config parser
 source "$MODULE_DIR/lib/config-parser.sh"
@@ -25,9 +84,6 @@ APP_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
 APP_SERVER_USER=$(parse_yaml_key ".servers.application.user" "ubuntu")
 APP_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "~/.ssh/application_server_key")
 APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
-
-# Parse arguments
-ENVIRONMENT=${1:-all}
 
 check_environment() {
     local env=$1

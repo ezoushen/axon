@@ -2,9 +2,10 @@
 # AXON - Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
 # Runs from LOCAL MACHINE
 #
-# Usage: ./axon.sh <environment> [--skip-build]
+# Usage: ./axon.sh [OPTIONS] <environment>
 # Example: ./axon.sh production
-# Example: ./axon.sh staging --skip-build  # Skip build if image already pushed
+# Example: ./axon.sh --skip-build staging
+# Example: ./axon.sh --config custom.yml production abc123
 
 set -e
 
@@ -17,38 +18,89 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default values
+CONFIG_FILE="deploy.config.yml"
+SKIP_BUILD=false
+SKIP_GIT=false
+ENVIRONMENT=""
+GIT_SHA=""
 
 # Parse arguments
-ENVIRONMENT=${1}
-SECOND_ARG=${2}
-GIT_SHA_OR_FLAG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --skip-git)
+            SKIP_GIT=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] <environment> [git-sha]"
+            echo ""
+            echo "Options:"
+            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  --skip-build         Skip build and push, only deploy"
+            echo "  --skip-git           Build without git SHA tag"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Target environment (e.g., production, staging)"
+            echo "  git-sha              Optional: specific git SHA to use"
+            echo ""
+            echo "Examples:"
+            echo "  $0 production"
+            echo "  $0 --skip-build staging"
+            echo "  $0 --config custom.yml production"
+            echo "  $0 production abc123"
+            echo "  $0 --config custom.yml --skip-git staging"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional arguments
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            elif [ -z "$GIT_SHA" ]; then
+                GIT_SHA="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
+# Validate required arguments
 if [ -z "$ENVIRONMENT" ]; then
     echo -e "${RED}Error: Environment parameter required${NC}"
-    echo ""
-    echo "Usage: $0 <environment> [git-sha|--skip-build|--skip-git]"
-    echo ""
-    echo "Examples:"
-    echo "  $0 production              # Auto-detect git SHA, build, push, and deploy"
-    echo "  $0 staging abc123          # Use specific git SHA, build, push, and deploy"
-    echo "  $0 staging --skip-git      # Build without git SHA tag"
-    echo "  $0 staging --skip-build    # Skip build, only deploy (use existing image)"
+    echo "Use --help for usage information"
     exit 1
 fi
 
-# Determine if we're skipping build or passing git SHA
-if [ "$SECOND_ARG" = "--skip-build" ]; then
-    SKIP_BUILD=true
-    GIT_SHA_OR_FLAG=""
-else
-    SKIP_BUILD=false
-    GIT_SHA_OR_FLAG="$SECOND_ARG"  # Could be git SHA, --skip-git, or empty
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+    exit 1
 fi
 
 echo -e "${CYAN}===========================================================${NC}"
 echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
 echo -e "${CYAN}Build → Push to ECR → Zero-Downtime Deploy${NC}"
+echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
 echo -e "${CYAN}===========================================================${NC}"
 echo ""
 
@@ -62,12 +114,16 @@ else
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    # Call build-and-push.sh with optional git SHA argument
-    if [ -n "$GIT_SHA_OR_FLAG" ]; then
-        "$SCRIPT_DIR/tools/build-and-push.sh" "$ENVIRONMENT" "$GIT_SHA_OR_FLAG"
-    else
-        "$SCRIPT_DIR/tools/build-and-push.sh" "$ENVIRONMENT"
+    # Build arguments for build-and-push.sh
+    BUILD_ARGS=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+
+    if [ "$SKIP_GIT" = true ]; then
+        BUILD_ARGS+=("--skip-git")
+    elif [ -n "$GIT_SHA" ]; then
+        BUILD_ARGS+=("$GIT_SHA")
     fi
+
+    "$SCRIPT_DIR/tools/build-and-push.sh" "${BUILD_ARGS[@]}"
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Build and push failed!${NC}"
@@ -85,7 +141,7 @@ echo -e "${BLUE}Step 2/2: Zero-Downtime Deployment${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-"$SCRIPT_DIR/deploy.sh" "$ENVIRONMENT"
+"$SCRIPT_DIR/tools/deploy.sh" --config "$CONFIG_FILE" "$ENVIRONMENT"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}✗ Deployment failed!${NC}"
@@ -100,16 +156,15 @@ echo -e "${GREEN}===========================================================${NC
 echo ""
 
 echo -e "${CYAN}Summary:${NC}"
+echo -e "  Config:      ${YELLOW}${CONFIG_FILE}${NC}"
 if [ "$SKIP_BUILD" = true ]; then
     echo -e "  Build:       ${YELLOW}Skipped${NC}"
 else
     echo -e "  Build:       ${GREEN}✓ Completed${NC}"
-    if [ -n "$GIT_SHA_OR_FLAG" ]; then
-        if [ "$GIT_SHA_OR_FLAG" = "--skip-git" ]; then
-            echo -e "  Git SHA:     ${YELLOW}Skipped${NC}"
-        else
-            echo -e "  Git SHA:     ${YELLOW}${GIT_SHA_OR_FLAG}${NC}"
-        fi
+    if [ "$SKIP_GIT" = true ]; then
+        echo -e "  Git SHA:     ${YELLOW}Skipped${NC}"
+    elif [ -n "$GIT_SHA" ]; then
+        echo -e "  Git SHA:     ${YELLOW}${GIT_SHA}${NC}"
     else
         echo -e "  Git SHA:     ${GREEN}Auto-detected${NC}"
     fi

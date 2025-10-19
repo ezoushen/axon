@@ -164,14 +164,17 @@ deploy.config.yml
 # Auto-detect git SHA (aborts if uncommitted changes)
 ./axon.sh production
 
+# Use custom config file
+./axon.sh --config my-config.yml production
+
 # Use specific git SHA (ignores uncommitted changes)
 ./axon.sh production abc123
 
 # Skip git SHA tagging
-./axon.sh production --skip-git
+./axon.sh --skip-git production
 
 # Skip build, only deploy (use existing image)
-./axon.sh staging --skip-build
+./axon.sh --skip-build staging
 ```
 
 ### Separate Steps
@@ -181,17 +184,20 @@ deploy.config.yml
 # Auto-detect git SHA
 ./tools/build-and-push.sh production
 
+# Use custom config file
+./tools/build-and-push.sh --config my-config.yml staging
+
 # Use specific git SHA
 ./tools/build-and-push.sh production abc123
 
 # Skip git SHA
-./tools/build-and-push.sh production --skip-git
+./tools/build-and-push.sh --skip-git production
 ```
 
 **Deploy Only:**
 ```bash
 ./tools/deploy.sh production
-./tools/deploy.sh staging
+./tools/deploy.sh --config my-config.yml staging
 ```
 
 ### Monitoring
@@ -204,10 +210,12 @@ deploy.config.yml
 # Check status
 ./tools/status.sh
 ./tools/status.sh production
+./tools/status.sh --config custom.yml staging
 
 # Health check
 ./tools/health-check.sh
 ./tools/health-check.sh staging
+./tools/health-check.sh --config custom.yml production
 
 # Restart container
 ./tools/restart.sh production
@@ -338,7 +346,7 @@ git commit -m "Your changes"
 ./tools/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./tools/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh --skip-git staging
 ```
 
 ### "Health check failed"
@@ -378,6 +386,9 @@ git commit -m "Add new feature"
 # 5. Monitor production
 ./tools/status.sh production
 ./tools/health-check.sh production
+
+# With custom config
+./tools/status.sh --config custom.yml production
 ```
 
 ## Advanced Usage
@@ -385,15 +396,15 @@ git commit -m "Add new feature"
 ### Deploy Existing Image (Skip Build)
 
 ```bash
-# Build and push once
+# Build and push to staging
 ./tools/build-and-push.sh staging
 
 # Deploy to staging
 ./tools/deploy.sh staging
 
-# Deploy same image to production (no rebuild)
-./tools/build-and-push.sh production --skip-build
-./tools/deploy.sh production
+# Deploy same image to production without rebuilding
+# (manually tag the staging image as production in ECR first)
+./axon.sh --skip-build production
 ```
 
 ### Multiple Products on Same Servers

@@ -4,7 +4,7 @@ Each container gets a **stable DNS name** within its network, solving the dynami
 
 ## The Problem
 
-- Container names include timestamps: `linebot-nextjs-production-1760809226`
+- Container names include timestamps: `my-product-production-1760809226`
 - Names change on every deployment
 - Hard to reference from other containers
 
@@ -26,7 +26,7 @@ Containers on the same network can communicate using the alias:
 curl http://app:3000/api/health
 
 # Works even though actual container name is:
-# linebot-nextjs-production-1760809226
+# my-product-production-1760809226
 ```
 
 ## Benefits

@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 
 # Parse arguments
 ENVIRONMENT=${1}
-PRODUCT_NAME=${2:-linebot-nextjs}
+PRODUCT_NAME=${2}
 
 # Show usage if no arguments
 if [ -z "$ENVIRONMENT" ]; then

@@ -20,40 +20,70 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Product root directory (parent of deploy module)
-PRODUCT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
 
-# Configuration file
+# Default values
 CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
-
-# Parse command line arguments
 ENVIRONMENT=""
 FORCE_CLEANUP=false
 
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
         --force|-f)
             FORCE_CLEANUP=true
             shift
             ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] <environment>"
+            echo ""
+            echo "Options:"
+            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  --force, -f          Force cleanup of existing containers on target port"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Target environment (e.g., production, staging)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 production"
+            echo "  $0 --config custom.yml staging"
+            echo "  $0 --force production"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
         *)
-            ENVIRONMENT=$1
+            # Positional argument
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
             shift
             ;;
     esac
 done
 
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+fi
+
 # Validate environment parameter
 if [ -z "$ENVIRONMENT" ]; then
     echo -e "${RED}Error: Environment parameter required${NC}"
-    echo ""
-    echo "Usage: $0 <environment> [--force]"
-    echo ""
-    echo "Options:"
-    echo "  --force, -f    Force cleanup of existing containers on target port"
-    echo ""
-    echo "Examples:"
-    echo "  $0 production"
-    echo "  $0 staging --force"
+    echo "Use --help for usage information"
     exit 1
 fi
 
@@ -62,7 +92,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: Configuration file not found: $CONFIG_FILE${NC}"
     echo ""
     echo "Please create deploy.config.yml in your product root directory."
-    echo "You can copy from: $SCRIPT_DIR/config.example.yml"
+    echo "You can copy from: $MODULE_DIR/config.example.yml"
     exit 1
 fi
 

@@ -72,12 +72,19 @@ EOF
 ### 4. Build, Push, and Deploy
 
 ```bash
-# Full pipeline: build → push → deploy
+# Full pipeline: build → push → deploy (uses deploy.config.yml by default)
 ./axon.sh production
+
+# Use custom config file
+./axon.sh --config my-config.yml production
 
 # Or run steps separately:
 ./tools/build-and-push.sh production  # Build and push image
 ./tools/deploy.sh production          # Deploy with zero downtime
+
+# With custom config
+./tools/build-and-push.sh --config my-config.yml production
+./tools/deploy.sh --config my-config.yml production
 ```
 
 ## Directory Structure
@@ -114,14 +121,18 @@ The deployment system **automatically generates** docker run commands from `depl
 
 ### One-Time Setup
 
-1. **System Server Setup** (30 min)
+1. **Application Server Setup** (15 min)
    ```bash
-   ./setup/setup-system-server.sh
+   ./setup/setup-application-server.sh
+   # Or with custom config:
+   ./setup/setup-application-server.sh --config custom.yml
    ```
 
-2. **Application Server Setup** (15 min)
+2. **System Server Setup** (30 min)
    ```bash
-   ./setup/setup-app-server.sh
+   ./setup/setup-system-server.sh
+   # Or with custom config:
+   ./setup/setup-system-server.sh --config custom.yml
    ```
 
 See [Setup Guide](docs/setup.md) for detailed instructions.
@@ -136,14 +147,20 @@ Build, push to ECR, and deploy with zero downtime:
 # Auto-detect git SHA (aborts if uncommitted changes)
 ./axon.sh production
 
+# Use custom config file
+./axon.sh --config my-config.yml production
+
 # Use specific git SHA (ignores uncommitted changes)
 ./axon.sh production abc123
 
 # Skip git SHA tagging
-./axon.sh production --skip-git
+./axon.sh --skip-git production
 
 # Skip build, only deploy (use existing image)
-./axon.sh staging --skip-build
+./axon.sh --skip-build staging
+
+# Combine multiple flags (order doesn't matter)
+./axon.sh --config my-config.yml --skip-git production
 ```
 
 ### Separate Steps
@@ -153,21 +170,24 @@ Build, push to ECR, and deploy with zero downtime:
 # Auto-detect git SHA
 ./tools/build-and-push.sh staging
 
+# Use custom config file
+./tools/build-and-push.sh --config my-config.yml production
+
 # Use specific git SHA
 ./tools/build-and-push.sh staging abc123
 
 # Skip git SHA
-./tools/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh --skip-git staging
 ```
 
 This creates two image tags:
-- `linebot-nextjs:staging` (environment tag)
-- `linebot-nextjs:abc123` (git SHA tag)
+- `{product}:staging` (environment tag)
+- `{product}:abc123` (git SHA tag)
 
 **Deploy Only:**
 ```bash
 ./tools/deploy.sh production
-./tools/deploy.sh staging
+./tools/deploy.sh --config my-config.yml staging
 ```
 
 ### Monitoring
@@ -183,12 +203,14 @@ This creates two image tags:
 ```bash
 ./tools/status.sh                    # All environments
 ./tools/status.sh production         # Specific environment
+./tools/status.sh --config custom.yml staging  # With custom config
 ```
 
 **Health Check:**
 ```bash
 ./tools/health-check.sh              # Check all environments
 ./tools/health-check.sh staging      # Check specific environment
+./tools/health-check.sh --config custom.yml production  # With custom config
 ```
 
 **Restart Container:**
@@ -286,7 +308,7 @@ git commit -m "Your changes"
 ./tools/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./tools/build-and-push.sh staging --skip-git
+./tools/build-and-push.sh --skip-git staging
 ```
 
 **5. Health check fails**

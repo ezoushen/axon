@@ -15,26 +15,82 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
+
+# Default values
 CONFIG_FILE="${PRODUCT_ROOT}/deploy.config.yml"
+ENVIRONMENT=""
+GIT_SHA_ARG=""
+SKIP_GIT=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        --skip-git)
+            SKIP_GIT=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] <environment> [git-sha]"
+            echo ""
+            echo "Options:"
+            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
+            echo "  --skip-git           Skip git SHA tag"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Target environment (e.g., production, staging)"
+            echo "  git-sha              Optional: specific git SHA to use"
+            echo ""
+            echo "Examples:"
+            echo "  $0 production"
+            echo "  $0 --config custom.yml staging"
+            echo "  $0 production abc123"
+            echo "  $0 --skip-git production"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional arguments
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            elif [ -z "$GIT_SHA_ARG" ]; then
+                GIT_SHA_ARG="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+fi
 
 # Source the config parser
 source "$MODULE_DIR/lib/config-parser.sh"
 
-# Parse arguments
-ENVIRONMENT=${1}
-GIT_SHA_ARG=${2}  # User-provided SHA (optional)
-
 # Validate environment
 if [ -z "$ENVIRONMENT" ]; then
     echo -e "${RED}Error: Environment parameter required${NC}"
-    echo ""
-    echo "Usage: $0 <environment> [git-sha]"
-    echo ""
-    echo "Examples:"
-    echo "  $0 production                 # Auto-detect git SHA"
-    echo "  $0 staging                    # Auto-detect git SHA"
-    echo "  $0 production abc123          # Use specific git SHA"
-    echo "  $0 production --skip-git      # Skip git SHA (build only with env tag)"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
     exit 1
 fi
 
@@ -46,35 +102,34 @@ else
 fi
 
 # Handle git SHA
-if [ -z "$GIT_SHA_ARG" ]; then
-    # No SHA provided - auto-detect from git
-    if [ "$IS_GIT_REPO" = true ]; then
-        # Check for uncommitted changes
-        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-            echo -e "${RED}Error: You have uncommitted changes${NC}"
-            echo ""
-            echo "Please commit your changes before building, or provide an explicit git SHA:"
-            echo "  $0 $ENVIRONMENT <git-sha>"
-            echo ""
-            echo "Uncommitted changes:"
-            git status --short
-            exit 1
-        fi
-
-        # Get current commit SHA
-        GIT_SHA=$(git rev-parse --short HEAD)
-        echo -e "${GREEN}Auto-detected git SHA: ${GIT_SHA}${NC}"
-    else
-        echo -e "${YELLOW}Warning: Not a git repository, skipping git SHA tag${NC}"
-        GIT_SHA=""
-    fi
-elif [ "$GIT_SHA_ARG" = "--skip-git" ]; then
+if [ "$SKIP_GIT" = true ]; then
     # Explicitly skip git SHA
+    echo -e "${YELLOW}Skipping git SHA tag (--skip-git flag provided)${NC}"
     GIT_SHA=""
-else
+elif [ -n "$GIT_SHA_ARG" ]; then
     # User provided explicit SHA - use it regardless of uncommitted changes
     GIT_SHA="$GIT_SHA_ARG"
     echo -e "${YELLOW}Using provided git SHA: ${GIT_SHA}${NC}"
+elif [ "$IS_GIT_REPO" = true ]; then
+    # No SHA provided - auto-detect from git
+    # Check for uncommitted changes
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        echo -e "${RED}Error: You have uncommitted changes${NC}"
+        echo ""
+        echo "Please commit your changes before building, or provide an explicit git SHA:"
+        echo "  $0 --config $CONFIG_FILE $ENVIRONMENT <git-sha>"
+        echo ""
+        echo "Uncommitted changes:"
+        git status --short
+        exit 1
+    fi
+
+    # Get current commit SHA
+    GIT_SHA=$(git rev-parse --short HEAD)
+    echo -e "${GREEN}Auto-detected git SHA: ${GIT_SHA}${NC}"
+else
+    echo -e "${YELLOW}Warning: Not a git repository, skipping git SHA tag${NC}"
+    GIT_SHA=""
 fi
 
 echo -e "${BLUE}==================================================${NC}"
