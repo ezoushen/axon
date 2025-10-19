@@ -93,6 +93,11 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Load configuration from config file
+# First validate environment exists
+if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
+    exit 1
+fi
+
 load_config "$ENVIRONMENT"
 
 # Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)

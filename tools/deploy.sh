@@ -315,6 +315,11 @@ echo ""
 
 echo -e "${BLUE}Loading configuration...${NC}"
 
+# Validate environment exists in config
+if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
+    exit 1
+fi
+
 # Product config
 PRODUCT_NAME=$(parse_config "product.name" "my-product")
 PRODUCT_DESC=$(parse_config "product.description" "")

@@ -32,6 +32,8 @@ servers:
     ssh_key: "~/.ssh/app_server_key"         # SSH private key (must exist)
 
 # Environment Configurations
+# You can define any number of environments (production, staging, development, qa, etc.)
+# Each environment can have its own configuration
 environments:
   # Production Environment
   production:
@@ -48,6 +50,12 @@ environments:
     # nginx backend:  Auto-generated as my_product_staging_backend
     env_path: "/home/ubuntu/apps/my-product/.env.staging"  # Full path to .env file on Application Server
     image_tag: "staging"
+
+  # Custom Environment Example (optional)
+  # You can define any environment name you need
+  # development:
+  #   env_path: "/home/ubuntu/apps/my-product/.env.development"
+  #   image_tag: "dev"
 
 # Health Check Configuration
 health_check:

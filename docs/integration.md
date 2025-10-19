@@ -179,19 +179,25 @@ deploy.config.yml
 
 ### Separate Steps
 
-**Build and Push:**
+**Build Image:**
 ```bash
 # Auto-detect git SHA
-./tools/build-and-push.sh production
+./tools/build.sh production
 
 # Use custom config file
-./tools/build-and-push.sh --config my-config.yml staging
+./tools/build.sh --config my-config.yml staging
 
 # Use specific git SHA
-./tools/build-and-push.sh production abc123
+./tools/build.sh production abc123
 
 # Skip git SHA
-./tools/build-and-push.sh --skip-git production
+./tools/build.sh --skip-git production
+```
+
+**Push to ECR:**
+```bash
+./tools/push.sh production
+./tools/push.sh --config my-config.yml staging
 ```
 
 **Deploy Only:**
@@ -230,8 +236,9 @@ your-product/
 │   ├── axon.sh                    # Main entry point: build → push → deploy
 │   ├── config.example.yml         # Example configuration
 │   ├── tools/
-│   │   ├── deploy.sh             # Deployment script (zero-downtime)
-│   │   ├── build-and-push.sh     # Build and push to ECR
+│   │   ├── build.sh              # Build Docker image
+│   │   ├── push.sh               # Push to ECR
+│   │   ├── deploy.sh             # Deploy (zero-downtime)
 │   │   ├── logs.sh               # View logs
 │   │   ├── status.sh             # Check status
 │   │   ├── restart.sh            # Restart containers
@@ -343,10 +350,11 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./tools/build-and-push.sh staging abc123
+./tools/build.sh staging abc123
+./tools/push.sh staging abc123
 
 # Or skip git SHA tagging:
-./tools/build-and-push.sh --skip-git staging
+./tools/build.sh --skip-git staging
 ```
 
 ### "Health check failed"
@@ -397,7 +405,8 @@ git commit -m "Add new feature"
 
 ```bash
 # Build and push to staging
-./tools/build-and-push.sh staging
+./tools/build.sh staging
+./tools/push.sh staging
 
 # Deploy to staging
 ./tools/deploy.sh staging

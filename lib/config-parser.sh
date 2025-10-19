@@ -47,6 +47,56 @@ parse_yaml_key() {
     fi
 }
 
+# Get list of all environments defined in config
+get_available_environments() {
+    local config_file=${1:-$CONFIG_FILE}
+
+    # Ensure yq is available
+    if ! check_yq; then
+        exit 1
+    fi
+
+    # Get all environment keys
+    yq eval '.environments | keys | .[]' "$config_file" 2>/dev/null
+}
+
+# Validate that an environment exists in config
+validate_environment() {
+    local env=$1
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ ! -f "$config_file" ]; then
+        echo -e "${RED}Error: Configuration file not found: $config_file${NC}" >&2
+        return 1
+    fi
+
+    # Ensure yq is available
+    if ! check_yq; then
+        exit 1
+    fi
+
+    # Check if environment exists in config
+    local env_path=$(yq eval ".environments.$env" "$config_file" 2>/dev/null)
+
+    if [ "$env_path" = "null" ] || [ -z "$env_path" ]; then
+        echo -e "${RED}Error: Environment '$env' not found in $config_file${NC}" >&2
+        echo "" >&2
+        echo -e "${YELLOW}Available environments:${NC}" >&2
+        local available_envs=$(get_available_environments "$config_file")
+        if [ -n "$available_envs" ]; then
+            echo "$available_envs" | while read -r e; do
+                echo "  - $e" >&2
+            done
+        else
+            echo "  (none defined)" >&2
+        fi
+        echo "" >&2
+        return 1
+    fi
+
+    return 0
+}
+
 # Load complete configuration for an environment
 load_config() {
     local env=$1

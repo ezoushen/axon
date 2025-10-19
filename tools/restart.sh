@@ -20,18 +20,20 @@ if [ -z "$ENVIRONMENT" ]; then
   echo "Usage:"
   echo "  $0 <environment> [product_name]"
   echo ""
+  echo "Arguments:"
+  echo "  environment    Any environment from deploy.config.yml or 'all'"
+  echo "  product_name   Optional: filter by specific product"
+  echo ""
   echo "Examples:"
-  echo "  $0 production    # Restart production container only"
-  echo "  $0 staging       # Restart staging container only"
+  echo "  $0 production    # Restart production container"
+  echo "  $0 staging       # Restart staging container"
+  echo "  $0 development   # Restart development container (custom env)"
   echo "  $0 all           # Restart all containers"
   exit 0
 fi
 
-# Validate environment
-if [ "$ENVIRONMENT" != "production" ] && [ "$ENVIRONMENT" != "staging" ] && [ "$ENVIRONMENT" != "all" ]; then
-  echo -e "${RED}Error: Environment must be 'production', 'staging', or 'all'${NC}"
-  exit 1
-fi
+# Note: Environment validation is not needed here
+# The script accepts any environment name defined in deploy.config.yml or "all"
 
 # Check if Docker is running
 if ! docker info &> /dev/null 2>&1; then

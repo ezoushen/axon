@@ -138,6 +138,11 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Load configuration from config file
+# First validate environment exists
+if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
+    exit 1
+fi
+
 load_config "$ENVIRONMENT"
 
 # Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
@@ -239,5 +244,5 @@ echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
 echo ""
 echo "Next steps:"
 echo "  Push to ECR: ./tools/push.sh ${ENVIRONMENT}"
-echo "  Or build and push: ./tools/build-and-push.sh ${ENVIRONMENT}"
+echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
 echo ""

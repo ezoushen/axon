@@ -100,12 +100,14 @@ EOF
 # Use custom config file
 ./axon.sh --config my-config.yml production
 
-# Or run steps separately:
-./tools/build-and-push.sh production  # Build and push image
+# Or run individual steps:
+./tools/build.sh production           # Build image locally
+./tools/push.sh production            # Push to ECR
 ./tools/deploy.sh production          # Deploy with zero downtime
 
 # With custom config
-./tools/build-and-push.sh --config my-config.yml production
+./tools/build.sh --config my-config.yml production
+./tools/push.sh --config my-config.yml production
 ./tools/deploy.sh --config my-config.yml production
 ```
 
@@ -119,10 +121,9 @@ axon/
 ├── setup/
 │   └── setup-local-machine.sh  # Install required tools on local machine
 ├── tools/
-│   ├── deploy.sh               # Deployment script (zero-downtime)
 │   ├── build.sh                # Build Docker image locally
 │   ├── push.sh                 # Push Docker image to ECR
-│   ├── build-and-push.sh       # Build and push combined (legacy, calls build.sh + push.sh)
+│   ├── deploy.sh               # Deploy with zero-downtime
 │   ├── health-check.sh         # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
 │   ├── restart.sh              # Restart containers (via SSH)
@@ -216,13 +217,6 @@ Build, push to ECR, and deploy with zero downtime:
 
 # Push with custom config
 ./tools/push.sh --config my-config.yml staging
-```
-
-**Build and Push Combined:**
-```bash
-# All-in-one: build + push
-./tools/build-and-push.sh production
-./tools/build-and-push.sh --config my-config.yml staging abc123
 ```
 
 **Deploy Only:**
@@ -347,10 +341,11 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./tools/build-and-push.sh staging abc123
+./tools/build.sh staging abc123
+./tools/push.sh staging abc123
 
 # Or skip git SHA tagging:
-./tools/build-and-push.sh --skip-git staging
+./tools/build.sh --skip-git staging
 ```
 
 **4. Health check fails**

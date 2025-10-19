@@ -21,21 +21,22 @@ if [ -z "$ENVIRONMENT" ]; then
   echo "Usage:"
   echo "  $0 <environment> [follow] [product_name]"
   echo ""
+  echo "Arguments:"
+  echo "  environment    Any environment from deploy.config.yml or 'all'"
+  echo "  follow         Optional: 'follow' to stream logs in real-time"
+  echo "  product_name   Optional: filter by specific product"
+  echo ""
   echo "Examples:"
-  echo "  $0 production           # Show last 50 lines of production logs"
-  echo "  $0 staging              # Show last 50 lines of staging logs"
-  echo "  $0 all                  # Show last 50 lines of all logs"
-  echo "  $0 production follow    # Follow production logs in real-time"
-  echo "  $0 staging follow       # Follow staging logs in real-time"
-  echo "  $0 all follow           # Follow all logs in real-time"
+  echo "  $0 production           # Show last 50 lines"
+  echo "  $0 staging              # Show last 50 lines"
+  echo "  $0 development          # Show last 50 lines (custom env)"
+  echo "  $0 all                  # Show all environments"
+  echo "  $0 production follow    # Follow logs in real-time"
   exit 0
 fi
 
-# Validate environment
-if [ "$ENVIRONMENT" != "production" ] && [ "$ENVIRONMENT" != "staging" ] && [ "$ENVIRONMENT" != "all" ]; then
-  echo -e "${RED}Error: Environment must be 'production', 'staging', or 'all'${NC}"
-  exit 1
-fi
+# Note: Environment validation is not needed here
+# The script accepts any environment name defined in deploy.config.yml or "all"
 
 # Check if Docker is running
 if ! docker info &> /dev/null 2>&1; then
