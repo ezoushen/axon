@@ -68,8 +68,8 @@ if [ -z "$CONTAINERS" ]; then
     echo -e "${YELLOW}No containers found for ${PRODUCT_NAME}${NC}"
     echo ""
     echo "To deploy:"
-    echo "  ./deploy/deploy.sh production"
-    echo "  ./deploy/deploy.sh staging"
+    echo "  ./deploy.sh production"
+    echo "  ./deploy.sh staging"
     exit 0
 fi
 

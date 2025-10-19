@@ -1,6 +1,6 @@
 # Setup Guide
 
-Complete setup instructions for zero-downtime deployment system.
+Complete setup instructions for AXON zero-downtime deployment system.
 
 ## Overview
 
@@ -36,7 +36,7 @@ cd your-product/deploy
 
 ```bash
 # Copy setup script to System Server
-scp deploy/setup/setup-system-server.sh user@system-server:/tmp/
+scp setup/setup-system-server.sh user@system-server:/tmp/
 
 # SSH to System Server and run
 ssh user@system-server
@@ -224,7 +224,7 @@ Step 2/7: Creating upstream directory...
 Step 3/7: Creating deploy user...
   ✓ User 'deploy' created
   ✓ .ssh directory created
-  SSH authorized_keys: /home/deploy/.ssh/authorized_keys
+  SSH authorized_keys: /home/.ssh/authorized_keys
 
 Step 4/7: Configuring sudo permissions...
   ✓ Sudoers file created and validated
@@ -284,9 +284,9 @@ cat ~/.ssh/deployment_key.pub
 
 On **System Server**, add it to deploy user:
 ```bash
-echo "ssh-ed25519 AAAA...xyz deployment-key" >> /home/deploy/.ssh/authorized_keys
-chmod 600 /home/deploy/.ssh/authorized_keys
-chown deploy:deploy /home/deploy/.ssh/authorized_keys
+echo "ssh-ed25519 AAAA...xyz deployment-key" >> /home/.ssh/authorized_keys
+chmod 600 /home/.ssh/authorized_keys
+chown deploy:deploy /home/.ssh/authorized_keys
 ```
 
 ### 2. Update nginx Site Configuration
@@ -495,7 +495,7 @@ After completing setup:
 
 1. ✅ **Create product configuration**
    ```bash
-   cp deploy/config.example.yml deploy.config.yml
+   cp config.example.yml deploy.config.yml
    # Edit with your settings
    ```
 
@@ -509,12 +509,12 @@ After completing setup:
 
 3. ✅ **Test deployment**
    ```bash
-   ./deploy/deploy.sh staging
+   ./deploy.sh staging
    ```
 
 4. ✅ **Monitor first deployment**
    ```bash
-   ./deploy/scripts/logs.sh staging follow
+   ./scripts/logs.sh staging follow
    ```
 
 5. ✅ **Verify zero-downtime**
@@ -523,7 +523,7 @@ After completing setup:
    while true; do curl -s https://staging.yourdomain.com/api/health || echo "FAIL"; sleep 0.1; done
 
    # Terminal 2: Deploy
-   ./deploy/deploy.sh staging
+   ./deploy.sh staging
 
    # Terminal 1 should show zero failures ✅
    ```
@@ -537,4 +537,4 @@ If you encounter issues:
 2. Re-run the setup script (it's idempotent)
 3. Review logs: `sudo journalctl -u nginx -f`
 4. Test manually: `sudo nginx -t`
-5. Check integration guide: `deploy/docs/integration.md`
+5. Check integration guide: `docs/integration.md`

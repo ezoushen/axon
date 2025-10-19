@@ -1,5 +1,5 @@
 #!/bin/bash
-# Application Server Setup Script
+# AXON - Application Server Setup Script
 # Runs from LOCAL MACHINE and prepares Application Server for zero-downtime deployments
 # Safe to re-execute (idempotent)
 
@@ -332,11 +332,11 @@ echo ""
 echo -e "${CYAN}Next steps:${NC}"
 echo ""
 echo -e "1. Run System Server setup:"
-echo -e "   ${CYAN}./deploy/setup/setup-system-server.sh${NC}"
+echo -e "   ${CYAN}./setup/setup-system-server.sh${NC}"
 echo ""
 echo -e "2. Ensure code is deployed to Application Server at:"
 echo -e "   ${YELLOW}${APP_SERVER_DEPLOY_PATH}${NC}"
 echo ""
 echo -e "3. Test deployment from local machine:"
-echo -e "   ${CYAN}./deploy/deploy.sh staging${NC}"
+echo -e "   ${CYAN}./deploy.sh staging${NC}"
 echo ""

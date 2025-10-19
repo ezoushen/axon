@@ -1,6 +1,6 @@
 # Integration Guide
 
-How to integrate the deployment module into your product.
+How to integrate AXON into your product.
 
 ## Prerequisites
 
@@ -9,13 +9,13 @@ How to integrate the deployment module into your product.
 - SSH access between Application Server and System Server
 - nginx running on System Server
 
-## Step 1: Add Deployment Module to Your Product
+## Step 1: Add AXON to Your Product
 
 ### Option A: As a Git Submodule (Recommended)
 
 ```bash
 cd your-product
-git submodule add <deployment-module-repo-url> deploy
+git submodule add <axon-repo-url> deploy
 git submodule update --init --recursive
 ```
 
@@ -23,7 +23,7 @@ git submodule update --init --recursive
 
 ```bash
 cd your-product
-cp -r /path/to/deployment-module deploy
+cp -r /path/to/axon deploy
 ```
 
 ## Step 2: Create Product Configuration
@@ -32,7 +32,7 @@ Create `deploy.config.yml` in your product root:
 
 ```bash
 cd your-product
-cp deploy/config.example.yml deploy.config.yml
+cp config.example.yml deploy.config.yml
 ```
 
 Edit `deploy.config.yml` with your product's settings:
@@ -153,7 +153,7 @@ deploy.config.yml
 .env.staging
 
 # But keep the example in Git
-!deploy/config.example.yml
+!config.example.yml
 ```
 
 ## Step 5: Build, Push, and Deploy
@@ -162,16 +162,16 @@ deploy.config.yml
 
 ```bash
 # Auto-detect git SHA (aborts if uncommitted changes)
-./deploy/deploy-full.sh production
+./deploy-full.sh production
 
 # Use specific git SHA (ignores uncommitted changes)
-./deploy/deploy-full.sh production abc123
+./deploy-full.sh production abc123
 
 # Skip git SHA tagging
-./deploy/deploy-full.sh production --skip-git
+./deploy-full.sh production --skip-git
 
 # Skip build, only deploy (use existing image)
-./deploy/deploy-full.sh staging --skip-build
+./deploy-full.sh staging --skip-build
 ```
 
 ### Separate Steps
@@ -179,45 +179,45 @@ deploy.config.yml
 **Build and Push:**
 ```bash
 # Auto-detect git SHA
-./deploy/scripts/build-and-push.sh production
+./scripts/build-and-push.sh production
 
 # Use specific git SHA
-./deploy/scripts/build-and-push.sh production abc123
+./scripts/build-and-push.sh production abc123
 
 # Skip git SHA
-./deploy/scripts/build-and-push.sh production --skip-git
+./scripts/build-and-push.sh production --skip-git
 ```
 
 **Deploy Only:**
 ```bash
-./deploy/deploy.sh production
-./deploy/deploy.sh staging
+./deploy.sh production
+./deploy.sh staging
 ```
 
 ### Monitoring
 
 ```bash
 # View logs
-./deploy/scripts/logs.sh production
-./deploy/scripts/logs.sh staging follow
+./scripts/logs.sh production
+./scripts/logs.sh staging follow
 
 # Check status
-./deploy/scripts/status.sh
-./deploy/scripts/status.sh production
+./scripts/status.sh
+./scripts/status.sh production
 
 # Health check
-./deploy/scripts/health-check.sh
-./deploy/scripts/health-check.sh staging
+./scripts/health-check.sh
+./scripts/health-check.sh staging
 
 # Restart container
-./deploy/scripts/restart.sh production
+./scripts/restart.sh production
 ```
 
 ## Directory Structure After Integration
 
 ```
 your-product/
-├── deploy/                         # Deployment module (git submodule)
+├──                          # AXON (git submodule)
 │   ├── README.md                  # Module documentation
 │   ├── deploy.sh                  # Main deployment script
 │   ├── deploy-full.sh             # Full pipeline
@@ -242,16 +242,16 @@ your-product/
 
 **Note:** No docker-compose files needed! All Docker configuration is in `deploy.config.yml`.
 
-## Updating the Deployment Module
+## Updating AXON
 
-If the deployment module gets updates:
+If AXON gets updates:
 
 ```bash
 cd your-product/deploy
 git pull origin main
 cd ..
 git add deploy
-git commit -m "Update deployment module"
+git commit -m "Update AXON"
 ```
 
 ## How It Works
@@ -318,7 +318,7 @@ curl http://my-product-production-1760809226:3000/api/health
 ## Troubleshooting
 
 ### "Configuration file not found"
-Ensure `deploy.config.yml` exists in your product root, not in the `deploy/` directory.
+Ensure `deploy.config.yml` exists in your product root, not in the `` directory.
 
 ### "Container not found on Application Server"
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
@@ -335,15 +335,15 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./deploy/scripts/build-and-push.sh staging abc123
+./scripts/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./deploy/scripts/build-and-push.sh staging --skip-git
+./scripts/build-and-push.sh staging --skip-git
 ```
 
 ### "Health check failed"
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./deploy/scripts/logs.sh {environment}`
+- Check container logs: `./scripts/logs.sh {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ### "SSH connection failed"
@@ -354,9 +354,9 @@ Check SSH key path in `deploy.config.yml` and ensure you have access to Applicat
 1. **Keep deploy.config.yml out of Git** - It contains server IPs and paths
 2. **Test in staging first** - Always deploy to staging before production
 3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
-4. **Monitor deployments** - Watch logs during deployment: `./deploy/scripts/logs.sh production follow`
+4. **Monitor deployments** - Watch logs during deployment: `./scripts/logs.sh production follow`
 5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
-6. **Use full pipeline** - `./deploy/deploy-full.sh` handles everything (build → push → deploy)
+6. **Use full pipeline** - `./deploy-full.sh` handles everything (build → push → deploy)
 
 ## Example Deployment Workflow
 
@@ -366,18 +366,18 @@ git add .
 git commit -m "Add new feature"
 
 # 2. Full pipeline: build, push, and deploy to staging
-./deploy/deploy-full.sh staging
+./deploy-full.sh staging
 
 # 3. Verify staging deployment
-./deploy/scripts/health-check.sh staging
-./deploy/scripts/logs.sh staging
+./scripts/health-check.sh staging
+./scripts/logs.sh staging
 
 # 4. If staging looks good, deploy to production
-./deploy/deploy-full.sh production
+./deploy-full.sh production
 
 # 5. Monitor production
-./deploy/scripts/status.sh production
-./deploy/scripts/health-check.sh production
+./scripts/status.sh production
+./scripts/health-check.sh production
 ```
 
 ## Advanced Usage
@@ -386,14 +386,14 @@ git commit -m "Add new feature"
 
 ```bash
 # Build and push once
-./deploy/scripts/build-and-push.sh staging
+./scripts/build-and-push.sh staging
 
 # Deploy to staging
-./deploy/deploy.sh staging
+./deploy.sh staging
 
 # Deploy same image to production (no rebuild)
-./deploy/scripts/build-and-push.sh production --skip-build
-./deploy/deploy.sh production
+./scripts/build-and-push.sh production --skip-build
+./deploy.sh production
 ```
 
 ### Multiple Products on Same Servers
@@ -407,8 +407,8 @@ Just ensure each product has a unique `product.name` in its config.
 
 ## Support
 
-If you encounter issues with the deployment module, check:
-1. Module documentation: `deploy/README.md`
-2. Configuration example: `deploy/config.example.yml`
-3. Server setup guide: `deploy/docs/setup.md`
+If you encounter issues with AXON, check:
+1. Module documentation: `README.md`
+2. Configuration example: `config.example.yml`
+3. Server setup guide: `docs/setup.md`
 4. Your product configuration: `deploy.config.yml`

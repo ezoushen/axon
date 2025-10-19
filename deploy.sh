@@ -1,7 +1,7 @@
 #!/bin/bash
-# Zero-Downtime Deployment Script
+# AXON - Zero-Downtime Deployment Script
 # Runs from LOCAL MACHINE and orchestrates deployment on Application Server
-# Part of the deployment-module - reusable across products
+# Part of AXON - reusable across products
 #
 # Usage: ./deploy.sh <environment>
 # Example: ./deploy.sh production
@@ -292,7 +292,7 @@ build_docker_run_command() {
 
 # Load configuration
 echo -e "${CYAN}==================================================${NC}"
-echo -e "${CYAN}Zero-Downtime Deployment (from Local Machine)${NC}"
+echo -e "${CYAN}AXON - Zero-Downtime Deployment${NC}"
 echo -e "${CYAN}==================================================${NC}"
 echo ""
 echo -e "${YELLOW}Running from: $(hostname)${NC}"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
+# AXON - Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
 # Runs from LOCAL MACHINE
 #
 # Usage: ./deploy-full.sh <environment> [--skip-build]
@@ -47,7 +47,7 @@ else
 fi
 
 echo -e "${CYAN}===========================================================${NC}"
-echo -e "${CYAN}Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
+echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
 echo -e "${CYAN}Build → Push to ECR → Zero-Downtime Deploy${NC}"
 echo -e "${CYAN}===========================================================${NC}"
 echo ""

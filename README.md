@@ -1,6 +1,8 @@
-# Zero-Downtime Deployment Module
+# AXON
 
-A reusable, config-driven deployment module for achieving zero-downtime deployments across multiple products using Docker, nginx, and AWS ECR.
+Zero-downtime deployment orchestration for Docker + nginx. Deploy instantly, switch seamlessly.
+
+A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, and AWS ECR.
 
 ## Features
 
@@ -36,14 +38,14 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 ```bash
 cd your-product
-git submodule add git@github.com:your-org/deployment-module.git deploy
+git submodule add git@github.com:your-org/axon.git deploy
 git submodule update --init --recursive
 ```
 
 ### 2. Create Product Configuration
 
 ```bash
-cp deploy/config.example.yml deploy.config.yml
+cp config.example.yml deploy.config.yml
 # Edit deploy.config.yml with your product settings
 ```
 
@@ -71,17 +73,17 @@ EOF
 
 ```bash
 # Full pipeline: build → push → deploy
-./deploy/deploy-full.sh production
+./deploy-full.sh production
 
 # Or run steps separately:
-./deploy/scripts/build-and-push.sh production  # Build and push image
-./deploy/deploy.sh production                  # Deploy with zero downtime
+./scripts/build-and-push.sh production  # Build and push image
+./deploy.sh production                  # Deploy with zero downtime
 ```
 
 ## Directory Structure
 
 ```
-deployment-module/
+axon/
 ├── README.md                    # This file
 ├── deploy.sh                    # Main deployment script (zero-downtime)
 ├── deploy-full.sh               # Full pipeline: build → push → deploy
@@ -114,17 +116,17 @@ The deployment system **automatically generates** docker run commands from `depl
 
 1. **System Server Setup** (30 min)
    ```bash
-   ./deploy/setup/setup-system-server.sh
+   ./setup/setup-system-server.sh
    ```
 
 2. **Application Server Setup** (15 min)
    ```bash
-   ./deploy/setup/setup-app-server.sh
+   ./setup/setup-app-server.sh
    ```
 
 3. **SSH Configuration** (15 min)
    ```bash
-   ./deploy/setup/setup-ssh.sh
+   ./setup/setup-ssh.sh
    ```
 
 See [Setup Guide](docs/setup.md) for detailed instructions.
@@ -137,16 +139,16 @@ Build, push to ECR, and deploy with zero downtime:
 
 ```bash
 # Auto-detect git SHA (aborts if uncommitted changes)
-./deploy/deploy-full.sh production
+./deploy-full.sh production
 
 # Use specific git SHA (ignores uncommitted changes)
-./deploy/deploy-full.sh production abc123
+./deploy-full.sh production abc123
 
 # Skip git SHA tagging
-./deploy/deploy-full.sh production --skip-git
+./deploy-full.sh production --skip-git
 
 # Skip build, only deploy (use existing image)
-./deploy/deploy-full.sh staging --skip-build
+./deploy-full.sh staging --skip-build
 ```
 
 ### Separate Steps
@@ -154,13 +156,13 @@ Build, push to ECR, and deploy with zero downtime:
 **Build and Push Image:**
 ```bash
 # Auto-detect git SHA
-./deploy/scripts/build-and-push.sh staging
+./scripts/build-and-push.sh staging
 
 # Use specific git SHA
-./deploy/scripts/build-and-push.sh staging abc123
+./scripts/build-and-push.sh staging abc123
 
 # Skip git SHA
-./deploy/scripts/build-and-push.sh staging --skip-git
+./scripts/build-and-push.sh staging --skip-git
 ```
 
 This creates two image tags:
@@ -169,35 +171,35 @@ This creates two image tags:
 
 **Deploy Only:**
 ```bash
-./deploy/deploy.sh production
-./deploy/deploy.sh staging
+./deploy.sh production
+./deploy.sh staging
 ```
 
 ### Monitoring
 
 **View Logs:**
 ```bash
-./deploy/scripts/logs.sh production           # Last 50 lines
-./deploy/scripts/logs.sh staging follow       # Follow in real-time
-./deploy/scripts/logs.sh all                  # All environments
+./scripts/logs.sh production           # Last 50 lines
+./scripts/logs.sh staging follow       # Follow in real-time
+./scripts/logs.sh all                  # All environments
 ```
 
 **Check Status:**
 ```bash
-./deploy/scripts/status.sh                    # All environments
-./deploy/scripts/status.sh production         # Specific environment
+./scripts/status.sh                    # All environments
+./scripts/status.sh production         # Specific environment
 ```
 
 **Health Check:**
 ```bash
-./deploy/scripts/health-check.sh              # Check all environments
-./deploy/scripts/health-check.sh staging      # Check specific environment
+./scripts/health-check.sh              # Check all environments
+./scripts/health-check.sh staging      # Check specific environment
 ```
 
 **Restart Container:**
 ```bash
-./deploy/scripts/restart.sh production
-./deploy/scripts/restart.sh all
+./scripts/restart.sh production
+./scripts/restart.sh all
 ```
 
 ## Requirements
@@ -286,15 +288,15 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./deploy/scripts/build-and-push.sh staging abc123
+./scripts/build-and-push.sh staging abc123
 
 # Or skip git SHA tagging:
-./deploy/scripts/build-and-push.sh staging --skip-git
+./scripts/build-and-push.sh staging --skip-git
 ```
 
 **5. Health check fails**
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./deploy/scripts/logs.sh {environment}`
+- Check container logs: `./scripts/logs.sh {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ## Contributing
