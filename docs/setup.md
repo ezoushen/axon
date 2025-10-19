@@ -506,12 +506,14 @@ After completing setup:
 
 3. ✅ **Test deployment**
    ```bash
-   ./tools/deploy.sh staging
+   axon deploy staging
+   # Or full pipeline
+   axon run staging
    ```
 
 4. ✅ **Monitor first deployment**
    ```bash
-   ./tools/logs.sh staging follow
+   axon logs staging --follow
    ```
 
 5. ✅ **Verify zero-downtime**
@@ -520,7 +522,7 @@ After completing setup:
    while true; do curl -s https://staging.yourdomain.com/api/health || echo "FAIL"; sleep 0.1; done
 
    # Terminal 2: Deploy
-   ./tools/deploy.sh staging
+   axon deploy staging
 
    # Terminal 1 should show zero failures ✅
    ```

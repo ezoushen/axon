@@ -1,4 +1,4 @@
-# AXON
+# AXON v2.0
 
 Zero-downtime deployment orchestration for Docker + nginx. Deploy instantly, switch seamlessly.
 
@@ -15,6 +15,7 @@ A reusable, config-driven deployment system for achieving zero-downtime deployme
 - ✅ **Git SHA tagging** - Automatic commit tagging with uncommitted change detection
 - ✅ **Automatic rollback** - On health check failures
 - ✅ **SSH-based coordination** - Updates System Server nginx automatically
+- ✅ **Flexible workflows** - Separate or combined build/push/deploy steps
 
 ## Architecture
 
@@ -38,12 +39,12 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 **Check what's missing:**
 ```bash
-./setup/setup-local-machine.sh
+axon setup local
 ```
 
 **Auto-install missing tools:**
 ```bash
-./setup/setup-local-machine.sh --auto-install
+axon setup local --auto-install
 ```
 
 **Manual installation:**
@@ -66,17 +67,30 @@ git submodule update --init --recursive
 
 ### 3. Create Product Configuration
 
+**Quick start (copy example):**
 ```bash
-cp deploy/config.example.yml deploy.config.yml
-# Edit deploy.config.yml with your product settings
+axon init-config
+# Then edit deploy.config.yml with your product settings
+```
+
+**Interactive mode (recommended for first-time setup):**
+```bash
+axon init-config --interactive
+# Follow the prompts to configure step-by-step
+```
+
+**Custom filename:**
+```bash
+axon init-config --file production.yml
+axon init-config --interactive --file staging.yml
 ```
 
 ### 4. Validate Configuration
 
 ```bash
-./tools/validate-config.sh
-./tools/validate-config.sh --config my-config.yml
-./tools/validate-config.sh --strict  # Treat warnings as errors
+axon validate
+axon validate --config my-config.yml
+axon validate --strict  # Treat warnings as errors
 ```
 
 ### 5. Set Up Environment Files
@@ -102,14 +116,18 @@ EOF
 ### 6. Build, Push, and Deploy
 
 ```bash
-# Full pipeline
-./axon production
-./axon --config my-config.yml staging
+# Full pipeline (recommended)
+axon run production
+axon run staging --config my-config.yml
 
-# Individual steps
-./tools/build.sh production
-./tools/push.sh production
-./tools/deploy.sh production
+# Individual steps (if needed)
+axon build production
+axon push production
+axon deploy production
+
+# Convenience commands
+axon build-and-push staging         # Build + Push (CI/CD)
+axon validate                        # Validate config first
 ```
 
 ## Directory Structure
@@ -150,31 +168,105 @@ See `deploy/config.example.yml` for all available options with `[REQUIRED]` and 
 
 ## Usage
 
-### Deploy
+AXON uses a subcommand interface: `axon <command> [environment] [options]`
+
+### Core Commands
 
 ```bash
-./axon production                    # Full pipeline with git SHA
-./axon --skip-git staging           # Skip git SHA tagging
-./axon --skip-build production      # Deploy only (use existing image)
-./axon --config custom.yml staging  # Custom config
+# Full deployment pipeline (build → push → deploy)
+axon run production                     # Auto-detect git SHA
+axon run staging --skip-git             # Skip git SHA tagging
+axon run production --sha abc123        # Use specific git SHA
+axon run staging --config custom.yml    # Custom config
+
+# Individual steps
+axon build production                   # Build image only
+axon push staging                       # Push to ECR only
+axon deploy production                  # Deploy only (pulls from ECR)
 ```
 
-### Build & Push
+### Convenience Commands
 
 ```bash
-./tools/build.sh production        # Build with auto-detected git SHA
-./tools/build.sh --skip-git staging
-./tools/push.sh production         # Push to ECR
+# Build and push (skip deploy) - great for CI/CD
+axon build-and-push production
 ```
 
-### Monitor
+### Monitoring & Utilities
 
 ```bash
-./tools/status.sh                  # Check all containers
-./tools/logs.sh production         # View logs
-./tools/logs.sh staging follow     # Follow logs in real-time
-./tools/health-check.sh            # Health check all environments
-./tools/restart.sh production      # Restart container
+# Status and health
+axon status                             # All environments
+axon status production                  # Specific environment
+axon health                             # Check all health
+axon health staging                     # Check specific health
+
+# Logs
+axon logs production                    # View logs
+axon logs staging --follow              # Follow logs in real-time
+axon logs production --lines 100        # Last 100 lines
+
+# Operations
+axon restart production                 # Restart container
+axon validate                           # Validate config file
+axon validate --strict                  # Strict validation
+
+# Configuration
+axon init-config                        # Generate deploy.config.yml
+axon init-config --interactive          # Interactive config generation
+axon init-config --file custom.yml      # Custom filename
+```
+
+### Setup Commands
+
+```bash
+# Setup local machine (check/install tools)
+axon setup local                        # Check what's missing
+axon setup local --auto-install         # Auto-install missing tools
+
+# Setup servers (via SSH, requires config)
+axon setup app-server                   # Setup Application Server
+axon setup system-server                # Setup System Server (nginx)
+axon setup app-server --config custom.yml
+```
+
+### Global Options
+
+```bash
+-c, --config FILE      # Config file (default: deploy.config.yml)
+-v, --verbose          # Verbose output
+--dry-run              # Show what would be done
+-h, --help             # Show help
+```
+
+### Command-Specific Help
+
+```bash
+axon --help                    # Show all commands
+axon build --help              # Show build options
+axon deploy --help             # Show deploy options
+```
+
+### Examples
+
+```bash
+# Production deployment
+axon run production
+
+# Staging with custom config and no git SHA
+axon run staging --config custom.yml --skip-git
+
+# Build production image without cache
+axon build production --no-cache
+
+# Force deploy (cleanup existing containers)
+axon deploy staging --force
+
+# View verbose output during build
+axon build production --verbose
+
+# Check what would happen (dry-run)
+axon run staging --dry-run
 ```
 
 ## Requirements

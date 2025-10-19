@@ -158,82 +158,108 @@ deploy.config.yml
 
 ## Step 5: Build, Push, and Deploy
 
+AXON uses subcommand interface: `axon <command> [environment] [options]`
+
 ### Full Pipeline (Build → Push → Deploy)
 
 ```bash
-# Auto-detect git SHA (aborts if uncommitted changes)
-./axon production
+# Auto-detect git SHA (recommended)
+axon run production
 
 # Use custom config file
-./axon --config my-config.yml production
+axon run production --config my-config.yml
 
-# Use specific git SHA (ignores uncommitted changes)
-./axon production abc123
+# Use specific git SHA
+axon run production --sha abc123
 
 # Skip git SHA tagging
-./axon --skip-git production
+axon run production --skip-git
 
-# Skip build, only deploy (use existing image)
-./axon --skip-build staging
+# With verbose output
+axon run staging --verbose
 ```
 
-### Separate Steps
+### Individual Steps
 
 **Build Image:**
 ```bash
 # Auto-detect git SHA
-./tools/build.sh production
+axon build production
 
 # Use custom config file
-./tools/build.sh --config my-config.yml staging
+axon build staging --config my-config.yml
 
 # Use specific git SHA
-./tools/build.sh production abc123
+axon build production --sha abc123
 
 # Skip git SHA
-./tools/build.sh --skip-git production
+axon build production --skip-git
+
+# Build without cache
+axon build staging --no-cache
 ```
 
 **Push to ECR:**
 ```bash
-./tools/push.sh production
-./tools/push.sh --config my-config.yml staging
+axon push production
+axon push staging --config my-config.yml
+axon push production --sha abc123
 ```
 
 **Deploy Only:**
 ```bash
-./tools/deploy.sh production
-./tools/deploy.sh --config my-config.yml staging
+axon deploy production
+axon deploy staging --config my-config.yml
+axon deploy production --force
 ```
 
-### Monitoring
+**Convenience Commands:**
+```bash
+# Build and push (skip deploy) - great for CI/CD
+axon build-and-push production
+```
+
+### Monitoring & Management
 
 ```bash
 # View logs
-./tools/logs.sh production
-./tools/logs.sh staging follow
+axon logs production
+axon logs staging --follow
+axon logs production --lines 100
 
 # Check status
-./tools/status.sh
-./tools/status.sh production
-./tools/status.sh --config custom.yml staging
+axon status                      # All environments
+axon status production           # Specific environment
 
 # Health check
-./tools/health-check.sh
-./tools/health-check.sh staging
-./tools/health-check.sh --config custom.yml production
+axon health                      # All environments
+axon health staging              # Specific environment
 
 # Restart container
-./tools/restart.sh production
+axon restart production
+
+# Validate configuration
+axon validate
+axon validate --strict
+```
+
+### Global Options
+
+All commands support these global options:
+```bash
+-c, --config FILE      # Config file (default: deploy.config.yml)
+-v, --verbose          # Verbose output
+--dry-run              # Show what would be done
+-h, --help             # Show help
 ```
 
 ## Directory Structure After Integration
 
 ```
 your-product/
-├──                          # AXON (git submodule)
+├── deploy/                        # AXON (git submodule)
 │   ├── README.md                  # Module documentation
-│   ├── axon                    # Main entry point: build → push → deploy
+│   ├── axon                       # Main CLI entry point
 │   ├── config.example.yml         # Example configuration
 │   ├── tools/
 │   │   ├── build.sh              # Build Docker image
@@ -242,12 +268,16 @@ your-product/
 │   │   ├── logs.sh               # View logs
 │   │   ├── status.sh             # Check status
 │   │   ├── restart.sh            # Restart containers
-│   │   └── health-check.sh       # Health check
+│   │   ├── health-check.sh       # Health check
+│   │   └── validate-config.sh    # Config validation
 │   ├── lib/
-│   │   └── config-parser.sh      # YAML parser
+│   │   ├── config-parser.sh      # YAML parser
+│   │   └── command-parser.sh     # CLI command parser
 │   └── docs/
 │       ├── integration.md        # This file
-│       └── setup.md              # Server setup guide
+│       ├── setup.md              # Server setup guide
+│       ├── graceful-shutdown.md  # Graceful shutdown details
+│       └── network-aliases.md    # Network alias guide
 │
 ├── deploy.config.yml              # Your product configuration (gitignored)
 ├── .env.production                # On Application Server (gitignored)
@@ -331,7 +361,7 @@ curl http://my-product-production-1760809226:3000/api/health
 ## Troubleshooting
 
 ### "Configuration file not found"
-Ensure `deploy.config.yml` exists in your product root, not in the `` directory.
+Ensure `deploy.config.yml` exists in your product root, not in the `deploy/` directory.
 
 ### "Container not found on Application Server"
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
@@ -348,16 +378,16 @@ git add .
 git commit -m "Your changes"
 
 # Or use specific git SHA:
-./tools/build.sh staging abc123
-./tools/push.sh staging abc123
+axon build staging --sha abc123
+axon push staging --sha abc123
 
 # Or skip git SHA tagging:
-./tools/build.sh --skip-git staging
+axon build staging --skip-git
 ```
 
 ### "Health check failed"
 - Verify your app exposes the health endpoint configured in `deploy.config.yml`
-- Check container logs: `./tools/logs.sh {environment}`
+- Check container logs: `axon logs {environment}`
 - Test health endpoint locally: `curl http://localhost:3000/api/health`
 
 ### "SSH connection failed"
@@ -368,9 +398,10 @@ Check SSH key path in `deploy.config.yml` and ensure you have access to Applicat
 1. **Keep deploy.config.yml out of Git** - It contains server IPs and paths
 2. **Test in staging first** - Always deploy to staging before production
 3. **Let git SHA auto-detect** - It validates uncommitted changes automatically
-4. **Monitor deployments** - Watch logs during deployment: `./tools/logs.sh production follow`
+4. **Monitor deployments** - Watch logs during deployment: `axon logs production --follow`
 5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
-6. **Use full pipeline** - `./axon` handles everything (build → push → deploy)
+6. **Use full pipeline** - `axon run <env>` handles everything (build → push → deploy)
+7. **Validate configuration** - Run `axon validate` before deploying to catch config issues early
 
 ## Example Deployment Workflow
 
@@ -379,39 +410,45 @@ Check SSH key path in `deploy.config.yml` and ensure you have access to Applicat
 git add .
 git commit -m "Add new feature"
 
-# 2. Full pipeline: build, push, and deploy to staging
-./axon staging
+# 2. Validate configuration (optional but recommended)
+axon validate
 
-# 3. Verify staging deployment
-./tools/health-check.sh staging
-./tools/logs.sh staging
+# 3. Full pipeline: build, push, and deploy to staging
+axon run staging
 
-# 4. If staging looks good, deploy to production
-./axon production
+# 4. Verify staging deployment
+axon health staging
+axon logs staging
 
-# 5. Monitor production
-./tools/status.sh production
-./tools/health-check.sh production
+# 5. If staging looks good, deploy to production
+axon run production
+
+# 6. Monitor production
+axon status production
+axon health production
 
 # With custom config
-./tools/status.sh --config custom.yml production
+axon status production --config custom.yml
 ```
 
 ## Advanced Usage
 
-### Deploy Existing Image (Skip Build)
+### Deploy Existing Image (Deploy Only)
 
 ```bash
 # Build and push to staging
-./tools/build.sh staging
-./tools/push.sh staging
+axon build staging
+axon push staging
 
 # Deploy to staging
-./tools/deploy.sh staging
+axon deploy staging
 
-# Deploy same image to production without rebuilding
-# (manually tag the staging image as production in ECR first)
-./axon --skip-build production
+# Or use build-and-push for CI/CD
+axon build-and-push staging
+
+# Deploy existing image to production
+# (pulls from ECR, doesn't rebuild)
+axon deploy production
 ```
 
 ### Multiple Products on Same Servers

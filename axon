@@ -1,11 +1,9 @@
 #!/bin/bash
-# AXON - Full deployment pipeline: Build → Push → Deploy (Zero-Downtime)
-# Runs from LOCAL MACHINE
+# AXON - Zero-Downtime Deployment Orchestration
 #
-# Usage: ./axon [OPTIONS] <environment>
-# Example: ./axon production
-# Example: ./axon --skip-build staging
-# Example: ./axon --config custom.yml production abc123
+# Usage: axon <command> [environment] [options]
+# Example: axon build production --skip-git
+# Example: axon run staging --config custom.yml
 
 set -e
 
@@ -19,124 +17,162 @@ NC='\033[0m'
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRODUCT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Default values
-CONFIG_FILE="deploy.config.yml"
-SKIP_BUILD=false
-SKIP_PUSH=false
-SKIP_GIT=false
+# Source command parser library
+source "$SCRIPT_DIR/lib/command-parser.sh"
+
+# Global variables
+COMMAND=""
 ENVIRONMENT=""
+CONFIG_FILE="deploy.config.yml"
+VERBOSE=false
+DRY_RUN=false
+
+# Command-specific variables
+SKIP_GIT=false
 GIT_SHA=""
+FORCE=false
+NO_CACHE=false
+FOLLOW=false
+LINES=""
+SINCE=""
+TIMEOUT=""
+STRICT=false
+SETUP_TARGET=""
+AUTO_INSTALL=false
+INTERACTIVE=false
+OUTPUT_FILE=""
 
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -c|--config)
-            CONFIG_FILE="$2"
-            shift 2
-            ;;
-        --skip-build)
-            SKIP_BUILD=true
-            SKIP_PUSH=true  # If skipping build, must skip push too
-            shift
-            ;;
-        --skip-push)
-            SKIP_PUSH=true
-            shift
-            ;;
-        --skip-git)
-            SKIP_GIT=true
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS] <environment> [git-sha]"
-            echo ""
-            echo "Options:"
-            echo "  -c, --config FILE    Specify config file (default: deploy.config.yml)"
-            echo "  --skip-build         Skip build and push, only deploy"
-            echo "  --skip-push          Skip push, only build and deploy (local image)"
-            echo "  --skip-git           Build without git SHA tag"
-            echo "  -h, --help           Show this help message"
-            echo ""
-            echo "Arguments:"
-            echo "  environment          Target environment (e.g., production, staging)"
-            echo "  git-sha              Optional: specific git SHA to use"
-            echo ""
-            echo "Examples:"
-            echo "  $0 production                        # Build → Push → Deploy"
-            echo "  $0 --skip-build staging              # Deploy only (use existing image)"
-            echo "  $0 --skip-push production            # Build → Deploy (no ECR push)"
-            echo "  $0 --config custom.yml production    # Use custom config"
-            echo "  $0 production abc123                 # Build with specific git SHA"
-            echo "  $0 --skip-git staging                # Build without git SHA tag"
-            exit 0
-            ;;
-        -*)
-            echo -e "${RED}Error: Unknown option: $1${NC}"
-            echo "Use --help for usage information"
-            exit 1
-            ;;
-        *)
-            # Positional arguments
-            if [ -z "$ENVIRONMENT" ]; then
-                ENVIRONMENT="$1"
-            elif [ -z "$GIT_SHA" ]; then
-                GIT_SHA="$1"
-            else
-                echo -e "${RED}Error: Too many positional arguments${NC}"
-                echo "Use --help for usage information"
-                exit 1
-            fi
-            shift
-            ;;
-    esac
-done
+#==============================================================================
+# Helper Functions
+#==============================================================================
 
-# Validate required arguments
-if [ -z "$ENVIRONMENT" ]; then
-    echo -e "${RED}Error: Environment parameter required${NC}"
-    echo "Use --help for usage information"
-    exit 1
-fi
+# Print verbose message
+verbose() {
+    if [ "$VERBOSE" = true ]; then
+        echo -e "${BLUE}[VERBOSE]${NC} $1"
+    fi
+}
+
+# Print dry-run message
+dry_run() {
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${YELLOW}[DRY-RUN]${NC} Would execute: $1"
+    fi
+}
+
+# Execute command (respects dry-run)
+execute() {
+    local cmd="$1"
+    dry_run "$cmd"
+
+    if [ "$DRY_RUN" = false ]; then
+        eval "$cmd"
+    fi
+}
+
+# Make config path absolute
+make_config_absolute() {
+    if [[ "$CONFIG_FILE" != /* ]]; then
+        CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+    fi
+}
 
 # Validate config file exists
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
-    exit 1
-fi
+validate_config_file() {
+    make_config_absolute
 
-echo -e "${CYAN}===========================================================${NC}"
-echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
-echo -e "${CYAN}Build → Push to ECR → Zero-Downtime Deploy${NC}"
-echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
-echo -e "${CYAN}===========================================================${NC}"
-echo ""
-
-# Step 1: Build (unless skipped)
-if [ "$SKIP_BUILD" = true ]; then
-    echo -e "${YELLOW}⏭  Skipping build and push (--skip-build flag provided)${NC}"
-    echo ""
-else
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    if [ "$SKIP_PUSH" = true ]; then
-        echo -e "${BLUE}Step 1/2: Build Docker Image${NC}"
-    else
-        echo -e "${BLUE}Step 1/3: Build Docker Image${NC}"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+        exit 1
     fi
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
+}
 
-    # Build arguments for build.sh
-    BUILD_ARGS=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+#==============================================================================
+# Command Implementations
+#==============================================================================
+
+# Build command
+cmd_build() {
+    verbose "Executing build command for environment: $ENVIRONMENT"
+    validate_config_file
+
+    local build_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
 
     if [ "$SKIP_GIT" = true ]; then
-        BUILD_ARGS+=("--skip-git")
+        build_args+=("--skip-git")
     elif [ -n "$GIT_SHA" ]; then
-        BUILD_ARGS+=("$GIT_SHA")
+        build_args+=("$GIT_SHA")
+    fi
+
+    if [ "$NO_CACHE" = true ]; then
+        build_args+=("--no-cache")
+    fi
+
+    verbose "Calling build.sh with args: ${build_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/build.sh\" ${build_args[*]}"
+}
+
+# Push command
+cmd_push() {
+    verbose "Executing push command for environment: $ENVIRONMENT"
+    validate_config_file
+
+    local push_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+
+    if [ -n "$GIT_SHA" ]; then
+        push_args+=("$GIT_SHA")
+    fi
+
+    verbose "Calling push.sh with args: ${push_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/push.sh\" ${push_args[*]}"
+}
+
+# Deploy command
+cmd_deploy() {
+    verbose "Executing deploy command for environment: $ENVIRONMENT"
+    validate_config_file
+
+    local deploy_args=("--config" "$CONFIG_FILE")
+
+    if [ "$FORCE" = true ]; then
+        deploy_args+=("--force")
+    fi
+
+    deploy_args+=("$ENVIRONMENT")
+
+    verbose "Calling deploy.sh with args: ${deploy_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/deploy.sh\" ${deploy_args[*]}"
+}
+
+# Run command (full pipeline)
+cmd_run() {
+    verbose "Executing full pipeline for environment: $ENVIRONMENT"
+    validate_config_file
+
+    echo -e "${CYAN}===========================================================${NC}"
+    echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
+    echo -e "${CYAN}Build → Push to ECR → Zero-Downtime Deploy${NC}"
+    echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
+    echo -e "${CYAN}===========================================================${NC}"
+    echo ""
+
+    # Step 1: Build
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step 1/3: Build Docker Image${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    local build_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+    if [ "$SKIP_GIT" = true ]; then
+        build_args+=("--skip-git")
+    elif [ -n "$GIT_SHA" ]; then
+        build_args+=("$GIT_SHA")
     fi
 
     # Capture build output to extract auto-detected git SHA
-    BUILD_OUTPUT=$("$SCRIPT_DIR/tools/build.sh" "${BUILD_ARGS[@]}" 2>&1)
+    BUILD_OUTPUT=$("$SCRIPT_DIR/tools/build.sh" "${build_args[@]}" 2>&1)
     BUILD_EXIT_CODE=$?
 
     # Display build output
@@ -147,39 +183,31 @@ else
         exit 1
     fi
 
-    # Extract auto-detected git SHA if present (only if not explicitly provided)
+    # Extract auto-detected git SHA if present
     if [ -z "$GIT_SHA" ] && [ "$SKIP_GIT" = false ]; then
         DETECTED_SHA=$(echo "$BUILD_OUTPUT" | grep "GIT_SHA_DETECTED=" | cut -d'=' -f2)
         if [ -n "$DETECTED_SHA" ]; then
             GIT_SHA="$DETECTED_SHA"
+            verbose "Captured git SHA from build: $GIT_SHA"
         fi
     fi
 
     echo ""
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
     echo ""
-fi
 
-# Step 2: Push (unless skipped)
-if [ "$SKIP_PUSH" = true ]; then
-    if [ "$SKIP_BUILD" = false ]; then
-        echo -e "${YELLOW}⏭  Skipping push to ECR (--skip-push flag provided)${NC}"
-        echo ""
-    fi
-else
+    # Step 2: Push
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}Step 2/3: Push to AWS ECR${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    # Push arguments
-    PUSH_ARGS=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
-
-    if [ -n "$GIT_SHA" ] && [ "$SKIP_GIT" = false ]; then
-        PUSH_ARGS+=("$GIT_SHA")
+    local push_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+    if [ -n "$GIT_SHA" ]; then
+        push_args+=("$GIT_SHA")
     fi
 
-    "$SCRIPT_DIR/tools/push.sh" "${PUSH_ARGS[@]}"
+    "$SCRIPT_DIR/tools/push.sh" "${push_args[@]}"
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Push failed!${NC}"
@@ -189,40 +217,35 @@ else
     echo ""
     echo -e "${GREEN}✓ Push completed successfully!${NC}"
     echo ""
-fi
 
-# Step 3: Deploy with Zero-Downtime
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-if [ "$SKIP_BUILD" = true ]; then
-    echo -e "${BLUE}Step 1/1: Zero-Downtime Deployment${NC}"
-elif [ "$SKIP_PUSH" = true ]; then
-    echo -e "${BLUE}Step 2/2: Zero-Downtime Deployment${NC}"
-else
+    # Step 3: Deploy
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}Step 3/3: Zero-Downtime Deployment${NC}"
-fi
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
 
-"$SCRIPT_DIR/tools/deploy.sh" --config "$CONFIG_FILE" "$ENVIRONMENT"
+    local deploy_args=("--config" "$CONFIG_FILE")
+    if [ "$FORCE" = true ]; then
+        deploy_args+=("--force")
+    fi
+    deploy_args+=("$ENVIRONMENT")
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}✗ Deployment failed!${NC}"
-    exit 1
-fi
+    "$SCRIPT_DIR/tools/deploy.sh" "${deploy_args[@]}"
 
-# Success!
-echo ""
-echo -e "${GREEN}===========================================================${NC}"
-echo -e "${GREEN}✓ Full deployment pipeline completed successfully!${NC}"
-echo -e "${GREEN}===========================================================${NC}"
-echo ""
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Deployment failed!${NC}"
+        exit 1
+    fi
 
-echo -e "${CYAN}Summary:${NC}"
-echo -e "  Config:      ${YELLOW}${CONFIG_FILE}${NC}"
-if [ "$SKIP_BUILD" = true ]; then
-    echo -e "  Build:       ${YELLOW}Skipped${NC}"
-    echo -e "  Push:        ${YELLOW}Skipped${NC}"
-else
+    # Success!
+    echo ""
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "${GREEN}✓ Full deployment pipeline completed successfully!${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    echo ""
+
+    echo -e "${CYAN}Summary:${NC}"
+    echo -e "  Config:      ${YELLOW}${CONFIG_FILE}${NC}"
     echo -e "  Build:       ${GREEN}✓ Completed${NC}"
     if [ "$SKIP_GIT" = true ]; then
         echo -e "  Git SHA:     ${YELLOW}Skipped${NC}"
@@ -231,14 +254,399 @@ else
     else
         echo -e "  Git SHA:     ${GREEN}Auto-detected${NC}"
     fi
-    if [ "$SKIP_PUSH" = true ]; then
-        echo -e "  Push:        ${YELLOW}Skipped${NC}"
-    else
-        echo -e "  Push:        ${GREEN}✓ Completed${NC}"
+    echo -e "  Push:        ${GREEN}✓ Completed${NC}"
+    echo -e "  Deployment:  ${GREEN}✓ Completed${NC}"
+    echo -e "  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
+    echo ""
+}
+
+# Build and push command
+cmd_build_and_push() {
+    verbose "Executing build-and-push for environment: $ENVIRONMENT"
+    validate_config_file
+
+    echo -e "${CYAN}===========================================================${NC}"
+    echo -e "${CYAN}AXON - Build and Push: ${ENVIRONMENT}${NC}"
+    echo -e "${CYAN}Build → Push to ECR${NC}"
+    echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
+    echo -e "${CYAN}===========================================================${NC}"
+    echo ""
+
+    # Build
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step 1/2: Build Docker Image${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    cmd_build
+
+    echo ""
+    echo -e "${GREEN}✓ Build completed!${NC}"
+    echo ""
+
+    # Push
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Step 2/2: Push to AWS ECR${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    cmd_push
+
+    echo ""
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "${GREEN}✓ Build and push completed successfully!${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    echo ""
+}
+
+# Setup command
+cmd_setup() {
+    verbose "Executing setup command for target: $SETUP_TARGET"
+
+    # Validate setup target
+    if [ -z "$SETUP_TARGET" ]; then
+        echo -e "${RED}Error: Setup target required${NC}"
+        echo ""
+        echo "Available targets:"
+        echo "  local         - Setup local machine (install tools)"
+        echo "  app-server    - Setup Application Server via SSH"
+        echo "  system-server - Setup System Server via SSH"
+        echo ""
+        echo "Usage: axon setup <target> [options]"
+        echo "Run 'axon setup --help' for more information"
+        exit 1
+    fi
+
+    case "$SETUP_TARGET" in
+        local)
+            verbose "Setting up local machine"
+            local setup_args=()
+            if [ "$AUTO_INSTALL" = true ]; then
+                setup_args+=("--auto-install")
+            fi
+
+            verbose "Calling setup-local-machine.sh with args: ${setup_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-local-machine.sh\" ${setup_args[*]}"
+            ;;
+
+        app-server)
+            verbose "Setting up Application Server"
+            validate_config_file
+
+            local setup_args=("--config" "$CONFIG_FILE")
+
+            verbose "Calling setup-application-server.sh with args: ${setup_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-application-server.sh\" ${setup_args[*]}"
+            ;;
+
+        system-server)
+            verbose "Setting up System Server"
+            validate_config_file
+
+            local setup_args=("--config" "$CONFIG_FILE")
+
+            verbose "Calling setup-system-server.sh with args: ${setup_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-system-server.sh\" ${setup_args[*]}"
+            ;;
+
+        *)
+            echo -e "${RED}Error: Unknown setup target: ${SETUP_TARGET}${NC}"
+            echo ""
+            echo "Available targets:"
+            echo "  local         - Setup local machine"
+            echo "  app-server    - Setup Application Server"
+            echo "  system-server - Setup System Server"
+            echo ""
+            echo "Run 'axon setup --help' for more information"
+            exit 1
+            ;;
+    esac
+}
+
+# Status command
+cmd_status() {
+    verbose "Executing status command"
+    validate_config_file
+
+    local status_args=("--config" "$CONFIG_FILE")
+    if [ -n "$ENVIRONMENT" ]; then
+        status_args+=("$ENVIRONMENT")
+    fi
+
+    verbose "Calling status.sh with args: ${status_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/status.sh\" ${status_args[*]}"
+}
+
+# Logs command
+cmd_logs() {
+    verbose "Executing logs command for environment: $ENVIRONMENT"
+    validate_config_file
+
+    local logs_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+
+    if [ "$FOLLOW" = true ]; then
+        logs_args+=("follow")
+    fi
+
+    if [ -n "$LINES" ]; then
+        logs_args+=("$LINES")
+    fi
+
+    verbose "Calling logs.sh with args: ${logs_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/logs.sh\" ${logs_args[*]}"
+}
+
+# Restart command
+cmd_restart() {
+    verbose "Executing restart command for environment: $ENVIRONMENT"
+    validate_config_file
+
+    local restart_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+
+    verbose "Calling restart.sh with args: ${restart_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/restart.sh\" ${restart_args[*]}"
+}
+
+# Health command
+cmd_health() {
+    verbose "Executing health check command"
+    validate_config_file
+
+    local health_args=("--config" "$CONFIG_FILE")
+    if [ -n "$ENVIRONMENT" ]; then
+        health_args+=("$ENVIRONMENT")
+    fi
+
+    verbose "Calling health-check.sh with args: ${health_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/health-check.sh\" ${health_args[*]}"
+}
+
+# Validate command
+cmd_validate() {
+    verbose "Executing validate command"
+    make_config_absolute
+
+    local validate_args=("--config" "$CONFIG_FILE")
+
+    if [ "$STRICT" = true ]; then
+        validate_args+=("--strict")
+    fi
+
+    verbose "Calling validate-config.sh with args: ${validate_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/validate-config.sh\" ${validate_args[*]}"
+}
+
+# Init-config command
+cmd_init_config() {
+    verbose "Executing init-config command"
+
+    local init_args=()
+
+    if [ -n "$OUTPUT_FILE" ]; then
+        init_args+=("--file" "$OUTPUT_FILE")
+    fi
+
+    if [ "$INTERACTIVE" = true ]; then
+        init_args+=("--interactive")
+    fi
+
+    verbose "Calling init-config.sh with args: ${init_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/init-config.sh\" ${init_args[*]}"
+}
+
+#==============================================================================
+# Argument Parsing
+#==============================================================================
+
+# Check if no arguments provided
+if [ $# -eq 0 ]; then
+    show_help
+    exit 0
+fi
+
+# Check for global --help or -h
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_help
+    exit 0
+fi
+
+# First argument should be command
+COMMAND="$1"
+shift
+
+# Validate command
+if ! validate_command "$COMMAND"; then
+    echo -e "${RED}Error: Unknown command: ${COMMAND}${NC}"
+    echo ""
+    echo "Run 'axon --help' to see available commands"
+    exit 1
+fi
+
+# Check for command-specific help
+if [ $# -gt 0 ] && ([ "$1" = "--help" ] || [ "$1" = "-h" ]); then
+    show_command_help "$COMMAND"
+    exit 0
+fi
+
+# Parse arguments based on command
+# Note: Some commands require environment, others don't
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --skip-git)
+            SKIP_GIT=true
+            shift
+            ;;
+        --sha)
+            GIT_SHA="$2"
+            shift 2
+            ;;
+        -f|--force)
+            FORCE=true
+            shift
+            ;;
+        --no-cache)
+            NO_CACHE=true
+            shift
+            ;;
+        --follow)
+            FOLLOW=true
+            shift
+            ;;
+        -n|--lines)
+            LINES="$2"
+            shift 2
+            ;;
+        --since)
+            SINCE="$2"
+            shift 2
+            ;;
+        --timeout)
+            TIMEOUT="$2"
+            shift 2
+            ;;
+        --strict)
+            STRICT=true
+            shift
+            ;;
+        --auto-install)
+            AUTO_INSTALL=true
+            shift
+            ;;
+        -i|--interactive)
+            INTERACTIVE=true
+            shift
+            ;;
+        -f|--file)
+            OUTPUT_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_command_help "$COMMAND"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Run 'axon $COMMAND --help' for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional argument (environment or setup target)
+            if [ "$COMMAND" = "setup" ]; then
+                # For setup command, first positional is the target
+                if [ -z "$SETUP_TARGET" ]; then
+                    SETUP_TARGET="$1"
+                else
+                    echo -e "${RED}Error: Too many positional arguments${NC}"
+                    echo "Run 'axon setup --help' for usage information"
+                    exit 1
+                fi
+            else
+                # For other commands, it's the environment
+                if [ -z "$ENVIRONMENT" ]; then
+                    ENVIRONMENT="$1"
+                else
+                    echo -e "${RED}Error: Too many positional arguments${NC}"
+                    echo "Run 'axon $COMMAND --help' for usage information"
+                    exit 1
+                fi
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate environment is provided for commands that require it
+if command_requires_env "$COMMAND"; then
+    if [ -z "$ENVIRONMENT" ]; then
+        echo -e "${RED}Error: Environment parameter required for command: ${COMMAND}${NC}"
+        echo "Run 'axon $COMMAND --help' for usage information"
+        exit 1
     fi
 fi
-echo -e "  Deployment:  ${GREEN}✓ Completed${NC}"
-echo -e "  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
-echo ""
+
+#==============================================================================
+# Command Execution
+#==============================================================================
+
+verbose "Command: $COMMAND"
+verbose "Environment: $ENVIRONMENT"
+verbose "Config: $CONFIG_FILE"
+verbose "Dry-run: $DRY_RUN"
+
+# Execute the command
+case "$COMMAND" in
+    build)
+        cmd_build
+        ;;
+    push)
+        cmd_push
+        ;;
+    deploy)
+        cmd_deploy
+        ;;
+    run)
+        cmd_run
+        ;;
+    build-and-push)
+        cmd_build_and_push
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        cmd_logs
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    health)
+        cmd_health
+        ;;
+    validate)
+        cmd_validate
+        ;;
+    setup)
+        cmd_setup
+        ;;
+    init-config)
+        cmd_init_config
+        ;;
+    *)
+        echo -e "${RED}Error: Command not implemented: ${COMMAND}${NC}"
+        exit 1
+        ;;
+esac
 
 exit 0
