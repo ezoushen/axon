@@ -1,7 +1,6 @@
 #!/bin/bash
-# Build Docker image locally and push to AWS ECR
+# Build Docker image locally
 # Product-agnostic version - uses deploy.config.yml
-# LEGACY WRAPPER: Calls build.sh + push.sh for backward compatibility
 
 set -e
 
@@ -134,53 +133,111 @@ else
 fi
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}Docker Build and Push to AWS ECR${NC}"
-echo -e "${BLUE}(Wrapper: calls build.sh + push.sh)${NC}"
+echo -e "${BLUE}Docker Build${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
-echo -e "${YELLOW}Note: This script is a legacy wrapper for backward compatibility.${NC}"
-echo -e "${YELLOW}For finer control, use build.sh and push.sh separately.${NC}"
-echo ""
 
-# Build arguments
-BUILD_ARGS=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+# Load configuration from config file
+load_config "$ENVIRONMENT"
 
-if [ "$SKIP_GIT" = true ]; then
-    BUILD_ARGS+=("--skip-git")
-elif [ -n "$GIT_SHA_ARG" ]; then
-    BUILD_ARGS+=("$GIT_SHA_ARG")
+# Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
+# Re-parse with explicit environment prefix to ensure correctness
+if command -v yq &> /dev/null; then
+    IMAGE_TAG=$(yq eval ".environments.${ENVIRONMENT}.image_tag" "$CONFIG_FILE" 2>/dev/null)
+    if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+        IMAGE_TAG="$ENVIRONMENT"  # Default to environment name
+    fi
+else
+    echo -e "${YELLOW}Warning: yq not found. Using fallback parser.${NC}"
+    echo -e "${YELLOW}For accurate YAML parsing, install yq: brew install yq${NC}"
+    echo ""
+    # Fallback: default to environment name
+    IMAGE_TAG="$ENVIRONMENT"
 fi
 
-# Step 1: Build
-echo -e "${GREEN}Step 1/2: Building Docker image...${NC}"
-"$SCRIPT_DIR/build.sh" "${BUILD_ARGS[@]}"
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Build failed${NC}"
+# Validate required AWS configuration
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+    echo -e "${RED}Error: AWS account ID not configured${NC}"
+    echo "Please set 'aws.account_id' in $CONFIG_FILE"
     exit 1
 fi
 
-echo ""
-
-# Step 2: Push
-echo -e "${GREEN}Step 2/2: Pushing to AWS ECR...${NC}"
-
-PUSH_ARGS=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
-
-if [ -n "$GIT_SHA_ARG" ] && [ "$SKIP_GIT" = false ]; then
-    PUSH_ARGS+=("$GIT_SHA_ARG")
+if [ -z "$AWS_REGION" ]; then
+    echo -e "${RED}Error: AWS region not configured${NC}"
+    echo "Please set 'aws.region' in $CONFIG_FILE"
+    exit 1
 fi
 
-"$SCRIPT_DIR/push.sh" "${PUSH_ARGS[@]}"
+if [ -z "$ECR_REPOSITORY" ]; then
+    echo -e "${RED}Error: ECR repository not configured${NC}"
+    echo "Please set 'aws.ecr_repository' in $CONFIG_FILE"
+    exit 1
+fi
+
+# Build variables
+ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+FULL_IMAGE_NAME="${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+# Display build info
+echo -e "Product:        ${YELLOW}${PRODUCT_NAME}${NC}"
+echo -e "Environment:    ${YELLOW}${ENVIRONMENT}${NC}"
+echo -e "ECR Repository: ${YELLOW}${ECR_REPOSITORY}${NC}"
+echo -e "Image Tag:      ${YELLOW}${IMAGE_TAG}${NC}"
+[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:    ${YELLOW}${GIT_SHA}${NC}"
+echo -e "Full Image:     ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+echo ""
+
+# Check prerequisites
+if ! docker info &> /dev/null; then
+    echo -e "${RED}Error: Docker is not running${NC}"
+    exit 1
+fi
+
+# Build Docker image
+echo -e "${GREEN}Building Docker image...${NC}"
+echo -e "${YELLOW}This may take a few minutes...${NC}"
+echo ""
+
+cd "$PRODUCT_ROOT"
+
+docker build \
+    --build-arg BUILD_STANDALONE=true \
+    --platform linux/amd64 \
+    -t "$FULL_IMAGE_NAME" \
+    .
 
 if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Push failed${NC}"
+    echo -e "${RED}Error: Docker build failed${NC}"
     exit 1
+fi
+
+# Tag image with git SHA if provided
+if [ -n "$GIT_SHA" ]; then
+    echo ""
+    echo -e "${GREEN}Tagging image with git SHA...${NC}"
+    GIT_SHA_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${GIT_SHA}"
+    docker tag "$FULL_IMAGE_NAME" "$GIT_SHA_IMAGE"
+    echo -e "Tagged as: ${YELLOW}${GIT_SHA_IMAGE}${NC}"
 fi
 
 # Success
 echo ""
 echo -e "${GREEN}==================================================${NC}"
-echo -e "${GREEN}Build and push completed successfully!${NC}"
+echo -e "${GREEN}Build completed successfully!${NC}"
 echo -e "${GREEN}==================================================${NC}"
+echo ""
+
+echo "Image(s) built:"
+echo -e "  ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+if [ -n "$GIT_SHA" ]; then
+    echo -e "  ${YELLOW}${GIT_SHA_IMAGE}${NC}"
+fi
+
+IMAGE_SIZE=$(docker images "$FULL_IMAGE_NAME" --format "{{.Size}}")
+echo ""
+echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
+echo ""
+echo "Next steps:"
+echo "  Push to ECR: ./tools/push.sh ${ENVIRONMENT}"
+echo "  Or build and push: ./tools/build-and-push.sh ${ENVIRONMENT}"
 echo ""

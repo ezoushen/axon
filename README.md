@@ -96,7 +96,9 @@ axon/
 ├── config.example.yml           # Example configuration (copy to deploy.config.yml)
 ├── tools/
 │   ├── deploy.sh               # Deployment script (zero-downtime)
-│   ├── build-and-push.sh       # Build Docker image and push to ECR
+│   ├── build.sh                # Build Docker image locally
+│   ├── push.sh                 # Push Docker image to ECR
+│   ├── build-and-push.sh       # Build and push combined (legacy, calls build.sh + push.sh)
 │   ├── health-check.sh         # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
 │   ├── restart.sh              # Restart containers (via SSH)
@@ -165,24 +167,39 @@ Build, push to ECR, and deploy with zero downtime:
 
 ### Separate Steps
 
-**Build and Push Image:**
+**Build Image Locally:**
 ```bash
-# Auto-detect git SHA
-./tools/build-and-push.sh staging
+# Build with auto-detected git SHA
+./tools/build.sh production
 
-# Use custom config file
-./tools/build-and-push.sh --config my-config.yml production
+# Build with custom config
+./tools/build.sh --config my-config.yml staging
 
-# Use specific git SHA
-./tools/build-and-push.sh staging abc123
+# Build with specific git SHA
+./tools/build.sh production abc123
 
-# Skip git SHA
-./tools/build-and-push.sh --skip-git staging
+# Build without git SHA tag
+./tools/build.sh --skip-git staging
 ```
 
-This creates two image tags:
-- `{product}:staging` (environment tag)
-- `{product}:abc123` (git SHA tag)
+**Push Image to ECR:**
+```bash
+# Push environment tag
+./tools/push.sh production
+
+# Push with git SHA tag
+./tools/push.sh production abc123
+
+# Push with custom config
+./tools/push.sh --config my-config.yml staging
+```
+
+**Build and Push Combined:**
+```bash
+# All-in-one: build + push
+./tools/build-and-push.sh production
+./tools/build-and-push.sh --config my-config.yml staging abc123
+```
 
 **Deploy Only:**
 ```bash
