@@ -36,11 +36,24 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 ### 1. Install Prerequisites
 
+**Check what's missing:**
+```bash
+./deploy/setup/setup-local-machine.sh
+```
+
+**Auto-install missing tools:**
+```bash
+./deploy/setup/setup-local-machine.sh --auto-install
+```
+
+**Manual installation:**
 ```bash
 # macOS
-brew install yq
+brew install yq awscli docker node
+npm install -g decomposerize
 
-# Linux - see https://github.com/mikefarah/yq#install
+# Linux
+# See setup-local-machine.sh for detailed instructions
 ```
 
 ### 2. Add as Git Submodule
@@ -103,6 +116,8 @@ axon/
 ├── README.md                    # This file
 ├── axon.sh                      # Main entry point: build → push → deploy
 ├── config.example.yml           # Example configuration (copy to deploy.config.yml)
+├── setup/
+│   └── setup-local-machine.sh  # Install required tools on local machine
 ├── tools/
 │   ├── deploy.sh               # Deployment script (zero-downtime)
 │   ├── build.sh                # Build Docker image locally
@@ -260,10 +275,14 @@ Build, push to ECR, and deploy with zero downtime:
 - Network access to System Server
 
 ### Local Machine
-- **yq** installed (YAML processor) - `brew install yq`
-- Docker installed
-- AWS CLI configured
-- SSH access to Application Server
+- **yq** (YAML processor)
+- **Docker** (container runtime)
+- **AWS CLI** (for ECR access)
+- **Node.js and npm** (for decomposerize)
+- **decomposerize** (docker-compose to docker run converter)
+- **SSH client** (for server access)
+
+**Quick setup:** Run `./deploy/setup/setup-local-machine.sh` to install all tools automatically.
 
 ## How It Works
 

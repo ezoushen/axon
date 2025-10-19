@@ -247,7 +247,7 @@ build_docker_run_command() {
 
     # Check if decomposerize is available (optional but recommended)
     if ! command -v decomposerize &> /dev/null; then
-        echo -e "${RED}Error: decomposerize not found, using basic docker run generation${NC}" >&2
+        echo -e "${RED}Error: decomposerize not found${NC}" >&2
         echo -e "${RED}Install decomposerize for full Docker feature support:${NC}" >&2
         echo -e "${RED}  npm install -g decomposerize${NC}" >&2
         return 1
