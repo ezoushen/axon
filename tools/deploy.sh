@@ -103,9 +103,6 @@ source "$MODULE_DIR/lib/config-parser.sh"
 parse_config() {
     local key=$1
     local default=$2
-    # parse_yaml_key expects keys like "product.name", parse_config may receive "product.name" or ".product.name"
-    # Remove leading dot if present
-    key="${key#.}"
     parse_yaml_key "$key" "$default" "$CONFIG_FILE"
 }
 
@@ -149,14 +146,14 @@ EOF
     echo "      - ${env_file}" >> "$temp_compose"
 
     # Add common environment variables from config
-    local common_env_vars=$(parse_config "docker.env_vars" "")
+    local common_env_vars=$(parse_config ".docker.env_vars" "")
     if [ -n "$common_env_vars" ]; then
         echo "" >> "$temp_compose"
         echo "    environment:" >> "$temp_compose"
 
         local env_keys=$(echo "$common_env_vars" | grep -E "^[A-Z_]+:" | sed 's/://' || true)
         for key in $env_keys; do
-            local value=$(parse_config "docker.env_vars.$key" "")
+            local value=$(parse_config ".docker.env_vars.$key" "")
             if [ -n "$value" ]; then
                 echo "      - ${key}=${value}" >> "$temp_compose"
             fi
@@ -164,12 +161,12 @@ EOF
     fi
 
     # Add restart policy
-    local restart_policy=$(parse_config "docker.restart_policy" "unless-stopped")
+    local restart_policy=$(parse_config ".docker.restart_policy" "unless-stopped")
     echo "" >> "$temp_compose"
     echo "    restart: ${restart_policy}" >> "$temp_compose"
 
     # Add extra hosts
-    local extra_hosts=$(parse_config "docker.extra_hosts" "" | grep -E "^\s*-\s*" | sed 's/^\s*-\s*//' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)
+    local extra_hosts=$(parse_config ".docker.extra_hosts" "" | grep -E "^\s*-\s*" | sed 's/^\s*-\s*//' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)
     if [ -n "$extra_hosts" ]; then
         echo "" >> "$temp_compose"
         echo "    extra_hosts:" >> "$temp_compose"
@@ -183,7 +180,7 @@ EOF
     fi
 
     # Add health check
-    local health_endpoint=$(parse_config "health_check.endpoint" "")
+    local health_endpoint=$(parse_config ".health_check.endpoint" "")
     if [ -n "$health_endpoint" ]; then
         echo "" >> "$temp_compose"
         echo "    healthcheck:" >> "$temp_compose"
@@ -192,10 +189,10 @@ EOF
         # Using wget to test the health endpoint inside the container
         echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:${container_port}${health_endpoint}\"]" >> "$temp_compose"
 
-        local health_interval=$(parse_config "health_check.interval" "30s")
-        local health_timeout=$(parse_config "health_check.timeout" "10s")
-        local health_retries=$(parse_config "health_check.retries" "3")
-        local health_start_period=$(parse_config "health_check.start_period" "40s")
+        local health_interval=$(parse_config ".health_check.interval" "30s")
+        local health_timeout=$(parse_config ".health_check.timeout" "10s")
+        local health_retries=$(parse_config ".health_check.retries" "3")
+        local health_start_period=$(parse_config ".health_check.start_period" "40s")
 
         echo "      interval: ${health_interval}" >> "$temp_compose"
         echo "      timeout: ${health_timeout}" >> "$temp_compose"
@@ -204,9 +201,9 @@ EOF
     fi
 
     # Add logging
-    local log_driver=$(parse_config "docker.logging.driver" "json-file")
-    local log_max_size=$(parse_config "docker.logging.max_size" "10m")
-    local log_max_file=$(parse_config "docker.logging.max_file" "3")
+    local log_driver=$(parse_config ".docker.logging.driver" "json-file")
+    local log_max_size=$(parse_config ".docker.logging.max_size" "10m")
+    local log_max_file=$(parse_config ".docker.logging.max_file" "3")
 
     echo "" >> "$temp_compose"
     echo "    logging:" >> "$temp_compose"
@@ -227,7 +224,7 @@ EOF
 
     # Add custom docker-compose overrides (raw YAML)
     # This allows users to add any Docker feature without modifying this script
-    local compose_override=$(parse_config "docker.compose_override" "")
+    local compose_override=$(parse_config ".docker.compose_override" "")
     if [ -n "$compose_override" ]; then
         echo "" >> "$temp_compose"
         echo "    # Custom overrides from deploy.config.yml" >> "$temp_compose"
@@ -331,55 +328,55 @@ if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
 fi
 
 # Product config
-PRODUCT_NAME=$(parse_config "product.name" "my-product")
-PRODUCT_DESC=$(parse_config "product.description" "")
+PRODUCT_NAME=$(parse_config ".product.name" "")
+PRODUCT_DESC=$(parse_config ".product.description" "")
 
 # AWS config
-AWS_PROFILE=$(parse_config "aws.profile" "default")
-AWS_REGION=$(parse_config "aws.region" "ap-northeast-1")
-AWS_ACCOUNT_ID=$(parse_config "aws.account_id" "")
-ECR_REPOSITORY=$(parse_config "aws.ecr_repository" "$PRODUCT_NAME")
+AWS_PROFILE=$(parse_config ".aws.profile" "")
+AWS_REGION=$(parse_config ".aws.region" "")
+AWS_ACCOUNT_ID=$(parse_config ".aws.account_id" "")
+ECR_REPOSITORY=$(parse_config ".aws.ecr_repository" "$PRODUCT_NAME")
 
 # System Server config
-SYSTEM_SERVER_HOST=$(parse_config "servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_config "servers.system.user" "root")
-SYSTEM_SSH_KEY=$(parse_config "servers.system.ssh_key" "~/.ssh/system_server_key")
-SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"  # Expand ~
+SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
+SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "root")
+SYSTEM_SSH_KEY=$(parse_config ".servers.system.ssh_key" "")
+SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"
 
 # Application Server config
-APP_SERVER_HOST=$(parse_config "servers.application.host" "")
-APP_SERVER_PRIVATE_IP=$(parse_config "servers.application.private_ip" "")
-APP_SERVER_USER=$(parse_config "servers.application.user" "ubuntu")
-APP_SSH_KEY=$(parse_config "servers.application.ssh_key" "~/.ssh/application_server_key")
-APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"  # Expand ~
+APP_SERVER_HOST=$(parse_config ".servers.application.host" "")
+APP_SERVER_PRIVATE_IP=$(parse_config ".servers.application.private_ip" "")
+APP_SERVER_USER=$(parse_config ".servers.application.user" "ubuntu")
+APP_SSH_KEY=$(parse_config ".servers.application.ssh_key" "")
+APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
 
 # Use private IP for nginx upstream (falls back to public host if not set)
 APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 
 # Environment-specific config
-DOMAIN=$(parse_config "environments.${ENVIRONMENT}.domain" "")
+DOMAIN=$(parse_config ".environments.${ENVIRONMENT}.domain" "")
 # Auto-generate nginx upstream file path and name (same logic as setup script)
 # File path: /etc/nginx/upstreams/{product}-{environment}.conf (keeps hyphens)
 # Upstream name: {product}_{environment}_backend (hyphens converted to underscores)
 NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
 NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
-ENV_PATH=$(parse_config "environments.${ENVIRONMENT}.env_path" "/home/ubuntu/app/.env.${ENVIRONMENT}")
-IMAGE_TAG=$(parse_config "environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
+ENV_PATH=$(parse_config ".environments.${ENVIRONMENT}.env_path" "")
+IMAGE_TAG=$(parse_config ".environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
 
 # Extract directory from env_path for deployment operations
 APP_DEPLOY_PATH=$(dirname "$ENV_PATH")
 
 # Health check config
-HEALTH_ENDPOINT=$(parse_config "health_check.endpoint" "/api/health")
-MAX_RETRIES=$(parse_config "health_check.max_retries" "30")
-RETRY_INTERVAL=$(parse_config "health_check.retry_interval" "2")
+HEALTH_ENDPOINT=$(parse_config ".health_check.endpoint" "")
+MAX_RETRIES=$(parse_config ".health_check.max_retries" "30")
+RETRY_INTERVAL=$(parse_config ".health_check.retry_interval" "2")
 
 # Deployment config
-GRACEFUL_SHUTDOWN_TIMEOUT=$(parse_config "deployment.graceful_shutdown_timeout" "30")
-AUTO_ROLLBACK=$(parse_config "deployment.enable_auto_rollback" "true")
+GRACEFUL_SHUTDOWN_TIMEOUT=$(parse_config ".deployment.graceful_shutdown_timeout" "30")
+AUTO_ROLLBACK=$(parse_config ".deployment.enable_auto_rollback" "true")
 
 # Docker config
-CONTAINER_PORT=$(parse_config "docker.container_port" "3000")
+CONTAINER_PORT=$(parse_config ".docker.container_port" "3000")
 
 # Validate required configuration
 MISSING_CONFIG=()
@@ -540,11 +537,11 @@ FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITO
 CONTAINER_NAME="${NEW_CONTAINER}"
 
 # Get network name from config with template substitution
-NETWORK_NAME_TEMPLATE=$(parse_config "docker.network_name" "")
+NETWORK_NAME_TEMPLATE=$(parse_config ".docker.network_name" "")
 eval "NETWORK_NAME=\"$NETWORK_NAME_TEMPLATE\""
 
 # Add network alias if configured
-NETWORK_ALIAS_TEMPLATE=$(parse_config "docker.network_alias" "")
+NETWORK_ALIAS_TEMPLATE=$(parse_config ".docker.network_alias" "")
 eval "NETWORK_ALIAS=\"$NETWORK_ALIAS_TEMPLATE\""
 
 # Build the docker run command from deploy.config.yml (single source of truth)

@@ -148,7 +148,6 @@ load_config "$ENVIRONMENT"
 # Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
 # Re-parse with explicit environment prefix to ensure correctness
 if command -v yq &> /dev/null; then
-    IMAGE_TAG=$(yq eval ".environments.${ENVIRONMENT}.image_tag" "$CONFIG_FILE" 2>/dev/null)
     if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
         IMAGE_TAG="$ENVIRONMENT"  # Default to environment name
     fi
