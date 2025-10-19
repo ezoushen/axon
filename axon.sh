@@ -135,11 +135,24 @@ else
         BUILD_ARGS+=("$GIT_SHA")
     fi
 
-    "$SCRIPT_DIR/tools/build.sh" "${BUILD_ARGS[@]}"
+    # Capture build output to extract auto-detected git SHA
+    BUILD_OUTPUT=$("$SCRIPT_DIR/tools/build.sh" "${BUILD_ARGS[@]}" 2>&1)
+    BUILD_EXIT_CODE=$?
 
-    if [ $? -ne 0 ]; then
+    # Display build output
+    echo "$BUILD_OUTPUT"
+
+    if [ $BUILD_EXIT_CODE -ne 0 ]; then
         echo -e "${RED}✗ Build failed!${NC}"
         exit 1
+    fi
+
+    # Extract auto-detected git SHA if present (only if not explicitly provided)
+    if [ -z "$GIT_SHA" ] && [ "$SKIP_GIT" = false ]; then
+        DETECTED_SHA=$(echo "$BUILD_OUTPUT" | grep "GIT_SHA_DETECTED=" | cut -d'=' -f2)
+        if [ -n "$DETECTED_SHA" ]; then
+            GIT_SHA="$DETECTED_SHA"
+        fi
     fi
 
     echo ""

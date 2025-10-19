@@ -252,5 +252,14 @@ echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
 echo ""
 echo "Next steps:"
 echo "  Push to ECR: ./tools/push.sh ${ENVIRONMENT}"
+if [ -n "$GIT_SHA" ]; then
+    echo "               ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
+fi
 echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
 echo ""
+
+# Output git SHA for capture by parent script (e.g., axon.sh)
+# Format: GIT_SHA_DETECTED=<sha>
+if [ -n "$GIT_SHA" ]; then
+    echo "GIT_SHA_DETECTED=${GIT_SHA}"
+fi
