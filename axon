@@ -16,7 +16,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Script directory (resolve symlinks for Homebrew compatibility)
-# We need to follow symlinks to find the real script location
+# We need to follow symlinks to find the real script location for lib files
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
     DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
@@ -25,7 +25,10 @@ while [[ -L "$SOURCE" ]]; do
     [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-PRODUCT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# For product root (where config files live), use current working directory
+# This allows axon to work as both a git submodule (deploy/) and Homebrew install
+PRODUCT_ROOT="$PWD"
 
 # Source command parser library
 source "$SCRIPT_DIR/lib/command-parser.sh"
