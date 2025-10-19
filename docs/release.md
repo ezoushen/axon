@@ -6,6 +6,8 @@ This document describes how to create a new release of AXON.
 
 AXON uses GitHub Actions to automatically create releases when version tags are pushed. The process is streamlined with helper scripts.
 
+**Prerequisites**: GitHub App configured for automated releases. See [github-app-setup.md](github-app-setup.md) for setup instructions.
+
 ## Quick Release (Recommended)
 
 Use the automated release script:

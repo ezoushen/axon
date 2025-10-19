@@ -12,11 +12,20 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: axon,homebrew-axon
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for changelog generation
           submodules: true  # Checkout homebrew-tap submodule
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Generate changelog
         id: changelog
@@ -89,13 +98,20 @@ jobs:
           echo "✓ Updated homebrew-tap/Formula/axon.rb"
 
       - name: Commit and push Homebrew formula update
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
 
-          # Configure git for tap submodule
+          # Configure git globally for both repos
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Configure git to use the app token for authentication
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+          # Update tap submodule
           cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Check if there are changes
           if git diff --quiet Formula/axon.rb; then
@@ -109,8 +125,6 @@ jobs:
 
           # Update submodule reference in main repo
           cd ..
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add homebrew-tap
 
           if git diff --staged --quiet; then

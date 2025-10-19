@@ -89,11 +89,11 @@ echo -e "${GREEN}✓ Updated VERSION file${NC}"
 
 # Commit VERSION file
 git add "$VERSION_FILE"
-git commit -m "Release v${NEW_VERSION}" || echo -e "${YELLOW}No changes to commit${NC}"
+git commit -m "chore: release v${NEW_VERSION}" || echo -e "${YELLOW}No changes to commit${NC}"
 echo -e "${GREEN}✓ Committed version change${NC}"
 
 # Create tag
-git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+git tag -a "v${NEW_VERSION}" -m "chore: release v${NEW_VERSION}"
 echo -e "${GREEN}✓ Created tag v${NEW_VERSION}${NC}"
 
 echo ""
