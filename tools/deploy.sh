@@ -96,32 +96,17 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Function to parse YAML config
-# Simple YAML parser using awk/grep
+# Source the shared config parser library
+source "$MODULE_DIR/lib/config-parser.sh"
+
+# Wrapper function for backward compatibility (parse_config uses different syntax than parse_yaml_key)
 parse_config() {
     local key=$1
     local default=$2
-
-    # Try to parse using yq if available
-    if command -v yq &> /dev/null; then
-        # yq requires leading dot for path
-        value=$(yq eval ".$key" "$CONFIG_FILE" 2>/dev/null || echo "")
-        if [ "$value" != "null" ] && [ -n "$value" ]; then
-            echo "$value"
-            return
-        fi
-    fi
-
-    # Fallback to grep/awk parsing
-    # This handles simple key: value pairs
-    local search_key=$(echo "$key" | sed 's/\./:/g' | awk -F: '{print $NF}')
-    value=$(grep -E "^\s*${search_key}:" "$CONFIG_FILE" | head -1 | awk -F: '{print $2}' | sed 's/#.*//' | tr -d ' "' || echo "")
-
-    if [ -n "$value" ]; then
-        echo "$value"
-    else
-        echo "$default"
-    fi
+    # parse_yaml_key expects keys like "product.name", parse_config may receive "product.name" or ".product.name"
+    # Remove leading dot if present
+    key="${key#.}"
+    parse_yaml_key "$key" "$default" "$CONFIG_FILE"
 }
 
 # Function to generate temporary docker-compose.yml from config
