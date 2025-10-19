@@ -137,7 +137,7 @@ echo -e "${BLUE}Docker Build and Push to AWS ECR${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 
-# Load configuration
+# Load configuration from config file
 load_config "$ENVIRONMENT"
 
 # Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
@@ -155,14 +155,24 @@ else
     IMAGE_TAG="$ENVIRONMENT"
 fi
 
-# Load product env file
-ENV_FILE="${PRODUCT_ROOT}/${ENV_FILE_PATH}"
-if [ ! -f "$ENV_FILE" ]; then
-    echo -e "${RED}Error: Environment file not found: $ENV_FILE${NC}"
+# Validate required AWS configuration
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+    echo -e "${RED}Error: AWS account ID not configured${NC}"
+    echo "Please set 'aws.account_id' in $CONFIG_FILE"
     exit 1
 fi
 
-export $(cat "$ENV_FILE" | grep -v '^#' | xargs)
+if [ -z "$AWS_REGION" ]; then
+    echo -e "${RED}Error: AWS region not configured${NC}"
+    echo "Please set 'aws.region' in $CONFIG_FILE"
+    exit 1
+fi
+
+if [ -z "$ECR_REPOSITORY" ]; then
+    echo -e "${RED}Error: ECR repository not configured${NC}"
+    echo "Please set 'aws.ecr_repository' in $CONFIG_FILE"
+    exit 1
+fi
 
 # Build variables
 ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"

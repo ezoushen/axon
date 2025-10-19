@@ -60,7 +60,7 @@ load_config() {
     export DOMAIN=$(parse_yaml_key "environments.${env}.domain" "")
     export NGINX_UPSTREAM_FILE=$(parse_yaml_key "environments.${env}.nginx_upstream_file" "/etc/nginx/upstreams/${PRODUCT_NAME}-${env}.conf")
     export NGINX_UPSTREAM_NAME=$(parse_yaml_key "environments.${env}.nginx_upstream_name" "${PRODUCT_NAME}_${env}_backend")
-    export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_file" ".env.${env}")
+    export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_path" "/home/ubuntu/app/.env.${env}")
     export IMAGE_TAG=$(parse_yaml_key "environments.${env}.image_tag" "$env")
     export DOCKER_COMPOSE_FILE=$(parse_yaml_key "environments.${env}.docker_compose_file" "docker-compose.${env}.yml")
 
