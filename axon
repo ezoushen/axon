@@ -17,8 +17,16 @@ NC='\033[0m'
 
 # Script directory (resolve symlinks for Homebrew compatibility)
 if [[ -L "${BASH_SOURCE[0]}" ]]; then
-    # If script is a symlink (Homebrew), resolve to real path
-    REAL_SCRIPT="$(readlink "${BASH_SOURCE[0]}")"
+    # If script is a symlink (Homebrew), resolve to absolute real path
+    SYMLINK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SYMLINK_NAME="$(basename "${BASH_SOURCE[0]}")"
+    REAL_SCRIPT="$(readlink "$SYMLINK_DIR/$SYMLINK_NAME")"
+
+    # Handle relative symlinks by resolving from symlink directory
+    if [[ "$REAL_SCRIPT" != /* ]]; then
+        REAL_SCRIPT="$SYMLINK_DIR/$REAL_SCRIPT"
+    fi
+
     SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 else
     # If script is not a symlink (git submodule), use normal resolution
