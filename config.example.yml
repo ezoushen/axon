@@ -103,3 +103,23 @@ docker:
     driver: "json-file"
     max_size: "10m"
     max_file: 3
+
+  # Advanced: Raw docker-compose override (optional)
+  # Add any Docker Compose configuration here - it will be merged directly
+  # This gives you full access to all Docker features without modifying scripts
+  # compose_override: |
+  #   volumes:
+  #     - ./data:/app/data
+  #   cap_add:
+  #     - SYS_ADMIN
+  #   devices:
+  #     - /dev/fuse
+  #   ulimits:
+  #     nofile:
+  #       soft: 65536
+  #       hard: 65536
+  #   security_opt:
+  #     - seccomp:unconfined
+  #   tmpfs:
+  #     - /tmp:rw,noexec,nosuid
+  #   # Any valid docker-compose service-level option works here!

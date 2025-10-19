@@ -225,6 +225,16 @@ EOF
         echo "      - ${network_name}" >> "$temp_compose"
     fi
 
+    # Add custom docker-compose overrides (raw YAML)
+    # This allows users to add any Docker feature without modifying this script
+    local compose_override=$(parse_config "docker.compose_override" "")
+    if [ -n "$compose_override" ]; then
+        echo "" >> "$temp_compose"
+        echo "    # Custom overrides from deploy.config.yml" >> "$temp_compose"
+        # Indent the override content by 4 spaces to match service-level
+        echo "$compose_override" | sed 's/^/    /' >> "$temp_compose"
+    fi
+
     # Add networks section
     echo "" >> "$temp_compose"
     echo "networks:" >> "$temp_compose"
