@@ -16,22 +16,15 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Script directory (resolve symlinks for Homebrew compatibility)
-if [[ -L "${BASH_SOURCE[0]}" ]]; then
-    # If script is a symlink (Homebrew), resolve to absolute real path
-    SYMLINK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    SYMLINK_NAME="$(basename "${BASH_SOURCE[0]}")"
-    REAL_SCRIPT="$(readlink "$SYMLINK_DIR/$SYMLINK_NAME")"
-
-    # Handle relative symlinks by resolving from symlink directory
-    if [[ "$REAL_SCRIPT" != /* ]]; then
-        REAL_SCRIPT="$SYMLINK_DIR/$REAL_SCRIPT"
-    fi
-
-    SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
-else
-    # If script is not a symlink (git submodule), use normal resolution
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
+# We need to follow symlinks to find the real script location
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    # If SOURCE is relative, resolve it relative to the symlink's directory
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PRODUCT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source command parser library
