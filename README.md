@@ -33,9 +33,47 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 
 **Note:** The System Server and Application Server can be the same physical instance. In this configuration, nginx and Docker run on the same machine, simplifying infrastructure management. The deployment scripts still run from your local machine and SSH to the combined server - you'll just configure the same host for both server settings in `deploy.config.yml`. This setup is ideal for smaller deployments while maintaining the same zero-downtime deployment process.
 
+## Installation
+
+### Quick Install (Recommended)
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/ezoushen/axon/main/install.sh | bash
+
+# Or with wget
+wget -qO- https://raw.githubusercontent.com/ezoushen/axon/main/install.sh | bash
+```
+
+### Homebrew
+
+```bash
+# Add tap and install
+brew tap ezoushen/axon
+brew install axon
+
+# Or install directly
+brew install https://raw.githubusercontent.com/ezoushen/axon/main/homebrew/axon.rb
+```
+
+### Manual Installation
+
+```bash
+# Clone repository
+git clone https://github.com/ezoushen/axon.git ~/.axon
+
+# Create symlink
+sudo ln -s ~/.axon/axon /usr/local/bin/axon
+
+# Verify
+axon --version
+```
+
+See [INSTALL.md](INSTALL.md) for detailed installation instructions, including custom locations, prerequisites, and troubleshooting.
+
 ## Quick Start
 
-### 1. Install Prerequisites
+### 1. Setup Prerequisites
 
 **Check what's missing:**
 ```bash
@@ -61,7 +99,7 @@ npm install -g decomposerize
 
 ```bash
 cd your-product
-git submodule add git@github.com:your-org/axon.git deploy
+git submodule add git@github.com:ezoushen/axon.git deploy
 git submodule update --init --recursive
 ```
 

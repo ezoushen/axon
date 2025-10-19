@@ -62,7 +62,7 @@ EXAMPLES:
 For command-specific help:
   axon <command> --help
 
-Documentation: https://github.com/your-org/axon
+Documentation: https://github.com/ezoushen/axon
 EOF
 }
 
