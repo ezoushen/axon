@@ -124,11 +124,6 @@ The deployment system **automatically generates** docker run commands from `depl
    ./setup/setup-app-server.sh
    ```
 
-3. **SSH Configuration** (15 min)
-   ```bash
-   ./setup/setup-ssh.sh
-   ```
-
 See [Setup Guide](docs/setup.md) for detailed instructions.
 
 ## Usage
