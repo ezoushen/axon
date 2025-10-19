@@ -321,7 +321,6 @@ APP_SERVER_HOST=$(parse_config "servers.application.host" "")
 APP_SERVER_PRIVATE_IP=$(parse_config "servers.application.private_ip" "")
 APP_SERVER_USER=$(parse_config "servers.application.user" "ubuntu")
 APP_SSH_KEY=$(parse_config "servers.application.ssh_key" "~/.ssh/application_server_key")
-APP_DEPLOY_PATH=$(parse_config "servers.application.deploy_path" "/home/ubuntu/app")
 APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"  # Expand ~
 
 # Use private IP for nginx upstream (falls back to public host if not set)
@@ -334,8 +333,11 @@ DOMAIN=$(parse_config "environments.${ENVIRONMENT}.domain" "")
 # Upstream name: {product}_{environment}_backend (hyphens converted to underscores)
 NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
 NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
-ENV_FILE=$(parse_config "environments.${ENVIRONMENT}.env_file" ".env.${ENVIRONMENT}")
+ENV_PATH=$(parse_config "environments.${ENVIRONMENT}.env_path" "/home/ubuntu/app/.env.${ENVIRONMENT}")
 IMAGE_TAG=$(parse_config "environments.${ENVIRONMENT}.image_tag" "$ENVIRONMENT")
+
+# Extract directory from env_path for deployment operations
+APP_DEPLOY_PATH=$(dirname "$ENV_PATH")
 
 # Health check config
 HEALTH_ENDPOINT=$(parse_config "health_check.endpoint" "/api/health")
@@ -433,15 +435,15 @@ echo -e "${BLUE}Step 2/9: Checking deployment files on Application Server...${NC
 ssh -i "$APP_SSH_KEY" "$APP_SERVER" "mkdir -p $APP_DEPLOY_PATH"
 
 # Check if .env file exists on Application Server (don't copy - may contain secrets)
-ENV_EXISTS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" "[ -f '$APP_DEPLOY_PATH/$ENV_FILE' ] && echo 'YES' || echo 'NO'")
+ENV_EXISTS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" "[ -f '$ENV_PATH' ] && echo 'YES' || echo 'NO'")
 
 if [ "$ENV_EXISTS" = "NO" ]; then
-    echo -e "${YELLOW}⚠ Warning: Environment file not found on Application Server: ${APP_DEPLOY_PATH}/${ENV_FILE}${NC}"
+    echo -e "${YELLOW}⚠ Warning: Environment file not found on Application Server: ${ENV_PATH}${NC}"
     echo -e "${YELLOW}  Please create it manually with your environment variables${NC}"
-    echo -e "${YELLOW}  Example: ssh ${APP_SERVER} 'cat > ${APP_DEPLOY_PATH}/${ENV_FILE}'${NC}"
+    echo -e "${YELLOW}  Example: ssh ${APP_SERVER} 'cat > ${ENV_PATH}'${NC}"
     exit 1
 fi
-echo -e "  ✓ Environment file exists: ${ENV_FILE}"
+echo -e "  ✓ Environment file exists: ${ENV_PATH}"
 echo ""
 
 # Step 4: Authenticate with ECR on Application Server and pull latest image
@@ -521,7 +523,7 @@ DOCKER_RUN_CMD=$(build_docker_run_command \
     "$CONTAINER_NAME" \
     "auto" \
     "$FULL_IMAGE" \
-    "$ENV_FILE" \
+    "$ENV_PATH" \
     "$NETWORK_NAME" \
     "$NETWORK_ALIAS" \
     "$CONTAINER_PORT")

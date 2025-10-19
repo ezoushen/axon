@@ -64,16 +64,15 @@ servers:
     private_ip: "10.0.1.10"              # Private IP for nginx upstream
     user: "ubuntu"
     ssh_key: "~/.ssh/app_server_key"
-    deploy_path: "/home/ubuntu/apps/my-product"
 
 # Environment Configurations
 environments:
   production:
-    env_file: ".env.production"
+    env_path: "/home/ubuntu/apps/my-product/.env.production"
     image_tag: "production"
 
   staging:
-    env_file: ".env.staging"
+    env_path: "/home/ubuntu/apps/my-product/.env.staging"
     image_tag: "staging"
 
 # Health Check Configuration
@@ -323,7 +322,7 @@ Ensure `deploy.config.yml` exists in your product root, not in the `deploy/` dir
 
 ### "Container not found on Application Server"
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
-- Verify deploy_path in config matches actual path on server
+- Verify env_path in config points to the correct .env file location
 
 ### "Image Tag shows wrong environment"
 - Install `yq`: `brew install yq` (macOS) or `sudo apt install yq` (Ubuntu)

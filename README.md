@@ -273,7 +273,7 @@ When building images:
 
 **2. "Container not found on Application Server"**
 - Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
-- Verify deploy_path in config matches actual path on server
+- Verify env_path in config points to the correct .env file location
 
 **3. "Image Tag shows wrong environment"**
 - Install `yq`: `brew install yq`

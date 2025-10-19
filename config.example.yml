@@ -30,7 +30,6 @@ servers:
     private_ip: "10.0.1.10"                  # Private IP within VPC (for nginx upstream)
     user: "ubuntu"                           # SSH user (must exist, SSH key required)
     ssh_key: "~/.ssh/app_server_key"         # SSH private key (must exist)
-    deploy_path: "/home/ubuntu/apps/my-product" # Deployment directory on Application Server
 
 # Environment Configurations
 environments:
@@ -39,7 +38,7 @@ environments:
     # Port is auto-assigned by Docker (no manual configuration needed)
     # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-production.conf
     # nginx backend:  Auto-generated as my_product_production_backend
-    env_file: ".env.production"
+    env_path: "/home/ubuntu/apps/my-product/.env.production"  # Full path to .env file on Application Server
     image_tag: "production"
 
   # Staging Environment
@@ -47,7 +46,7 @@ environments:
     # Port is auto-assigned by Docker (no manual configuration needed)
     # nginx upstream: Auto-generated as /etc/nginx/upstreams/my-product-staging.conf
     # nginx backend:  Auto-generated as my_product_staging_backend
-    env_file: ".env.staging"
+    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # Full path to .env file on Application Server
     image_tag: "staging"
 
 # Health Check Configuration
