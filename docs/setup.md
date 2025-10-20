@@ -55,7 +55,7 @@ cd your-product/deploy
 The Application Server setup script:
 - ✅ Checks Docker installation
 - ✅ Checks Docker Compose installation
-- ✅ Checks AWS CLI installation
+- ✅ Checks registry-specific CLI installation (AWS CLI, gcloud, Azure CLI, or none for Docker Hub)
 - ✅ Generates SSH deployment key
 - ✅ Tests connection to System Server
 - ✅ Verifies user permissions
@@ -71,11 +71,36 @@ cd /path/to/your-product/deploy
 
 You can provide configuration via environment variables:
 
+**For AWS ECR:**
 ```bash
 SYSTEM_SERVER_HOST=10.0.2.100 \
 SYSTEM_SERVER_USER=deploy \
 AWS_PROFILE=lastlonger \
 AWS_REGION=ap-northeast-1 \
+./setup/setup-application-server.sh
+```
+
+**For Docker Hub:**
+```bash
+SYSTEM_SERVER_HOST=10.0.2.100 \
+SYSTEM_SERVER_USER=deploy \
+./setup/setup-application-server.sh
+# No additional CLI needed
+```
+
+**For Google GCR:**
+```bash
+SYSTEM_SERVER_HOST=10.0.2.100 \
+SYSTEM_SERVER_USER=deploy \
+GOOGLE_PROJECT_ID=my-project \
+./setup/setup-application-server.sh
+```
+
+**For Azure ACR:**
+```bash
+SYSTEM_SERVER_HOST=10.0.2.100 \
+SYSTEM_SERVER_USER=deploy \
+AZURE_REGISTRY_NAME=myregistry \
 ./setup/setup-application-server.sh
 ```
 
@@ -97,7 +122,8 @@ Step 2/8: Checking Docker installation...
 Step 3/8: Checking Docker Compose installation...
   ✓ Docker Compose is installed (version: 2.23.0)
 
-Step 4/8: Checking AWS CLI installation...
+Step 4/8: Checking registry CLI installation...
+  ✓ Registry provider: aws_ecr
   ✓ AWS CLI is installed (version: 2.13.5)
   ✓ AWS credentials configured (profile: lastlonger, account: 123456789012)
 
@@ -119,7 +145,7 @@ Step 7/8: Checking user permissions...
 Step 8/8: Verifying setup...
   ✓ Docker daemon running
   ✓ Docker Compose available
-  ✓ AWS CLI installed
+  ✓ Registry CLI installed (aws_ecr)
   ✓ SSH key exists
 
 ==================================================
@@ -148,12 +174,36 @@ curl -SL https://github.com/docker/compose/releases/latest/download/docker-compo
 chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
 ```
 
-**AWS CLI not installed:**
+**Registry CLI not installed:**
+
+For AWS ECR:
 ```bash
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
 aws configure --profile lastlonger
+```
+
+For Google GCR:
+```bash
+# Install gcloud SDK
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+gcloud init
+gcloud auth configure-docker
+```
+
+For Azure ACR:
+```bash
+# Install Azure CLI
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+az login
+az acr login --name myregistry
+```
+
+For Docker Hub:
+```bash
+# No additional CLI needed - uses docker login
 ```
 
 **User not in docker group:**
@@ -361,7 +411,7 @@ Should show nginx config test results without asking for password.
 
 - [ ] Docker installed and running
 - [ ] Docker Compose available
-- [ ] AWS CLI installed and configured
+- [ ] Registry CLI installed and configured (AWS CLI, gcloud, Azure CLI, or none for Docker Hub)
 - [ ] Deployment SSH key generated (`~/.ssh/deployment_key`)
 - [ ] User in docker group
 - [ ] Can SSH to System Server as deploy user

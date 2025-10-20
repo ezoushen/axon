@@ -16,13 +16,67 @@ product:
   description: "My Application"   # [OPTIONAL] Product description (for documentation only)
 
 # ==============================================================================
-# AWS Configuration
+# Container Registry Configuration
 # ==============================================================================
-aws:
-  profile: "default"              # [REQUIRED] AWS CLI profile name
-  region: "ap-northeast-1"        # [REQUIRED] AWS region for ECR
-  account_id: "123456789012"      # [REQUIRED] AWS account ID (12 digits)
-  ecr_repository: "my-product"    # [OPTIONAL] ECR repository name (default: product.name)
+# Choose ONE registry provider and configure its section below.
+# Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr
+
+registry:
+  provider: "aws_ecr"  # [REQUIRED] Registry provider to use
+
+  # --------------------------------------------------------------------------
+  # Docker Hub Configuration
+  # --------------------------------------------------------------------------
+  # Uncomment and configure this section if using Docker Hub
+  # docker_hub:
+  #   username: "myuser"                          # [REQUIRED] Docker Hub username
+  #   access_token: "${DOCKER_HUB_TOKEN}"         # [REQUIRED] Personal Access Token (use env var for security)
+  #   namespace: "myuser"                         # [OPTIONAL] Namespace (default: username)
+  #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
+
+  # --------------------------------------------------------------------------
+  # AWS ECR Configuration (Example - Currently Active)
+  # --------------------------------------------------------------------------
+  aws_ecr:
+    profile: "default"                            # [REQUIRED] AWS CLI profile name
+    region: "ap-northeast-1"                      # [REQUIRED] AWS region for ECR
+    account_id: "123456789012"                    # [REQUIRED] AWS account ID (12 digits)
+    repository: "my-product"                      # [OPTIONAL] ECR repository name (default: product.name)
+
+  # --------------------------------------------------------------------------
+  # Google Container Registry Configuration
+  # --------------------------------------------------------------------------
+  # Uncomment and configure this section if using GCR
+  # google_gcr:
+  #   project_id: "my-gcp-project"                # [REQUIRED] GCP project ID
+  #   location: "us"                              # [OPTIONAL] Location: us, eu, asia (default: us)
+  #   service_account_key: "~/gcp-key.json"       # [OPTIONAL] Service account key file (if not using gcloud CLI)
+  #   use_artifact_registry: false                # [OPTIONAL] Use Artifact Registry instead of GCR (default: false)
+  #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
+
+  # --------------------------------------------------------------------------
+  # Azure Container Registry Configuration
+  # --------------------------------------------------------------------------
+  # Uncomment and configure this section if using ACR
+  # azure_acr:
+  #   registry_name: "myregistry"                 # [REQUIRED] ACR registry name (without .azurecr.io)
+  #   # Authentication method (choose ONE):
+  #   # Option 1: Service Principal (recommended for CI/CD)
+  #   service_principal_id: "sp-app-id"           # [OPTIONAL] Service principal application ID
+  #   service_principal_password: "${AZURE_SP_PASSWORD}"  # [OPTIONAL] Service principal secret (use env var)
+  #   # Option 2: Admin User (must be enabled in Azure Portal)
+  #   # admin_username: "myregistry"              # [OPTIONAL] Admin username
+  #   # admin_password: "${AZURE_ADMIN_PASSWORD}" # [OPTIONAL] Admin password (use env var)
+  #   # Option 3: Azure CLI (no credentials needed if 'az login' is active)
+  #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
+
+# IMPORTANT: Security Best Practices for Credentials
+# - Use environment variables for sensitive values: ${VAR_NAME}
+# - Never commit credentials directly in this file
+# - For Docker Hub: Use Personal Access Tokens, not passwords
+# - For AWS: Use AWS CLI profiles with proper IAM permissions
+# - For GCP: Use service account keys stored securely
+# - For Azure: Use service principals or Azure CLI authentication
 
 # ==============================================================================
 # Server Configuration

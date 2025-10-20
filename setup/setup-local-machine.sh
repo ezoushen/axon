@@ -295,6 +295,38 @@ fi
 
 echo ""
 
+# Registry-specific tools note
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${BLUE}Registry-Specific Tools (Optional)${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo ""
+echo -e "${YELLOW}Depending on your registry provider, you may need additional tools:${NC}"
+echo ""
+echo -e "  ${CYAN}Docker Hub:${NC} No additional tools needed (uses docker login)"
+echo -e "  ${CYAN}AWS ECR:${NC} AWS CLI (optional on local machine, required on Application Server)"
+echo -e "  ${CYAN}Google GCR:${NC} gcloud CLI - https://cloud.google.com/sdk/docs/install"
+echo -e "  ${CYAN}Azure ACR:${NC} Azure CLI - https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
+echo ""
+echo -e "${YELLOW}Configure your registry provider in axon.config.yml:${NC}"
+echo -e "  ${CYAN}registry.provider: docker_hub | aws_ecr | google_gcr | azure_acr${NC}"
+echo ""
+echo -e "${YELLOW}Installation commands (if needed):${NC}"
+echo ""
+if [ "$OS" = "macos" ]; then
+    echo -e "  ${CYAN}# Google Cloud SDK (gcloud)${NC}"
+    echo -e "  brew install --cask google-cloud-sdk"
+    echo ""
+    echo -e "  ${CYAN}# Azure CLI${NC}"
+    echo -e "  brew install azure-cli"
+elif [ "$OS" = "linux" ]; then
+    echo -e "  ${CYAN}# Google Cloud SDK (gcloud)${NC}"
+    echo -e "  curl https://sdk.cloud.google.com | bash"
+    echo ""
+    echo -e "  ${CYAN}# Azure CLI${NC}"
+    echo -e "  curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
+fi
+echo ""
+
 # Summary
 if [ ${#MISSING_TOOLS[@]} -eq 0 ]; then
     echo -e "${GREEN}==================================================${NC}"
@@ -302,16 +334,19 @@ if [ ${#MISSING_TOOLS[@]} -eq 0 ]; then
     echo -e "${GREEN}==================================================${NC}"
     echo ""
     echo -e "${YELLOW}Next steps:${NC}"
-    echo "1. Configure AWS credentials:"
-    echo "   aws configure"
+    echo "1. Choose and configure your container registry:"
+    echo "   Edit axon.config.yml and set registry.provider"
     echo ""
-    echo "2. Set up SSH keys for your servers"
+    echo "2. Install registry-specific CLI tools (if needed)"
+    echo "   See registry-specific tools section above"
+    echo ""
+    echo "3. Set up SSH keys for your servers"
     echo "   (or use existing keys in ~/.ssh/)"
     echo ""
-    echo "3. Create your axon.config.yml:"
+    echo "4. Create your axon.config.yml:"
     echo "   cp config.example.yml axon.config.yml"
     echo ""
-    echo "4. Run deployment:"
+    echo "5. Run deployment:"
     echo "   ./axon production"
     echo ""
 else

@@ -168,12 +168,12 @@ validate_file_path() {
     fi
 }
 
-# Function to validate AWS account ID format
+# Function to validate AWS account ID format (for AWS ECR)
 validate_aws_account_id() {
-    local value=$(parse_yaml_key "aws.account_id" "" "$CONFIG_FILE")
+    local value=$(parse_yaml_key "registry.aws_ecr.account_id" "" "$CONFIG_FILE")
 
     if [ -z "$value" ] || [ "$value" = "null" ]; then
-        report_error "Required field missing: aws.account_id"
+        report_error "Required field missing: registry.aws_ecr.account_id"
         return 1
     fi
 
@@ -185,6 +185,79 @@ validate_aws_account_id() {
         report_success "AWS Account ID: ${value}"
         return 0
     fi
+}
+
+# Function to validate registry configuration based on provider
+validate_registry_config() {
+    local provider=$(parse_yaml_key "registry.provider" "" "$CONFIG_FILE")
+
+    if [ -z "$provider" ] || [ "$provider" = "null" ]; then
+        report_error "Required field missing: registry.provider"
+        echo ""
+        echo "  Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
+        return 1
+    fi
+
+    case $provider in
+        docker_hub)
+            report_success "Registry Provider: docker_hub"
+            validate_required "registry.docker_hub.username" "Docker Hub username"
+            validate_required "registry.docker_hub.access_token" "Docker Hub access token"
+            validate_optional "registry.docker_hub.namespace" "Docker Hub namespace" "\${username}"
+            validate_optional "registry.docker_hub.repository" "Docker Hub repository" "\${product.name}"
+            ;;
+
+        aws_ecr)
+            report_success "Registry Provider: aws_ecr"
+            validate_required "registry.aws_ecr.profile" "AWS profile"
+            validate_required "registry.aws_ecr.region" "AWS region"
+            validate_aws_account_id
+            validate_optional "registry.aws_ecr.repository" "ECR repository" "\${product.name}"
+            ;;
+
+        google_gcr)
+            report_success "Registry Provider: google_gcr"
+            validate_required "registry.google_gcr.project_id" "GCP project ID"
+            validate_optional "registry.google_gcr.location" "GCR location" "us"
+            validate_optional "registry.google_gcr.service_account_key" "Service account key" "(uses gcloud CLI)"
+            validate_optional "registry.google_gcr.use_artifact_registry" "Use Artifact Registry" "false"
+            validate_optional "registry.google_gcr.repository" "GCR repository" "\${product.name}"
+            ;;
+
+        azure_acr)
+            report_success "Registry Provider: azure_acr"
+            validate_required "registry.azure_acr.registry_name" "ACR registry name"
+
+            # Check if at least one auth method is configured
+            local sp_id=$(parse_yaml_key "registry.azure_acr.service_principal_id" "" "$CONFIG_FILE")
+            local admin_user=$(parse_yaml_key "registry.azure_acr.admin_username" "" "$CONFIG_FILE")
+
+            if [ -z "$sp_id" ] && [ -z "$admin_user" ]; then
+                report_warning "No authentication configured. Ensure one of:"
+                echo "    - Service principal (service_principal_id + service_principal_password)"
+                echo "    - Admin user (admin_username + admin_password)"
+                echo "    - Azure CLI (az login)"
+            else
+                if [ -n "$sp_id" ]; then
+                    validate_required "registry.azure_acr.service_principal_password" "Service principal password"
+                fi
+                if [ -n "$admin_user" ]; then
+                    validate_required "registry.azure_acr.admin_password" "Admin password"
+                fi
+            fi
+
+            validate_optional "registry.azure_acr.repository" "ACR repository" "\${product.name}"
+            ;;
+
+        *)
+            report_error "Invalid registry.provider: ${provider}"
+            echo ""
+            echo "  Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
+            return 1
+            ;;
+    esac
+
+    return 0
 }
 
 # Function to validate environment configuration
@@ -219,12 +292,9 @@ validate_required "product.name" "Product name"
 validate_optional "product.description" "Product description" "(none)"
 
 echo ""
-echo -e "${BLUE}AWS Configuration${NC}"
+echo -e "${BLUE}Registry Configuration${NC}"
 echo ""
-validate_required "aws.profile" "AWS profile"
-validate_required "aws.region" "AWS region"
-validate_aws_account_id
-validate_optional "aws.ecr_repository" "ECR repository" "\${PRODUCT_NAME}"
+validate_registry_config
 
 echo ""
 echo -e "${BLUE}System Server Configuration${NC}"

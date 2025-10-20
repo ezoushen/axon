@@ -79,7 +79,7 @@ if [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Source the config parser
+# Source the config parser (registry-auth not needed for build, only tags)
 source "$MODULE_DIR/lib/config-parser.sh"
 
 # Validate environment
@@ -160,36 +160,45 @@ else
     IMAGE_TAG="$ENVIRONMENT"
 fi
 
-# Validate required AWS configuration
-if [ -z "$AWS_ACCOUNT_ID" ]; then
-    echo -e "${RED}Error: AWS account ID not configured${NC}"
-    echo "Please set 'aws.account_id' in $CONFIG_FILE"
+# Validate required registry configuration
+REGISTRY_PROVIDER=$(get_registry_provider)
+if [ -z "$REGISTRY_PROVIDER" ]; then
+    echo -e "${RED}Error: Registry provider not configured${NC}"
+    echo "Please set 'registry.provider' in $CONFIG_FILE"
+    echo "Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
     exit 1
 fi
 
-if [ -z "$AWS_REGION" ]; then
-    echo -e "${RED}Error: AWS region not configured${NC}"
-    echo "Please set 'aws.region' in $CONFIG_FILE"
+# Build image URI using registry abstraction
+REGISTRY_URL=$(build_registry_url)
+if [ $? -ne 0 ] || [ -z "$REGISTRY_URL" ]; then
+    echo -e "${RED}Error: Could not build registry URL${NC}"
+    echo "Check your registry configuration in $CONFIG_FILE"
     exit 1
 fi
 
-if [ -z "$ECR_REPOSITORY" ]; then
-    echo -e "${RED}Error: ECR repository not configured${NC}"
-    echo "Please set 'aws.ecr_repository' in $CONFIG_FILE"
+REPOSITORY=$(get_repository_name)
+if [ -z "$REPOSITORY" ]; then
+    echo -e "${RED}Error: Repository name not configured${NC}"
+    echo "Set either registry.${REGISTRY_PROVIDER}.repository or product.name in $CONFIG_FILE"
     exit 1
 fi
 
-# Build variables
-ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-FULL_IMAGE_NAME="${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+FULL_IMAGE_NAME=$(build_image_uri "$IMAGE_TAG")
+if [ $? -ne 0 ] || [ -z "$FULL_IMAGE_NAME" ]; then
+    echo -e "${RED}Error: Could not build image URI${NC}"
+    exit 1
+fi
 
 # Display build info
-echo -e "Product:        ${YELLOW}${PRODUCT_NAME}${NC}"
-echo -e "Environment:    ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "ECR Repository: ${YELLOW}${ECR_REPOSITORY}${NC}"
-echo -e "Image Tag:      ${YELLOW}${IMAGE_TAG}${NC}"
-[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:    ${YELLOW}${GIT_SHA}${NC}"
-echo -e "Full Image:     ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
+echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
+echo -e "Registry:        ${YELLOW}${REGISTRY_PROVIDER}${NC}"
+echo -e "Registry URL:    ${YELLOW}${REGISTRY_URL}${NC}"
+echo -e "Repository:      ${YELLOW}${REPOSITORY}${NC}"
+echo -e "Image Tag:       ${YELLOW}${IMAGE_TAG}${NC}"
+[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:     ${YELLOW}${GIT_SHA}${NC}"
+echo -e "Full Image:      ${YELLOW}${FULL_IMAGE_NAME}${NC}"
 echo ""
 
 # Check prerequisites
@@ -229,7 +238,7 @@ fi
 if [ -n "$GIT_SHA" ]; then
     echo ""
     echo -e "${GREEN}Tagging image with git SHA...${NC}"
-    GIT_SHA_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${GIT_SHA}"
+    GIT_SHA_IMAGE=$(build_image_uri "$GIT_SHA")
     docker tag "$FULL_IMAGE_NAME" "$GIT_SHA_IMAGE"
     echo -e "Tagged as: ${YELLOW}${GIT_SHA_IMAGE}${NC}"
 fi
@@ -252,9 +261,9 @@ echo ""
 echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
 echo ""
 echo "Next steps:"
-echo "  Push to ECR: ./tools/push.sh ${ENVIRONMENT}"
+echo "  Push to ${REGISTRY_PROVIDER}: ./tools/push.sh ${ENVIRONMENT}"
 if [ -n "$GIT_SHA" ]; then
-    echo "               ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
+    echo "                                ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
 fi
 echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
 echo ""

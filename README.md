@@ -2,7 +2,7 @@
 
 Zero-downtime deployment orchestration for Docker + nginx. Deploy instantly, switch seamlessly.
 
-A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, and AWS ECR.
+A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, and any major container registry.
 
 ## Features
 
@@ -10,7 +10,7 @@ A reusable, config-driven deployment system for achieving zero-downtime deployme
 - ✅ **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
 - ✅ **Multi-environment support** - Production, staging, and custom environments
 - ✅ **Product-agnostic** - Reusable across multiple projects
-- ✅ **AWS ECR integration** - Build, push, and pull images from ECR
+- ✅ **Multi-registry support** - Docker Hub, AWS ECR, Google GCR, Azure ACR
 - ✅ **Docker native health checks** - Leverages Docker's built-in health status
 - ✅ **Git SHA tagging** - Automatic commit tagging with uncommitted change detection
 - ✅ **Automatic rollback** - On health check failures
@@ -87,9 +87,15 @@ axon setup local --auto-install
 
 **Manual installation:**
 ```bash
-# macOS
-brew install yq awscli docker node
+# macOS - core tools
+brew install yq docker node
 npm install -g decomposerize
+
+# Registry-specific CLI (install based on your registry choice)
+brew install awscli                      # For AWS ECR
+brew install --cask google-cloud-sdk     # For Google GCR
+brew install azure-cli                   # For Azure ACR
+# Docker Hub: no additional CLI needed
 
 # Linux
 # See setup-local-machine.sh for detailed instructions
@@ -215,7 +221,7 @@ All deployment settings are in `axon.config.yml` (product root). The system auto
 - Dockerfile path (supports custom locations like `docker/Dockerfile.prod`)
 - Container ports, networking, health checks
 - Environment variables, logging, restart policies
-- AWS ECR settings, SSH keys, server hosts
+- Container registry settings (Docker Hub, AWS ECR, GCP, Azure), SSH keys, server hosts
 
 See `deploy/config.example.yml` for all available options with `[REQUIRED]` and `[OPTIONAL]` markings.
 
@@ -234,8 +240,8 @@ axon run staging --config custom.yml    # Custom config
 
 # Individual steps
 axon build production                   # Build image only
-axon push staging                       # Push to ECR only
-axon deploy production                  # Deploy only (pulls from ECR)
+axon push staging                       # Push to registry only
+axon deploy production                  # Deploy only (pulls from registry)
 ```
 
 ### Convenience Commands
@@ -333,14 +339,14 @@ axon run staging --dry-run
 
 ### Application Server
 - Docker and Docker Compose installed
-- AWS CLI configured
+- Registry-specific CLI (AWS CLI, gcloud, az CLI, or none for Docker Hub)
 - SSH access to System Server
 - Network access to System Server
 
 ### Local Machine
 - **yq** (YAML processor)
 - **Docker** (container runtime)
-- **AWS CLI** (for ECR access)
+- **Registry CLI** (AWS CLI / gcloud / Azure CLI - depending on provider, optional for Docker Hub)
 - **Node.js and npm** (for decomposerize)
 - **decomposerize** (docker-compose to docker run converter)
 - **SSH client** (for server access)
@@ -349,7 +355,7 @@ axon run staging --dry-run
 
 ## How It Works
 
-1. Pull image from ECR → Start new container (auto-assigned port) → Wait for health check
+1. Pull image from container registry → Start new container (auto-assigned port) → Wait for health check
 2. Update nginx upstream → Test config → Reload nginx (zero downtime)
 3. Gracefully shutdown old container
 

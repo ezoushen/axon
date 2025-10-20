@@ -356,10 +356,24 @@ ENV_PATH="$ENV_FILE_PATH"
 # Extract directory from env_path for deployment operations
 APP_DEPLOY_PATH=$(dirname "$ENV_PATH")
 
-# Validate required configuration
-MISSING_CONFIG=()
+# Validate required registry configuration
+REGISTRY_PROVIDER=$(get_registry_provider)
+if [ -z "$REGISTRY_PROVIDER" ]; then
+    echo -e "${RED}Error: Registry provider not configured${NC}"
+    echo "Please set 'registry.provider' in $CONFIG_FILE"
+    exit 1
+fi
 
-[ -z "$AWS_ACCOUNT_ID" ] && MISSING_CONFIG+=("aws.account_id")
+# Build image URI
+FULL_IMAGE=$(build_image_uri "$IMAGE_TAG")
+if [ $? -ne 0 ] || [ -z "$FULL_IMAGE" ]; then
+    echo -e "${RED}Error: Could not build image URI${NC}"
+    echo "Check your registry configuration in $CONFIG_FILE"
+    exit 1
+fi
+
+# Validate required server configuration
+MISSING_CONFIG=()
 [ -z "$SYSTEM_SERVER_HOST" ] && MISSING_CONFIG+=("servers.system.host")
 [ -z "$APP_SERVER_HOST" ] && MISSING_CONFIG+=("servers.application.host")
 
@@ -375,8 +389,8 @@ fi
 echo -e "${BLUE}Configuration loaded:${NC}"
 echo -e "  Product:            ${YELLOW}${PRODUCT_NAME}${NC}"
 echo -e "  Environment:        ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "  AWS Region:         ${YELLOW}${AWS_REGION}${NC}"
-echo -e "  ECR Repository:     ${YELLOW}${ECR_REPOSITORY}${NC}"
+echo -e "  Registry:           ${YELLOW}${REGISTRY_PROVIDER}${NC}"
+echo -e "  Image:              ${YELLOW}${FULL_IMAGE}${NC}"
 echo -e "  System Server:      ${YELLOW}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
 echo -e "  Application Server: ${YELLOW}${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
 echo -e "  Deploy Path:        ${YELLOW}${APP_DEPLOY_PATH}${NC}"
@@ -386,10 +400,6 @@ echo ""
 # SSH connection strings
 SYSTEM_SERVER="${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}"
 APP_SERVER="${APP_SERVER_USER}@${APP_SERVER_HOST}"
-
-# ECR URL
-ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-FULL_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
 # Check SSH keys exist
 if [ ! -f "$SSH_KEY" ]; then
@@ -451,27 +461,96 @@ fi
 echo -e "  ✓ Environment file exists: ${ENV_PATH}"
 echo ""
 
-# Step 4: Authenticate with ECR on Application Server and pull latest image
-echo -e "${BLUE}Step 3/9: Pulling latest image from ECR on Application Server...${NC}"
-echo -e "  Image: ${YELLOW}${FULL_IMAGE}${NC}"
+# Step 4: Authenticate with registry on Application Server and pull latest image
+echo -e "${BLUE}Step 3/9: Authenticating and pulling image on Application Server...${NC}"
+echo -e "  Registry: ${YELLOW}${REGISTRY_PROVIDER}${NC}"
+echo -e "  Image:    ${YELLOW}${FULL_IMAGE}${NC}"
 
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+# Generate registry-specific authentication commands for remote execution
+case $REGISTRY_PROVIDER in
+    docker_hub)
+        REGISTRY_USERNAME=$(get_registry_config "username")
+        REGISTRY_TOKEN=$(get_registry_config "access_token")
+        REGISTRY_TOKEN=$(expand_env_vars "$REGISTRY_TOKEN")
+
+        ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+echo "$REGISTRY_TOKEN" | docker login -u "$REGISTRY_USERNAME" --password-stdin
+docker pull "$FULL_IMAGE"
+EOF
+        ;;
+
+    aws_ecr)
+        AWS_PROFILE=$(get_registry_config "profile")
+        AWS_REGION=$(get_registry_config "region")
+        REGISTRY_URL=$(build_registry_url)
+
+        ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 set -e
 aws ecr get-login-password --region "$AWS_REGION" --profile "$AWS_PROFILE" | \
-    docker login --username AWS --password-stdin "$ECR_URL" 2>/dev/null
-
-if [ \$? -ne 0 ]; then
-    echo "Error: Failed to authenticate with ECR"
-    exit 1
-fi
-
+    docker login --username AWS --password-stdin "$REGISTRY_URL" 2>/dev/null
 docker pull "$FULL_IMAGE"
-
-if [ \$? -ne 0 ]; then
-    echo "Error: Failed to pull image"
-    exit 1
-fi
 EOF
+        ;;
+
+    google_gcr)
+        SERVICE_ACCOUNT_KEY=$(get_registry_config "service_account_key")
+        if [ -n "$SERVICE_ACCOUNT_KEY" ]; then
+            SERVICE_ACCOUNT_KEY="${SERVICE_ACCOUNT_KEY/#\~/$HOME}"
+            REMOTE_KEY="/tmp/gcp-key-$$.json"
+            scp -i "$APP_SSH_KEY" "$SERVICE_ACCOUNT_KEY" "$APP_SERVER:$REMOTE_KEY"
+
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+cat "$REMOTE_KEY" | docker login -u _json_key --password-stdin https://gcr.io
+rm -f "$REMOTE_KEY"
+docker pull "$FULL_IMAGE"
+EOF
+        else
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+gcloud auth configure-docker --quiet
+docker pull "$FULL_IMAGE"
+EOF
+        fi
+        ;;
+
+    azure_acr)
+        SP_ID=$(get_registry_config "service_principal_id")
+        SP_PASSWORD=$(get_registry_config "service_principal_password")
+        ADMIN_USER=$(get_registry_config "admin_username")
+        ADMIN_PASSWORD=$(get_registry_config "admin_password")
+        REGISTRY_NAME=$(get_registry_config "registry_name")
+        REGISTRY_URL="${REGISTRY_NAME}.azurecr.io"
+
+        if [ -n "$SP_ID" ] && [ -n "$SP_PASSWORD" ]; then
+            SP_PASSWORD=$(expand_env_vars "$SP_PASSWORD")
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+echo "$SP_PASSWORD" | docker login "$REGISTRY_URL" --username "$SP_ID" --password-stdin
+docker pull "$FULL_IMAGE"
+EOF
+        elif [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASSWORD" ]; then
+            ADMIN_PASSWORD=$(expand_env_vars "$ADMIN_PASSWORD")
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+echo "$ADMIN_PASSWORD" | docker login "$REGISTRY_URL" --username "$ADMIN_USER" --password-stdin
+docker pull "$FULL_IMAGE"
+EOF
+        else
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+az acr login --name "$REGISTRY_NAME"
+docker pull "$FULL_IMAGE"
+EOF
+        fi
+        ;;
+
+    *)
+        echo -e "${RED}Error: Unknown registry provider: $REGISTRY_PROVIDER${NC}"
+        exit 1
+        ;;
+esac
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Image pull failed${NC}"
@@ -511,7 +590,7 @@ echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
 echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
 # Build docker run command from axon.config.yml
-FULL_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+# FULL_IMAGE already defined earlier using build_image_uri()
 CONTAINER_NAME="${NEW_CONTAINER}"
 
 # Get network name from config with template substitution

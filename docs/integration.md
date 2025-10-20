@@ -5,7 +5,7 @@ How to integrate AXON into your product.
 ## Prerequisites
 
 - Docker installed
-- AWS CLI configured with appropriate profile
+- Registry-specific CLI configured (AWS CLI, gcloud, Azure CLI, or none for Docker Hub)
 - SSH access between Application Server and System Server
 - nginx running on System Server
 
@@ -43,12 +43,37 @@ product:
   name: "my-product"
   description: "My Product"
 
-# AWS Configuration
-aws:
-  profile: "default"
-  region: "ap-northeast-1"
-  account_id: "123456789012"
-  ecr_repository: "my-product"
+# Container Registry Configuration
+# Choose ONE registry provider: docker_hub, aws_ecr, google_gcr, azure_acr
+registry:
+  provider: "aws_ecr"  # Active provider
+
+  # Docker Hub Configuration (Uncomment to use)
+  # docker_hub:
+  #   username: "myuser"
+  #   access_token: "${DOCKER_HUB_TOKEN}"  # Use env var for security
+  #   namespace: "myuser"
+  #   repository: "my-product"
+
+  # AWS ECR Configuration (Currently Active)
+  aws_ecr:
+    profile: "default"
+    region: "ap-northeast-1"
+    account_id: "123456789012"
+    repository: "my-product"
+
+  # Google Container Registry Configuration (Uncomment to use)
+  # google_gcr:
+  #   project_id: "my-gcp-project"
+  #   location: "us"  # us, eu, asia
+  #   service_account_key: "~/gcp-service-account.json"  # Optional: uses gcloud CLI if omitted
+  #   use_artifact_registry: false  # true for Artifact Registry, false for GCR
+
+  # Azure Container Registry Configuration (Uncomment to use)
+  # azure_acr:
+  #   registry_name: "myregistry"
+  #   service_principal_id: "sp-app-id"  # Optional: uses Azure CLI if omitted
+  #   service_principal_password: "${AZURE_SP_PASSWORD}"  # Use env var
 
 # Server Configuration
 servers:
@@ -92,7 +117,8 @@ deployment:
 
 # Docker Configuration
 docker:
-  image_template: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+  # Note: Image URI is auto-generated from registry config
+  # No need to specify image_template manually
   container_port: 3000
   restart_policy: "unless-stopped"
   network_name: "${PRODUCT_NAME}-${ENVIRONMENT}-network"
@@ -137,7 +163,7 @@ EOF
 
 **Important Notes:**
 - `.env` files live on the Application Server, not in your repository
-- No need for AWS variables in `.env` files (they're in `axon.config.yml`)
+- No need for registry credentials in `.env` files (they're in `axon.config.yml`)
 - These files contain runtime secrets and should never be committed to Git
 
 ## Step 4: Add to .gitignore
@@ -199,7 +225,7 @@ axon build production --skip-git
 axon build staging --no-cache
 ```
 
-**Push to ECR:**
+**Push to Registry:**
 ```bash
 axon push production
 axon push staging --config my-config.yml
@@ -263,7 +289,7 @@ your-product/
 │   ├── config.example.yml         # Example configuration
 │   ├── tools/
 │   │   ├── build.sh              # Build Docker image
-│   │   ├── push.sh               # Push to ECR
+│   │   ├── push.sh               # Push to registry
 │   │   ├── deploy.sh             # Deploy (zero-downtime)
 │   │   ├── logs.sh               # View logs
 │   │   ├── status.sh             # Check status
@@ -303,7 +329,7 @@ git commit -m "Update AXON"
 
 ### Deployment Flow
 
-1. **Pull Image**: Pull latest image from ECR on Application Server
+1. **Pull Image**: Pull latest image from container registry on Application Server
 2. **Generate Container Name**: Create timestamp-based name (`{product}-{env}-{timestamp}`)
 3. **Start New Container**: Docker auto-assigns port from ephemeral range (32768-60999)
 4. **Wait for Health Check**: Query Docker's health status (native health check)
@@ -447,7 +473,7 @@ axon deploy staging
 axon build-and-push staging
 
 # Deploy existing image to production
-# (pulls from ECR, doesn't rebuild)
+# (pulls from registry, doesn't rebuild)
 axon deploy production
 ```
 

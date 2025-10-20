@@ -109,11 +109,9 @@ load_config() {
     # Product config
     export PRODUCT_NAME=$(parse_yaml_key "product.name" "")
 
-    # AWS config
-    export AWS_PROFILE=$(parse_yaml_key "aws.profile" "")
-    export AWS_REGION=$(parse_yaml_key "aws.region" "")
-    export AWS_ACCOUNT_ID=$(parse_yaml_key "aws.account_id" "")
-    export ECR_REPOSITORY=$(parse_yaml_key "aws.ecr_repository" "$PRODUCT_NAME")
+    # Registry config (generic exports for all providers)
+    export REGISTRY_PROVIDER=$(get_registry_provider)
+    export REPOSITORY_NAME=$(get_repository_name)
 
     # System Server config
     export SYSTEM_SERVER_HOST=$(parse_yaml_key "servers.system.host" "")
@@ -144,4 +142,143 @@ load_config() {
     # Docker config
     export CONTAINER_PORT=$(parse_yaml_key "docker.container_port" "3000")
     export DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile")
+}
+
+# ==============================================================================
+# Registry Configuration Functions
+# ==============================================================================
+
+# Get active registry provider
+get_registry_provider() {
+    parse_yaml_key "registry.provider" ""
+}
+
+# Get registry-specific config value
+get_registry_config() {
+    local provider=$(get_registry_provider)
+    local key=$1
+    parse_yaml_key "registry.${provider}.${key}" ""
+}
+
+# Get repository name (respects provider-specific setting or defaults to product name)
+get_repository_name() {
+    local provider=$(get_registry_provider)
+    local repo=$(parse_yaml_key "registry.${provider}.repository" "")
+    if [ -z "$repo" ]; then
+        repo=$(parse_yaml_key "product.name" "")
+    fi
+    echo "$repo"
+}
+
+# Build full registry URL
+build_registry_url() {
+    local provider=$(get_registry_provider)
+
+    case $provider in
+        docker_hub)
+            echo "docker.io"
+            ;;
+        aws_ecr)
+            local account_id=$(get_registry_config "account_id")
+            local region=$(get_registry_config "region")
+
+            if [ -z "$account_id" ] || [ -z "$region" ]; then
+                echo "" >&2
+                return 1
+            fi
+
+            echo "${account_id}.dkr.ecr.${region}.amazonaws.com"
+            ;;
+        google_gcr)
+            local project_id=$(get_registry_config "project_id")
+            local use_artifact=$(get_registry_config "use_artifact_registry")
+            local location=$(get_registry_config "location")
+            location="${location:-us}"
+
+            if [ -z "$project_id" ]; then
+                echo "" >&2
+                return 1
+            fi
+
+            if [ "$use_artifact" = "true" ]; then
+                # Artifact Registry format
+                echo "${location}-docker.pkg.dev/${project_id}"
+            else
+                # GCR format
+                echo "${location}.gcr.io/${project_id}"
+            fi
+            ;;
+        azure_acr)
+            local registry_name=$(get_registry_config "registry_name")
+
+            if [ -z "$registry_name" ]; then
+                echo "" >&2
+                return 1
+            fi
+
+            echo "${registry_name}.azurecr.io"
+            ;;
+        *)
+            echo "" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Build full image URI (registry URL + repository + tag)
+build_image_uri() {
+    local tag=$1
+    local provider=$(get_registry_provider)
+    local registry_url=$(build_registry_url)
+    local repository=$(get_repository_name)
+
+    if [ -z "$registry_url" ] || [ -z "$repository" ]; then
+        echo "" >&2
+        return 1
+    fi
+
+    case $provider in
+        docker_hub)
+            local namespace=$(get_registry_config "namespace")
+            if [ -z "$namespace" ]; then
+                namespace=$(get_registry_config "username")
+            fi
+
+            if [ -z "$namespace" ]; then
+                echo "" >&2
+                return 1
+            fi
+
+            echo "${namespace}/${repository}:${tag}"
+            ;;
+        *)
+            echo "${registry_url}/${repository}:${tag}"
+            ;;
+    esac
+}
+
+# Expand environment variables in config values
+# Usage: expand_env_vars "$value"
+# Supports ${VAR_NAME} syntax
+expand_env_vars() {
+    local value=$1
+
+    # Use envsubst if available (preferred)
+    if command -v envsubst >/dev/null 2>&1; then
+        echo "$value" | envsubst
+        return
+    fi
+
+    # Fallback: Simple bash-based expansion
+    # This handles ${VAR} syntax only
+    local result="$value"
+
+    # Find all ${VAR} patterns and replace them
+    while [[ "$result" =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\} ]]; do
+        local var_name="${BASH_REMATCH[1]}"
+        local var_value="${!var_name}"
+        result="${result//\$\{${var_name}\}/${var_value}}"
+    done
+
+    echo "$result"
 }

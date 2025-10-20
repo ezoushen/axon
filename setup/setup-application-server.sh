@@ -116,7 +116,8 @@ SYSTEM_SERVER_HOST=$(parse_config ".servers.system.host" "")
 SYSTEM_SERVER_USER=$(parse_config ".servers.system.user" "")
 SYSTEM_SERVER_SSH_KEY=$(parse_config ".servers.system.ssh_key" "")
 
-AWS_PROFILE=$(parse_config ".aws.profile" "default")
+# Detect registry provider
+REGISTRY_PROVIDER=$(parse_config ".registry.provider" "")
 
 # Expand tilde in SSH key paths
 APP_SERVER_SSH_KEY="${APP_SERVER_SSH_KEY/#\~/$HOME}"
@@ -287,39 +288,149 @@ fi
 
 echo ""
 
-# Step 5: Check AWS CLI on Application Server
-echo -e "${BLUE}Step 5/6: Checking AWS CLI on Application Server...${NC}"
+# Step 5: Check Registry CLI Tools on Application Server
+echo -e "${BLUE}Step 5/6: Checking Registry CLI tools on Application Server...${NC}"
 
-AWS_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
-    'aws --version 2>&1' || echo "NOT_INSTALLED")
-
-if [[ "$AWS_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$AWS_CHECK" == *"command not found"* ]]; then
-    echo -e "  ${RED}✗ AWS CLI is not installed on Application Server${NC}"
-    echo ""
-    echo -e "  To install AWS CLI on Application Server:"
-    echo -e "  ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
-    echo -e "  ${CYAN}curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\"${NC}"
-    echo -e "  ${CYAN}unzip awscliv2.zip${NC}"
-    echo -e "  ${CYAN}sudo ./aws/install${NC}"
-    echo -e "  ${CYAN}aws configure --profile ${AWS_PROFILE}${NC}"
-    echo ""
+if [ -z "$REGISTRY_PROVIDER" ]; then
+    echo -e "  ${RED}✗ Registry provider not configured${NC}"
+    echo -e "  ${YELLOW}Add to axon.config.yml: registry.provider: docker_hub | aws_ecr | google_gcr | azure_acr${NC}"
     exit 1
-else
-    AWS_VERSION=$(echo "$AWS_CHECK" | grep -o 'aws-cli/[^ ]*' | head -1 | cut -d'/' -f2)
-    echo -e "  ${GREEN}✓ AWS CLI is installed${NC} (version: ${AWS_VERSION})"
 fi
 
-# Check AWS credentials
-AWS_CREDS_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
-    "aws sts get-caller-identity --profile ${AWS_PROFILE} 2>&1" || echo "NOT_CONFIGURED")
+echo -e "  Registry provider: ${CYAN}${REGISTRY_PROVIDER}${NC}"
+echo ""
 
-if [[ "$AWS_CREDS_CHECK" == *"NOT_CONFIGURED"* ]] || [[ "$AWS_CREDS_CHECK" == *"could not be found"* ]]; then
-    echo -e "  ${YELLOW}⚠ AWS credentials not configured for profile: ${AWS_PROFILE}${NC}"
-    echo -e "  Configure with: ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} 'aws configure --profile ${AWS_PROFILE}'${NC}"
-else
-    AWS_ACCOUNT=$(echo "$AWS_CREDS_CHECK" | grep -o '"Account": "[0-9]*"' | head -1 | sed 's/"Account": "\([0-9]*\)"/\1/')
-    echo -e "  ${GREEN}✓ AWS credentials configured${NC} (profile: ${AWS_PROFILE}, account: ${AWS_ACCOUNT})"
-fi
+case $REGISTRY_PROVIDER in
+    docker_hub)
+        echo -e "  ${CYAN}Docker Hub authentication${NC}"
+        echo -e "  ${GREEN}✓ No additional CLI tools required${NC}"
+        echo -e "  ${YELLOW}Note: Ensure Docker Hub credentials are configured in axon.config.yml${NC}"
+        ;;
+
+    aws_ecr)
+        echo -e "  ${CYAN}AWS ECR - Checking AWS CLI...${NC}"
+        AWS_PROFILE=$(parse_config ".registry.aws_ecr.profile" "default")
+        AWS_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
+            'aws --version 2>&1' || echo "NOT_INSTALLED")
+
+        if [[ "$AWS_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$AWS_CHECK" == *"command not found"* ]]; then
+            echo -e "  ${RED}✗ AWS CLI is not installed on Application Server${NC}"
+            echo ""
+            echo -e "  To install AWS CLI on Application Server:"
+            echo -e "  ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
+            echo -e "  ${CYAN}curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\"${NC}"
+            echo -e "  ${CYAN}unzip awscliv2.zip${NC}"
+            echo -e "  ${CYAN}sudo ./aws/install${NC}"
+            echo -e "  ${CYAN}aws configure --profile ${AWS_PROFILE}${NC}"
+            echo ""
+            exit 1
+        else
+            AWS_VERSION=$(echo "$AWS_CHECK" | grep -o 'aws-cli/[^ ]*' | head -1 | cut -d'/' -f2)
+            echo -e "  ${GREEN}✓ AWS CLI is installed${NC} (version: ${AWS_VERSION})"
+        fi
+
+        # Check AWS credentials
+        AWS_CREDS_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
+            "aws sts get-caller-identity --profile ${AWS_PROFILE} 2>&1" || echo "NOT_CONFIGURED")
+
+        if [[ "$AWS_CREDS_CHECK" == *"NOT_CONFIGURED"* ]] || [[ "$AWS_CREDS_CHECK" == *"could not be found"* ]]; then
+            echo -e "  ${YELLOW}⚠ AWS credentials not configured for profile: ${AWS_PROFILE}${NC}"
+            echo -e "  Configure with: ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} 'aws configure --profile ${AWS_PROFILE}'${NC}"
+        else
+            AWS_ACCOUNT=$(echo "$AWS_CREDS_CHECK" | grep -o '"Account": "[0-9]*"' | head -1 | sed 's/"Account": "\([0-9]*\)"/\1/')
+            echo -e "  ${GREEN}✓ AWS credentials configured${NC} (profile: ${AWS_PROFILE}, account: ${AWS_ACCOUNT})"
+        fi
+        ;;
+
+    google_gcr)
+        echo -e "  ${CYAN}Google Container Registry - Checking gcloud CLI...${NC}"
+        SERVICE_ACCOUNT_KEY=$(parse_config ".registry.google_gcr.service_account_key" "")
+
+        GCLOUD_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
+            'gcloud --version 2>&1' || echo "NOT_INSTALLED")
+
+        if [[ "$GCLOUD_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$GCLOUD_CHECK" == *"command not found"* ]]; then
+            if [ -z "$SERVICE_ACCOUNT_KEY" ]; then
+                echo -e "  ${RED}✗ gcloud CLI is not installed and no service account key configured${NC}"
+                echo ""
+                echo -e "  ${YELLOW}Option 1: Install gcloud CLI on Application Server:${NC}"
+                echo -e "  ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
+                echo -e "  ${CYAN}curl https://sdk.cloud.google.com | bash${NC}"
+                echo -e "  ${CYAN}exec -l \$SHELL${NC}"
+                echo -e "  ${CYAN}gcloud init${NC}"
+                echo -e "  ${CYAN}gcloud auth configure-docker${NC}"
+                echo ""
+                echo -e "  ${YELLOW}Option 2: Use service account key (configure in axon.config.yml):${NC}"
+                echo -e "  ${CYAN}registry.google_gcr.service_account_key: ~/gcp-key.json${NC}"
+                echo ""
+                exit 1
+            else
+                echo -e "  ${YELLOW}⚠ gcloud CLI not installed, using service account key${NC}"
+                echo -e "  ${GREEN}✓ Service account key configured: ${SERVICE_ACCOUNT_KEY}${NC}"
+            fi
+        else
+            GCLOUD_VERSION=$(echo "$GCLOUD_CHECK" | grep -o 'Google Cloud SDK [^ ]*' | head -1 | awk '{print $4}')
+            echo -e "  ${GREEN}✓ gcloud CLI is installed${NC} (version: ${GCLOUD_VERSION})"
+        fi
+        ;;
+
+    azure_acr)
+        echo -e "  ${CYAN}Azure Container Registry - Checking Azure CLI...${NC}"
+        SP_ID=$(parse_config ".registry.azure_acr.service_principal_id" "")
+        ADMIN_USER=$(parse_config ".registry.azure_acr.admin_username" "")
+
+        AZ_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
+            'az --version 2>&1' || echo "NOT_INSTALLED")
+
+        if [[ "$AZ_CHECK" == *"NOT_INSTALLED"* ]] || [[ "$AZ_CHECK" == *"command not found"* ]]; then
+            if [ -z "$SP_ID" ] && [ -z "$ADMIN_USER" ]; then
+                echo -e "  ${RED}✗ Azure CLI not installed and no service principal/admin user configured${NC}"
+                echo ""
+                echo -e "  ${YELLOW}Option 1: Install Azure CLI on Application Server:${NC}"
+                echo -e "  ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
+                echo -e "  ${CYAN}curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash${NC}"
+                echo -e "  ${CYAN}az login${NC}"
+                echo ""
+                echo -e "  ${YELLOW}Option 2: Use service principal (configure in axon.config.yml):${NC}"
+                echo -e "  ${CYAN}registry.azure_acr.service_principal_id: <sp-app-id>${NC}"
+                echo -e "  ${CYAN}registry.azure_acr.service_principal_password: \${AZURE_SP_PASSWORD}${NC}"
+                echo ""
+                echo -e "  ${YELLOW}Option 3: Enable admin user in Azure Portal and configure:${NC}"
+                echo -e "  ${CYAN}registry.azure_acr.admin_username: <username>${NC}"
+                echo -e "  ${CYAN}registry.azure_acr.admin_password: \${AZURE_ADMIN_PASSWORD}${NC}"
+                echo ""
+                exit 1
+            else
+                echo -e "  ${YELLOW}⚠ Azure CLI not installed, using configured credentials${NC}"
+                if [ -n "$SP_ID" ]; then
+                    echo -e "  ${GREEN}✓ Service principal configured${NC}"
+                else
+                    echo -e "  ${GREEN}✓ Admin user configured${NC}"
+                fi
+            fi
+        else
+            AZ_VERSION=$(echo "$AZ_CHECK" | grep -o 'azure-cli [^ ]*' | head -1 | awk '{print $2}')
+            echo -e "  ${GREEN}✓ Azure CLI is installed${NC} (version: ${AZ_VERSION})"
+
+            # Check if logged in
+            LOGIN_CHECK=$(ssh -i "$APP_SERVER_SSH_KEY" "${APP_SERVER_USER}@${APP_SERVER_HOST}" \
+                'az account show 2>&1' || echo "NOT_LOGGED_IN")
+
+            if [[ "$LOGIN_CHECK" == *"NOT_LOGGED_IN"* ]] || [[ "$LOGIN_CHECK" == *"Please run 'az login'"* ]]; then
+                echo -e "  ${YELLOW}⚠ Not logged in to Azure${NC}"
+                echo -e "  Login with: ${CYAN}ssh ${APP_SERVER_USER}@${APP_SERVER_HOST} 'az login'${NC}"
+            else
+                SUBSCRIPTION=$(echo "$LOGIN_CHECK" | grep -o '"name": "[^"]*"' | head -1 | sed 's/"name": "\([^"]*\)"/\1/')
+                echo -e "  ${GREEN}✓ Logged in to Azure${NC} (subscription: ${SUBSCRIPTION})"
+            fi
+        fi
+        ;;
+
+    *)
+        echo -e "  ${RED}✗ Unknown registry provider: ${REGISTRY_PROVIDER}${NC}"
+        exit 1
+        ;;
+esac
 
 echo ""
 

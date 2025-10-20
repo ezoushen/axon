@@ -1,5 +1,6 @@
 #!/bin/bash
-# Push Docker image to AWS ECR
+# Push Docker image to container registry
+# Supports: Docker Hub, AWS ECR, Google GCR, Azure ACR
 # Product-agnostic version - uses axon.config.yml
 
 set -e
@@ -72,8 +73,9 @@ if [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Source the config parser
+# Source the config parser and registry auth
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/registry-auth.sh"
 
 # Validate environment
 if [ -z "$ENVIRONMENT" ]; then
@@ -89,7 +91,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}Push to AWS ECR${NC}"
+echo -e "${BLUE}Push to Container Registry${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 
@@ -116,53 +118,55 @@ else
     IMAGE_TAG="$ENVIRONMENT"
 fi
 
-# Validate required AWS configuration
-if [ -z "$AWS_ACCOUNT_ID" ]; then
-    echo -e "${RED}Error: AWS account ID not configured${NC}"
-    echo "Please set 'aws.account_id' in $CONFIG_FILE"
+# Validate required registry configuration
+REGISTRY_PROVIDER=$(get_registry_provider)
+if [ -z "$REGISTRY_PROVIDER" ]; then
+    echo -e "${RED}Error: Registry provider not configured${NC}"
+    echo "Please set 'registry.provider' in $CONFIG_FILE"
+    echo "Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
     exit 1
 fi
 
-if [ -z "$AWS_REGION" ]; then
-    echo -e "${RED}Error: AWS region not configured${NC}"
-    echo "Please set 'aws.region' in $CONFIG_FILE"
+# Build image URI using registry abstraction
+REGISTRY_URL=$(build_registry_url)
+if [ $? -ne 0 ] || [ -z "$REGISTRY_URL" ]; then
+    echo -e "${RED}Error: Could not build registry URL${NC}"
+    echo "Check your registry configuration in $CONFIG_FILE"
     exit 1
 fi
 
-if [ -z "$ECR_REPOSITORY" ]; then
-    echo -e "${RED}Error: ECR repository not configured${NC}"
-    echo "Please set 'aws.ecr_repository' in $CONFIG_FILE"
+REPOSITORY=$(get_repository_name)
+if [ -z "$REPOSITORY" ]; then
+    echo -e "${RED}Error: Repository name not configured${NC}"
+    echo "Set either registry.${REGISTRY_PROVIDER}.repository or product.name in $CONFIG_FILE"
     exit 1
 fi
 
-# Build variables
-ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-FULL_IMAGE_NAME="${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+FULL_IMAGE_NAME=$(build_image_uri "$IMAGE_TAG")
+if [ $? -ne 0 ] || [ -z "$FULL_IMAGE_NAME" ]; then
+    echo -e "${RED}Error: Could not build image URI${NC}"
+    exit 1
+fi
 
 # Display push info
-echo -e "Product:        ${YELLOW}${PRODUCT_NAME}${NC}"
-echo -e "Environment:    ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "AWS Profile:    ${YELLOW}${AWS_PROFILE}${NC}"
-echo -e "AWS Region:     ${YELLOW}${AWS_REGION}${NC}"
-echo -e "ECR Repository: ${YELLOW}${ECR_REPOSITORY}${NC}"
-echo -e "Image Tag:      ${YELLOW}${IMAGE_TAG}${NC}"
-[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:    ${YELLOW}${GIT_SHA}${NC}"
-echo -e "Full Image:     ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
+echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
+echo -e "Registry:        ${YELLOW}${REGISTRY_PROVIDER}${NC}"
+echo -e "Registry URL:    ${YELLOW}${REGISTRY_URL}${NC}"
+echo -e "Repository:      ${YELLOW}${REPOSITORY}${NC}"
+echo -e "Image Tag:       ${YELLOW}${IMAGE_TAG}${NC}"
+[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:     ${YELLOW}${GIT_SHA}${NC}"
+echo -e "Full Image:      ${YELLOW}${FULL_IMAGE_NAME}${NC}"
 echo ""
 
 # Check prerequisites
-if ! command -v aws &> /dev/null; then
-    echo -e "${RED}Error: AWS CLI is not installed${NC}"
-    exit 1
-fi
-
 if ! docker info &> /dev/null; then
     echo -e "${RED}Error: Docker is not running${NC}"
     exit 1
 fi
 
 # Check if image exists locally
-if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${ECR_URL}/${ECR_REPOSITORY}:${IMAGE_TAG}$"; then
+if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${FULL_IMAGE_NAME}$"; then
     echo -e "${RED}Error: Image not found locally: ${FULL_IMAGE_NAME}${NC}"
     echo ""
     echo "Please build the image first:"
@@ -170,34 +174,38 @@ if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${ECR_URL}/${
     exit 1
 fi
 
-# Authenticate with ECR
-echo -e "${GREEN}Step 1/3: Authenticating with AWS ECR...${NC}"
-aws ecr get-login-password --region "$AWS_REGION" --profile "$AWS_PROFILE" | \
-    docker login --username AWS --password-stdin "$ECR_URL"
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Failed to authenticate with AWS ECR${NC}"
+# Authenticate with registry
+echo -e "${GREEN}Step 1/3: Authenticating with container registry...${NC}"
+if ! registry_login; then
+    echo -e "${RED}Error: Failed to authenticate with registry${NC}"
     exit 1
 fi
 
-# Create repository if not exists
-echo -e "${GREEN}Step 2/3: Creating ECR repository (if not exists)...${NC}"
-aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
-    --region "$AWS_REGION" --profile "$AWS_PROFILE" &> /dev/null || \
-    aws ecr create-repository \
-        --repository-name "$ECR_REPOSITORY" \
-        --region "$AWS_REGION" \
-        --profile "$AWS_PROFILE" \
-        --image-scanning-configuration scanOnPush=true \
-        --encryption-configuration encryptionType=AES256
+# Create repository if needed (AWS ECR only)
+if [ "$REGISTRY_PROVIDER" = "aws_ecr" ]; then
+    echo -e "${GREEN}Step 2/3: Creating ECR repository (if not exists)...${NC}"
+    AWS_PROFILE=$(get_registry_config "profile")
+    AWS_REGION=$(get_registry_config "region")
+
+    aws ecr describe-repositories --repository-names "$REPOSITORY" \
+        --region "$AWS_REGION" --profile "$AWS_PROFILE" &> /dev/null || \
+        aws ecr create-repository \
+            --repository-name "$REPOSITORY" \
+            --region "$AWS_REGION" \
+            --profile "$AWS_PROFILE" \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256
+else
+    echo -e "${GREEN}Step 2/3: Repository setup (skipped for ${REGISTRY_PROVIDER})...${NC}"
+fi
 
 # Determine which images to push
 IMAGES_TO_PUSH=("$FULL_IMAGE_NAME")
 
 if [ -n "$GIT_SHA" ]; then
-    GIT_SHA_IMAGE="${ECR_URL}/${ECR_REPOSITORY}:${GIT_SHA}"
+    GIT_SHA_IMAGE=$(build_image_uri "$GIT_SHA")
     # Check if git SHA image exists locally
-    if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${ECR_URL}/${ECR_REPOSITORY}:${GIT_SHA}$"; then
+    if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${GIT_SHA_IMAGE}$"; then
         IMAGES_TO_PUSH+=("$GIT_SHA_IMAGE")
     else
         echo -e "${YELLOW}Warning: Git SHA image not found locally: ${GIT_SHA_IMAGE}${NC}"
@@ -205,8 +213,8 @@ if [ -n "$GIT_SHA" ]; then
     fi
 fi
 
-# Push to ECR
-echo -e "${GREEN}Step 3/3: Pushing image(s) to AWS ECR...${NC}"
+# Push to registry
+echo -e "${GREEN}Step 3/3: Pushing image(s) to ${REGISTRY_PROVIDER}...${NC}"
 echo -e "${YELLOW}This may take a few minutes...${NC}"
 echo ""
 
@@ -214,7 +222,7 @@ for IMAGE in "${IMAGES_TO_PUSH[@]}"; do
     echo -e "Pushing: ${YELLOW}${IMAGE}${NC}"
     docker push "$IMAGE"
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: Failed to push image to ECR${NC}"
+        echo -e "${RED}Error: Failed to push image to registry${NC}"
         exit 1
     fi
 done
@@ -226,7 +234,7 @@ echo -e "${GREEN}Push completed successfully!${NC}"
 echo -e "${GREEN}==================================================${NC}"
 echo ""
 
-echo "Image(s) pushed to ECR:"
+echo "Image(s) pushed to ${REGISTRY_PROVIDER}:"
 for IMAGE in "${IMAGES_TO_PUSH[@]}"; do
     echo -e "  ${YELLOW}${IMAGE}${NC}"
 done
