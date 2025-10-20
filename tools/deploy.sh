@@ -21,7 +21,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Product root directory (parent of deploy module)
 MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PRODUCT_ROOT="$(cd "$MODULE_DIR/.." && pwd)"
+# Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
+PRODUCT_ROOT="$PWD"
 
 # Default values
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
