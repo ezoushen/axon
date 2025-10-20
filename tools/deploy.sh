@@ -319,6 +319,12 @@ echo -e "${CYAN}==================================================${NC}"
 echo -e "${CYAN}AXON - Zero-Downtime Deployment${NC}"
 echo -e "${CYAN}==================================================${NC}"
 echo ""
+
+# Show context info if using context mode
+if [ "$CONTEXT_MODE" = "context" ] && [ -n "$CONTEXT_NAME" ]; then
+    echo -e "${BLUE}Context: ${YELLOW}${CONTEXT_NAME}${NC}"
+fi
+
 echo -e "${YELLOW}Running from: $(hostname)${NC}"
 echo ""
 

@@ -723,6 +723,8 @@ if [ "$SKIP_CONTEXT_RESOLUTION" = false ]; then
     # Export for child scripts
     export PROJECT_ROOT
     export CONFIG_FILE
+    export CONTEXT_MODE
+    export CONTEXT_NAME
 
     # If using context mode, cd to project root (Option A from design)
     if [ "$CONTEXT_MODE" = "context" ] && [ -n "$PROJECT_ROOT" ] && [ "$PROJECT_ROOT" != "$PWD" ]; then

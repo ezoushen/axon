@@ -343,6 +343,375 @@ cmd_context_current() {
 }
 
 # ==============================================================================
+# Command: axon context show
+# ==============================================================================
+
+cmd_context_show() {
+    local name=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                echo "Usage: axon context show <name>"
+                echo ""
+                echo "Show detailed information about a context."
+                echo ""
+                echo "Arguments:"
+                echo "  name          Context name to show"
+                echo ""
+                echo "Options:"
+                echo "  -h, --help    Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  axon context show my-app"
+                echo "  axon context show backend"
+                exit 0
+                ;;
+            -*)
+                echo -e "${RED}Error: Unknown option: $1${NC}"
+                exit 1
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error: Too many arguments${NC}"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate name provided
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: Context name required${NC}"
+        echo "Usage: axon context show <name>"
+        exit 1
+    fi
+
+    # Check if context exists
+    if ! context_exists "$name"; then
+        echo -e "${RED}Error: Context '$name' does not exist${NC}"
+        echo ""
+        echo "Available contexts:"
+        cmd_context_list
+        exit 1
+    fi
+
+    # Load context details
+    local config=$(get_context_field "$name" "config")
+    local project_root=$(get_context_field "$name" "project_root")
+    local product=$(get_context_field "$name" "product_name")
+    local registry=$(get_context_field "$name" "registry_provider")
+    local description=$(get_context_field "$name" "description")
+    local created=$(get_context_field "$name" "created")
+    local last_used=$(get_context_field "$name" "last_used")
+
+    # Check status
+    local status_msg=""
+    local status_color=""
+    if [ ! -f "$config" ]; then
+        status_msg="✗ Invalid (config file not found)"
+        status_color="$RED"
+    elif [ ! -d "$project_root" ]; then
+        status_msg="✗ Invalid (project root not found)"
+        status_color="$RED"
+    else
+        status_msg="✓ Valid (config exists and is readable)"
+        status_color="$GREEN"
+    fi
+
+    # Parse additional config info if available
+    local environments=""
+    local system_server=""
+    local app_server=""
+    if [ -f "$config" ]; then
+        # Get environments
+        local env_list=$(yq eval '.environments | keys | .[]' "$config" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+        if [ -n "$env_list" ] && [ "$env_list" != "null" ]; then
+            environments="$env_list"
+        fi
+
+        # Get servers
+        local sys_user=$(yq eval '.servers.system.user' "$config" 2>/dev/null)
+        local sys_host=$(yq eval '.servers.system.host' "$config" 2>/dev/null)
+        if [ -n "$sys_user" ] && [ "$sys_user" != "null" ] && [ -n "$sys_host" ] && [ "$sys_host" != "null" ]; then
+            system_server="${sys_user}@${sys_host}"
+        fi
+
+        local app_user=$(yq eval '.servers.application.user' "$config" 2>/dev/null)
+        local app_host=$(yq eval '.servers.application.host' "$config" 2>/dev/null)
+        if [ -n "$app_user" ] && [ "$app_user" != "null" ] && [ -n "$app_host" ] && [ "$app_host" != "null" ]; then
+            app_server="${app_user}@${app_host}"
+        fi
+
+        # Update registry info from fresh config read
+        registry=$(yq eval '.registry.provider' "$config" 2>/dev/null)
+
+        # Get registry URL based on provider
+        local registry_url=""
+        case "$registry" in
+            aws_ecr)
+                local account=$(yq eval '.registry.aws_ecr.account_id' "$config" 2>/dev/null)
+                local region=$(yq eval '.registry.aws_ecr.region' "$config" 2>/dev/null)
+                if [ -n "$account" ] && [ "$account" != "null" ] && [ -n "$region" ] && [ "$region" != "null" ]; then
+                    registry_url="${account}.dkr.ecr.${region}.amazonaws.com"
+                fi
+                ;;
+            google_gcr)
+                local project=$(yq eval '.registry.google_gcr.project_id' "$config" 2>/dev/null)
+                if [ -n "$project" ] && [ "$project" != "null" ]; then
+                    registry_url="gcr.io/${project}"
+                fi
+                ;;
+            azure_acr)
+                local reg_name=$(yq eval '.registry.azure_acr.registry_name' "$config" 2>/dev/null)
+                if [ -n "$reg_name" ] && [ "$reg_name" != "null" ]; then
+                    registry_url="${reg_name}.azurecr.io"
+                fi
+                ;;
+            docker_hub)
+                local namespace=$(yq eval '.registry.docker_hub.namespace' "$config" 2>/dev/null)
+                if [ -z "$namespace" ] || [ "$namespace" = "null" ]; then
+                    namespace=$(yq eval '.registry.docker_hub.username' "$config" 2>/dev/null)
+                fi
+                if [ -n "$namespace" ] && [ "$namespace" != "null" ]; then
+                    registry_url="docker.io/${namespace}"
+                fi
+                ;;
+        esac
+    fi
+
+    # Display context information
+    echo -e "${CYAN}Context: ${YELLOW}$name${NC}"
+    echo -e "${CYAN}─────────────────────────────${NC}"
+    echo ""
+    echo -e "${CYAN}Basic Information:${NC}"
+    echo -e "  Config:       ${YELLOW}$(shorten_path "$config")${NC}"
+    echo -e "  Project Root: ${YELLOW}$(shorten_path "$project_root")${NC}"
+
+    if [ -n "$description" ] && [ "$description" != "null" ] && [ -n "$description" ]; then
+        echo -e "  Description:  ${YELLOW}$description${NC}"
+    fi
+
+    if [ -n "$product" ] && [ "$product" != "null" ]; then
+        echo -e "  Product:      ${YELLOW}$product${NC}"
+    fi
+
+    if [ -n "$registry" ] && [ "$registry" != "null" ]; then
+        echo -e "  Registry:     ${YELLOW}$registry${NC}"
+        if [ -n "$registry_url" ]; then
+            echo -e "                ${YELLOW}($registry_url)${NC}"
+        fi
+    fi
+
+    if [ -n "$environments" ]; then
+        echo ""
+        echo -e "${CYAN}Environments:${NC}"
+        echo -e "  ${YELLOW}$environments${NC}"
+    fi
+
+    if [ -n "$system_server" ] || [ -n "$app_server" ]; then
+        echo ""
+        echo -e "${CYAN}Servers:${NC}"
+        if [ -n "$system_server" ]; then
+            echo -e "  System:       ${YELLOW}$system_server${NC}"
+        fi
+        if [ -n "$app_server" ]; then
+            echo -e "  Application:  ${YELLOW}$app_server${NC}"
+        fi
+    fi
+
+    echo ""
+    echo -e "${CYAN}Timestamps:${NC}"
+    if [ -n "$created" ] && [ "$created" != "null" ]; then
+        echo -e "  Created:      ${YELLOW}$created${NC}"
+    fi
+    if [ -n "$last_used" ] && [ "$last_used" != "null" ]; then
+        echo -e "  Last Used:    ${YELLOW}$(timestamp_to_relative "$last_used") ($last_used)${NC}"
+    fi
+
+    echo ""
+    echo -e "${CYAN}Status:${NC}"
+    echo -e "  ${status_color}${status_msg}${NC}"
+}
+
+# ==============================================================================
+# Command: axon context validate
+# ==============================================================================
+
+cmd_context_validate() {
+    local name=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                echo "Usage: axon context validate <name>"
+                echo ""
+                echo "Validate a context's configuration."
+                echo ""
+                echo "Arguments:"
+                echo "  name          Context name to validate"
+                echo ""
+                echo "Options:"
+                echo "  -h, --help    Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  axon context validate my-app"
+                echo "  axon context validate backend"
+                exit 0
+                ;;
+            -*)
+                echo -e "${RED}Error: Unknown option: $1${NC}"
+                exit 1
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error: Too many arguments${NC}"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate name provided
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: Context name required${NC}"
+        echo "Usage: axon context validate <name>"
+        exit 1
+    fi
+
+    # Check if context exists
+    if ! context_exists "$name"; then
+        echo -e "${RED}Error: Context '$name' does not exist${NC}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}Validating context: ${YELLOW}$name${NC}"
+    echo ""
+
+    local errors=0
+    local warnings=0
+
+    # Load context
+    local config=$(get_context_field "$name" "config")
+    local project_root=$(get_context_field "$name" "project_root")
+
+    # Check 1: Context file exists
+    if [ -f "$(get_context_file "$name")" ]; then
+        echo -e "${GREEN}✓ Context file exists${NC}"
+    else
+        echo -e "${RED}✗ Context file missing${NC}"
+        errors=$((errors + 1))
+    fi
+
+    # Check 2: Config file exists
+    if [ -f "$config" ]; then
+        echo -e "${GREEN}✓ Config file exists: $(basename "$config")${NC}"
+    else
+        echo -e "${RED}✗ Config file not found: $config${NC}"
+        errors=$((errors + 1))
+        echo ""
+        echo -e "${RED}Validation: Failed ($errors errors, $warnings warnings)${NC}"
+        exit 1
+    fi
+
+    # Check 3: Config is valid YAML
+    if yq eval '.' "$config" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Config is valid YAML${NC}"
+    else
+        echo -e "${RED}✗ Config is not valid YAML${NC}"
+        errors=$((errors + 1))
+        echo ""
+        echo -e "${RED}Validation: Failed ($errors errors, $warnings warnings)${NC}"
+        exit 1
+    fi
+
+    # Check 4: Required fields present
+    local product_name=$(yq eval '.product.name' "$config" 2>/dev/null)
+    local registry_provider=$(yq eval '.registry.provider' "$config" 2>/dev/null)
+
+    if [ -n "$product_name" ] && [ "$product_name" != "null" ]; then
+        echo -e "${GREEN}✓ Required field present: product.name${NC}"
+    else
+        echo -e "${RED}✗ Missing required field: product.name${NC}"
+        errors=$((errors + 1))
+    fi
+
+    if [ -n "$registry_provider" ] && [ "$registry_provider" != "null" ]; then
+        echo -e "${GREEN}✓ Required field present: registry.provider${NC}"
+    else
+        echo -e "${RED}✗ Missing required field: registry.provider${NC}"
+        errors=$((errors + 1))
+    fi
+
+    # Check 5: Project root exists
+    if [ -d "$project_root" ]; then
+        echo -e "${GREEN}✓ Project root exists${NC}"
+    else
+        echo -e "${RED}✗ Project root not found: $project_root${NC}"
+        errors=$((errors + 1))
+    fi
+
+    # Check 6: SSH keys exist
+    local sys_key=$(yq eval '.servers.system.ssh_key' "$config" 2>/dev/null)
+    local app_key=$(yq eval '.servers.application.ssh_key' "$config" 2>/dev/null)
+
+    if [ -n "$sys_key" ] && [ "$sys_key" != "null" ]; then
+        sys_key="${sys_key/#\~/$HOME}"
+        if [ -f "$sys_key" ]; then
+            echo -e "${GREEN}✓ System Server SSH key exists${NC}"
+        else
+            echo -e "${RED}✗ System Server SSH key not found: $sys_key${NC}"
+            errors=$((errors + 1))
+        fi
+    fi
+
+    if [ -n "$app_key" ] && [ "$app_key" != "null" ]; then
+        app_key="${app_key/#\~/$HOME}"
+        if [ -f "$app_key" ]; then
+            echo -e "${GREEN}✓ Application Server SSH key exists${NC}"
+        else
+            echo -e "${RED}✗ Application Server SSH key not found: $app_key${NC}"
+            errors=$((errors + 1))
+        fi
+    fi
+
+    # Check 7: Dockerfile exists (warning only)
+    local dockerfile=$(yq eval '.docker.dockerfile' "$config" 2>/dev/null)
+    if [ -z "$dockerfile" ] || [ "$dockerfile" = "null" ]; then
+        dockerfile="Dockerfile"
+    fi
+
+    if [ -f "${project_root}/${dockerfile}" ]; then
+        echo -e "${GREEN}✓ Dockerfile exists in project root${NC}"
+    else
+        echo -e "${YELLOW}⚠ Warning: Dockerfile not found: ${project_root}/${dockerfile}${NC}"
+        warnings=$((warnings + 1))
+    fi
+
+    # Summary
+    echo ""
+    if [ $errors -eq 0 ]; then
+        if [ $warnings -eq 0 ]; then
+            echo -e "${GREEN}Validation: Passed${NC}"
+        else
+            echo -e "${YELLOW}Validation: Passed with $warnings warning(s)${NC}"
+        fi
+        exit 0
+    else
+        echo -e "${RED}Validation: Failed ($errors error(s), $warnings warning(s))${NC}"
+        exit 1
+    fi
+}
+
+# ==============================================================================
 # Command: axon context remove
 # ==============================================================================
 
@@ -469,6 +838,12 @@ handle_context_command() {
         current)
             cmd_context_current "$@"
             ;;
+        show)
+            cmd_context_show "$@"
+            ;;
+        validate)
+            cmd_context_validate "$@"
+            ;;
         remove|rm)
             cmd_context_remove "$@"
             ;;
@@ -482,6 +857,8 @@ handle_context_command() {
             echo "  use <name>             Switch to a context"
             echo "  list                   List all contexts"
             echo "  current                Show current context"
+            echo "  show <name>            Show detailed context information"
+            echo "  validate <name>        Validate a context configuration"
             echo "  remove <name>          Remove a context"
             echo ""
             echo "Options:"
@@ -491,6 +868,8 @@ handle_context_command() {
             echo "  axon context add my-app"
             echo "  axon context use my-app"
             echo "  axon context list"
+            echo "  axon context show my-app"
+            echo "  axon context validate my-app"
             echo "  axon context remove my-app"
             ;;
         *)
