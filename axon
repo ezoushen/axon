@@ -40,6 +40,10 @@ CONFIG_FILE="axon.config.yml"
 VERBOSE=false
 DRY_RUN=false
 
+# Export variables that child scripts need to see
+export VERBOSE
+export DRY_RUN
+
 # Command-specific variables
 SKIP_GIT=false
 GIT_SHA=""

@@ -329,8 +329,16 @@ if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
     exit 1
 fi
 
+if [ "${VERBOSE:-false}" = "true" ]; then
+    echo "[VERBOSE] deploy.sh: Calling load_config..." >&2
+fi
+
 # Load all common configuration using load_config
 load_config "$ENVIRONMENT"
+
+if [ "${VERBOSE:-false}" = "true" ]; then
+    echo "[VERBOSE] deploy.sh: load_config completed, parsing product description..." >&2
+fi
 
 # Additional product-specific config not in load_config
 PRODUCT_DESC=$(parse_config ".product.description" "")
@@ -357,11 +365,19 @@ ENV_PATH="$ENV_FILE_PATH"
 APP_DEPLOY_PATH=$(dirname "$ENV_PATH")
 
 # Validate required registry configuration
+if [ "${VERBOSE:-false}" = "true" ]; then
+    echo "[VERBOSE] deploy.sh: Validating registry configuration..." >&2
+fi
+
 REGISTRY_PROVIDER=$(get_registry_provider)
 if [ -z "$REGISTRY_PROVIDER" ]; then
     echo -e "${RED}Error: Registry provider not configured${NC}"
     echo "Please set 'registry.provider' in $CONFIG_FILE"
     exit 1
+fi
+
+if [ "${VERBOSE:-false}" = "true" ]; then
+    echo "[VERBOSE] deploy.sh: Registry provider validated, building image URI..." >&2
 fi
 
 # Build image URI
@@ -370,6 +386,10 @@ if [ $? -ne 0 ] || [ -z "$FULL_IMAGE" ]; then
     echo -e "${RED}Error: Could not build image URI${NC}"
     echo "Check your registry configuration in $CONFIG_FILE"
     exit 1
+fi
+
+if [ "${VERBOSE:-false}" = "true" ]; then
+    echo "[VERBOSE] deploy.sh: Image URI built successfully: $FULL_IMAGE" >&2
 fi
 
 # Validate required server configuration

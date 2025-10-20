@@ -25,6 +25,11 @@ parse_yaml_key() {
     local default=$2
     local config_file=${3:-$CONFIG_FILE}
 
+    # Debug output if verbose mode
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] Parsing config key: $key" >&2
+    fi
+
     # Ensure yq is available
     if ! check_yq; then
         exit 1
@@ -37,7 +42,22 @@ parse_yaml_key() {
         yq_key=".$yq_key"
     fi
 
-    value=$(yq eval "$yq_key" "$config_file" 2>/dev/null || echo "")
+    # Run yq with timeout to prevent hanging (10 seconds should be plenty)
+    # Use timeout command if available, otherwise run directly
+    local value
+    local exit_code
+    if command -v timeout >/dev/null 2>&1; then
+        value=$(timeout 10 yq eval "$yq_key" "$config_file" 2>/dev/null || echo "")
+        exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+            echo "Error: yq command timed out while parsing key: $key" >&2
+            echo "Config file: $config_file" >&2
+            exit 1
+        fi
+    else
+        value=$(yq eval "$yq_key" "$config_file" 2>/dev/null || echo "")
+        exit_code=$?
+    fi
 
     # Return value or default
     if [ "$value" != "null" ] && [ -n "$value" ]; then
@@ -101,17 +121,36 @@ validate_environment() {
 load_config() {
     local env=$1
 
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Starting configuration load for environment: $env" >&2
+    fi
+
     if [ ! -f "$CONFIG_FILE" ]; then
         echo -e "${RED}Error: Configuration file not found: $CONFIG_FILE${NC}"
         exit 1
     fi
 
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Parsing product.name..." >&2
+    fi
     # Product config
     export PRODUCT_NAME=$(parse_yaml_key "product.name" "")
 
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Parsing registry provider..." >&2
+    fi
     # Registry config (generic exports for all providers)
     export REGISTRY_PROVIDER=$(get_registry_provider)
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Parsing repository name..." >&2
+    fi
     export REPOSITORY_NAME=$(get_repository_name)
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Repository name parsed successfully: $REPOSITORY_NAME" >&2
+        echo "[VERBOSE] load_config: Parsing server configuration..." >&2
+    fi
 
     # System Server config
     export SYSTEM_SERVER_HOST=$(parse_yaml_key "servers.system.host" "")
@@ -142,6 +181,10 @@ load_config() {
     # Docker config
     export CONTAINER_PORT=$(parse_yaml_key "docker.container_port" "3000")
     export DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile")
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] load_config: Configuration load completed successfully" >&2
+    fi
 }
 
 # ==============================================================================
@@ -150,7 +193,14 @@ load_config() {
 
 # Get active registry provider
 get_registry_provider() {
-    parse_yaml_key "registry.provider" ""
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] get_registry_provider: Fetching registry provider..." >&2
+    fi
+    local provider=$(parse_yaml_key "registry.provider" "")
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] get_registry_provider: Provider is '$provider'" >&2
+    fi
+    echo "$provider"
 }
 
 # Get registry-specific config value
@@ -162,32 +212,73 @@ get_registry_config() {
 
 # Get repository name (respects provider-specific setting or defaults to product name)
 get_repository_name() {
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] get_repository_name: Starting..." >&2
+    fi
+
     local provider=$(get_registry_provider)
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] get_repository_name: Provider is '$provider', checking for repository override..." >&2
+    fi
+
     local repo=$(parse_yaml_key "registry.${provider}.repository" "")
+
     if [ -z "$repo" ]; then
+        if [ "${VERBOSE:-false}" = "true" ]; then
+            echo "[VERBOSE] get_repository_name: No override, using product.name..." >&2
+        fi
         repo=$(parse_yaml_key "product.name" "")
     fi
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] get_repository_name: Repository name is '$repo'" >&2
+    fi
+
     echo "$repo"
 }
 
 # Build full registry URL
 build_registry_url() {
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_registry_url: Starting..." >&2
+    fi
+
     local provider=$(get_registry_provider)
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_registry_url: Provider is '$provider'" >&2
+    fi
 
     case $provider in
         docker_hub)
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                echo "[VERBOSE] build_registry_url: Using Docker Hub registry" >&2
+            fi
             echo "docker.io"
             ;;
         aws_ecr)
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                echo "[VERBOSE] build_registry_url: Using AWS ECR registry, fetching account_id and region..." >&2
+            fi
+
             local account_id=$(get_registry_config "account_id")
             local region=$(get_registry_config "region")
+
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                echo "[VERBOSE] build_registry_url: account_id='$account_id', region='$region'" >&2
+            fi
 
             if [ -z "$account_id" ] || [ -z "$region" ]; then
                 echo "" >&2
                 return 1
             fi
 
-            echo "${account_id}.dkr.ecr.${region}.amazonaws.com"
+            local url="${account_id}.dkr.ecr.${region}.amazonaws.com"
+            if [ "${VERBOSE:-false}" = "true" ]; then
+                echo "[VERBOSE] build_registry_url: AWS ECR URL is '$url'" >&2
+            fi
+            echo "$url"
             ;;
         google_gcr)
             local project_id=$(get_registry_config "project_id")
@@ -228,9 +319,25 @@ build_registry_url() {
 # Build full image URI (registry URL + repository + tag)
 build_image_uri() {
     local tag=$1
+
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_image_uri: Starting with tag='$tag'..." >&2
+    fi
+
     local provider=$(get_registry_provider)
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_image_uri: Provider is '$provider'" >&2
+    fi
+
     local registry_url=$(build_registry_url)
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_image_uri: Registry URL is '$registry_url'" >&2
+    fi
+
     local repository=$(get_repository_name)
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        echo "[VERBOSE] build_image_uri: Repository is '$repository'" >&2
+    fi
 
     if [ -z "$registry_url" ] || [ -z "$repository" ]; then
         echo "" >&2
