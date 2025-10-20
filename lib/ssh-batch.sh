@@ -151,6 +151,203 @@ ssh_batch_raw_output() {
     echo "$_SSH_BATCH_OUTPUT"
 }
 
+# ==============================================================================
+# Async Parallel Execution Support
+# ==============================================================================
+
+# Global associative arrays for async batch tracking
+declare -A _SSH_BATCH_ASYNC_PIDS=()
+declare -A _SSH_BATCH_ASYNC_OUTPUTS=()
+declare -A _SSH_BATCH_ASYNC_COMMANDS=()
+declare -A _SSH_BATCH_ASYNC_MARKERS=()
+
+# Execute batch asynchronously in background
+# Args: ssh_key server batch_id [options]
+# Returns: immediately, job runs in background
+ssh_batch_execute_async() {
+    local ssh_key=$1
+    local server=$2
+    local batch_id=$3
+    local fail_fast=false
+
+    shift 3
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --fail-fast)
+                fail_fast=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Store commands and markers for this batch
+    local commands_str=""
+    local markers_str=""
+    for cmd in "${_SSH_BATCH_COMMANDS[@]}"; do
+        commands_str+="$cmd"$'\n'
+    done
+    for marker in "${_SSH_BATCH_MARKERS[@]}"; do
+        markers_str+="$marker"$'\n'
+    done
+    _SSH_BATCH_ASYNC_COMMANDS[$batch_id]="$commands_str"
+    _SSH_BATCH_ASYNC_MARKERS[$batch_id]="$markers_str"
+
+    # Build remote script
+    local script="#!/bin/bash
+set -o pipefail
+"
+
+    if [ "$fail_fast" = true ]; then
+        script+="set -e
+"
+    fi
+
+    # Add each command with markers
+    local i=0
+    for cmd in "${_SSH_BATCH_COMMANDS[@]}"; do
+        local marker="${_SSH_BATCH_MARKERS[$i]}"
+        marker="${marker%%:*}"
+
+        script+="
+# Command $i
+echo '${marker}:START'
+{
+$cmd
+} && echo '${marker}:EXIT:0' || echo '${marker}:EXIT:'\$?
+"
+        i=$((i + 1))
+    done
+
+    # Execute via SSH in background, capture output to temp file
+    local temp_output="/tmp/axon_batch_${batch_id}_$$.out"
+    {
+        ssh -i "$ssh_key" "$server" bash <<EOF
+$script
+EOF
+    } > "$temp_output" 2>&1 &
+
+    # Store PID and output file
+    _SSH_BATCH_ASYNC_PIDS[$batch_id]=$!
+    _SSH_BATCH_ASYNC_OUTPUTS[$batch_id]="$temp_output"
+}
+
+# Wait for one or more async batches to complete
+# Args: batch_id1 [batch_id2 ...]
+# Returns: 0 if all succeeded, 1 if any failed
+ssh_batch_wait() {
+    local exit_code=0
+
+    for batch_id in "$@"; do
+        if [ -z "${_SSH_BATCH_ASYNC_PIDS[$batch_id]}" ]; then
+            echo "Error: Unknown batch_id: $batch_id" >&2
+            return 1
+        fi
+
+        local pid="${_SSH_BATCH_ASYNC_PIDS[$batch_id]}"
+
+        # Wait for this specific job
+        wait "$pid"
+        local job_exit=$?
+
+        if [ $job_exit -ne 0 ]; then
+            exit_code=1
+        fi
+    done
+
+    return $exit_code
+}
+
+# Get result from async batch
+# Args: batch_id label
+ssh_batch_result_from() {
+    local batch_id=$1
+    local label=$2
+
+    local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
+    if [ ! -f "$output_file" ]; then
+        echo "Error: Output file not found for batch $batch_id" >&2
+        return 1
+    fi
+
+    local batch_output=$(cat "$output_file")
+
+    # Reconstruct markers from stored data
+    local markers_str="${_SSH_BATCH_ASYNC_MARKERS[$batch_id]}"
+
+    # Find the marker for this label
+    local marker=""
+    while IFS= read -r marker_label; do
+        if [[ "$marker_label" == *":$label" ]]; then
+            marker="${marker_label%%:*}"
+            break
+        fi
+    done <<< "$markers_str"
+
+    if [ -z "$marker" ]; then
+        echo "Error: Label '$label' not found in batch $batch_id" >&2
+        return 1
+    fi
+
+    # Extract output between START and EXIT markers
+    echo "$batch_output" | awk "
+        /^${marker}:START\$/ { recording=1; next }
+        /^${marker}:EXIT:/ { recording=0 }
+        recording { print }
+    "
+}
+
+# Get exit code from async batch
+# Args: batch_id label
+ssh_batch_exitcode_from() {
+    local batch_id=$1
+    local label=$2
+
+    local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
+    if [ ! -f "$output_file" ]; then
+        echo "255"
+        return 1
+    fi
+
+    local batch_output=$(cat "$output_file")
+
+    # Reconstruct markers
+    local markers_str="${_SSH_BATCH_ASYNC_MARKERS[$batch_id]}"
+
+    local marker=""
+    while IFS= read -r marker_label; do
+        if [[ "$marker_label" == *":$label" ]]; then
+            marker="${marker_label%%:*}"
+            break
+        fi
+    done <<< "$markers_str"
+
+    if [ -z "$marker" ]; then
+        echo "255"
+        return 1
+    fi
+
+    local exitcode=$(echo "$batch_output" | grep "^${marker}:EXIT:" | cut -d: -f3)
+    echo "${exitcode:-255}"
+}
+
+# Clean up async batch resources
+# Args: batch_id1 [batch_id2 ...]
+ssh_batch_cleanup() {
+    for batch_id in "$@"; do
+        local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
+        if [ -f "$output_file" ]; then
+            rm -f "$output_file"
+        fi
+        unset "_SSH_BATCH_ASYNC_PIDS[$batch_id]"
+        unset "_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]"
+        unset "_SSH_BATCH_ASYNC_COMMANDS[$batch_id]"
+        unset "_SSH_BATCH_ASYNC_MARKERS[$batch_id]"
+    done
+}
+
 # Example usage in comments:
 : <<'EXAMPLE'
 # Start a batch

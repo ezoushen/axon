@@ -443,32 +443,43 @@ if [ ! -f "$APP_SSH_KEY" ]; then
     exit 1
 fi
 
-# Step 1: Detect current deployment
+# Step 1: Detect current deployment (PARALLELIZED)
 echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
 
-# Try to get current port from nginx upstream file
-CURRENT_PORT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" \
-    "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null" || echo "")
-
-# Batch: Find current container, create directory, check env file (App Server)
+# PARALLEL: Query System Server and App Server simultaneously
+# Batch 1: Get current port from System Server
 ssh_batch_start
-if [ -n "$CURRENT_PORT" ]; then
-    ssh_batch_add "docker ps --filter 'publish=${CURRENT_PORT}' --format '{{.Names}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' | head -1" "current_container"
-fi
+ssh_batch_add "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null || echo ''" "current_port"
+ssh_batch_execute_async "$SSH_KEY" "$SYSTEM_SERVER" "system_check"
+
+# Batch 2: App Server pre-checks
+ssh_batch_start
+ssh_batch_add "docker ps --format '{{.Names}}\t{{.Ports}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' || true" "list_containers"
 ssh_batch_add "mkdir -p $APP_DEPLOY_PATH" "create_dir"
 ssh_batch_add "[ -f '$ENV_PATH' ] && echo 'YES' || echo 'NO'" "check_env"
-ssh_batch_execute "$APP_SSH_KEY" "$APP_SERVER"
+ssh_batch_execute_async "$APP_SSH_KEY" "$APP_SERVER" "app_check"
 
-# Extract results
+# Wait for both to complete
+ssh_batch_wait "system_check" "app_check"
+
+# Extract results from System Server
+CURRENT_PORT=$(ssh_batch_result_from "system_check" "current_port")
+CURRENT_PORT=$(echo "$CURRENT_PORT" | tr -d '[:space:]')  # Trim whitespace
+
+# Extract results from App Server
+CONTAINER_LIST=$(ssh_batch_result_from "app_check" "list_containers")
+
+# Find current container by port if we have one
+CURRENT_CONTAINER=""
 if [ -n "$CURRENT_PORT" ]; then
-    CURRENT_CONTAINER=$(ssh_batch_result "current_container")
+    # Parse container list to find one using current port
+    CURRENT_CONTAINER=$(echo "$CONTAINER_LIST" | grep ":${CURRENT_PORT}->" | awk '{print $1}' | head -1)
     echo -e "  Current active port: ${YELLOW}$CURRENT_PORT${NC}"
     if [ -n "$CURRENT_CONTAINER" ]; then
         echo -e "  Current container:   ${YELLOW}$CURRENT_CONTAINER${NC}"
     fi
 else
     echo -e "  No active deployment detected (first deployment)"
-    CURRENT_CONTAINER=""
 fi
 
 # Step 2: Generate new container name (timestamp-based for uniqueness)
@@ -482,17 +493,21 @@ echo ""
 # Step 2: Check deployment files on Application Server
 echo -e "${BLUE}Step 2/9: Checking deployment files on Application Server...${NC}"
 
-# Check if .env file exists on Application Server (don't copy - may contain secrets)
-ENV_EXISTS=$(ssh_batch_result "check_env")
+# Check if .env file exists (already checked in parallel batch above)
+ENV_EXISTS=$(ssh_batch_result_from "app_check" "check_env")
 
 if [ "$ENV_EXISTS" = "NO" ]; then
     echo -e "${YELLOW}⚠ Warning: Environment file not found on Application Server: ${ENV_PATH}${NC}"
     echo -e "${YELLOW}  Please create it manually with your environment variables${NC}"
     echo -e "${YELLOW}  Example: ssh ${APP_SERVER} 'cat > ${ENV_PATH}'${NC}"
+    ssh_batch_cleanup "system_check" "app_check"
     exit 1
 fi
 echo -e "  ✓ Environment file exists: ${ENV_PATH}"
 echo ""
+
+# Clean up async batch resources from Step 1
+ssh_batch_cleanup "system_check" "app_check"
 
 # Step 4: Authenticate with registry on Application Server and pull latest image
 echo -e "${BLUE}Step 3/9: Authenticating and pulling image on Application Server...${NC}"
@@ -823,10 +838,12 @@ echo -e "${GREEN}  ✓ nginx reloaded successfully!${NC}"
 echo -e "${GREEN}  ✓ Traffic now flows to new container (port $APP_PORT)${NC}"
 echo ""
 
-# Step 9: Graceful shutdown of old containers
+# Step 9: Graceful shutdown of old containers (BACKGROUND)
 echo -e "${BLUE}Step 9/9: Gracefully shutting down old containers (timeout: ${GRACEFUL_SHUTDOWN_TIMEOUT}s)...${NC}"
 
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+# Run cleanup in background - deployment is already successful
+{
+    ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
 # Find all containers for this product/environment except the new one
 NEW_CONTAINER="${CONTAINER_NAME}"
 PRODUCT_ENV_PREFIX="${PRODUCT_NAME}-${ENVIRONMENT}"
@@ -835,28 +852,21 @@ TIMEOUT="${GRACEFUL_SHUTDOWN_TIMEOUT}"
 # Get list of all containers for this product/environment
 OLD_CONTAINERS=\$(docker ps -a --filter "name=\${PRODUCT_ENV_PREFIX}" --format '{{.Names}}' | grep -v "^\${NEW_CONTAINER}\$" || true)
 
-if [ -z "\$OLD_CONTAINERS" ]; then
-    echo "  No old containers to shutdown"
-else
-    echo "  Initiating graceful shutdown of old containers:"
+if [ -n "\$OLD_CONTAINERS" ]; then
+    # Silently cleanup old containers in background
     for container in \$OLD_CONTAINERS; do
-        echo "    Sending SIGTERM to \$container..."
-        echo "    Waiting up to \${TIMEOUT}s for graceful shutdown..."
-
-        # docker stop sends SIGTERM, waits for timeout, then sends SIGKILL if needed
-        # This gives the application time to:
-        # - Finish processing current requests
-        # - Close database connections
-        # - Clean up resources
-        # - Flush logs
         docker stop --time "\${TIMEOUT}" "\$container" 2>/dev/null || true
         docker rm "\$container" 2>/dev/null || true
-        echo "    ✓ \$container shutdown complete"
     done
 fi
 EOF
+} &
 
-echo -e "  ✓ Graceful shutdown complete"
+# Store cleanup PID for reference
+CLEANUP_PID=$!
+
+echo -e "  ${GREEN}✓ Cleanup initiated in background (PID: $CLEANUP_PID)${NC}"
+echo -e "  ${CYAN}Note: Old containers are being removed asynchronously${NC}"
 echo ""
 
 # Success!
