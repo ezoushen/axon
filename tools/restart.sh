@@ -1,130 +1,167 @@
 #!/bin/bash
-# Restart specific environment or all containers
-# Performs graceful restart without downtime
+# Restart containers on Application Server
+# Runs from LOCAL MACHINE and SSHs to Application Server
+# Product-agnostic version - uses axon.config.yml
 
-# Colors for output
+set -e
+
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
+PRODUCT_ROOT="$PWD"
+
+# Default configuration file
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
+ENVIRONMENT=""
 
 # Parse arguments
-ENVIRONMENT=${1}
-PRODUCT_NAME=${2}
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 <environment> [OPTIONS]"
+            echo ""
+            echo "Restart container for specified environment."
+            echo ""
+            echo "OPTIONS:"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Environment to restart"
+            echo ""
+            echo "Examples:"
+            echo "  $0 production        # Restart production container"
+            echo "  $0 staging           # Restart staging container"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional argument
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
-# Show usage if no arguments
+# Validate environment provided
 if [ -z "$ENVIRONMENT" ]; then
-  echo -e "${BLUE}Restart Docker Containers${NC}"
-  echo ""
-  echo "Usage:"
-  echo "  $0 <environment> [product_name]"
-  echo ""
-  echo "Arguments:"
-  echo "  environment    Any environment from axon.config.yml or 'all'"
-  echo "  product_name   Optional: filter by specific product"
-  echo ""
-  echo "Examples:"
-  echo "  $0 production    # Restart production container"
-  echo "  $0 staging       # Restart staging container"
-  echo "  $0 development   # Restart development container (custom env)"
-  echo "  $0 all           # Restart all containers"
-  exit 0
+    echo -e "${RED}Error: Environment is required${NC}"
+    echo "Usage: $0 <environment> [OPTIONS]"
+    echo "Use --help for more information"
+    exit 1
 fi
 
-# Note: Environment validation is not needed here
-# The script accepts any environment name defined in axon.config.yml or "all"
-
-# Check if Docker is running
-if ! docker info &> /dev/null 2>&1; then
-  echo -e "${RED}Error: Docker is not running${NC}"
-  exit 1
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Function to restart an environment
-restart_environment() {
-  local ENV=$1
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+    exit 1
+fi
 
-  # Find the most recent container for this environment (sorted by name which includes timestamp)
-  local CONTAINER=$(docker ps -a --filter "name=${PRODUCT_NAME}-${ENV}-" --format '{{.Names}}' | sort -r | head -n 1)
+# Source config parser
+source "$MODULE_DIR/lib/config-parser.sh"
 
-  # Check if container exists
-  if [ -z "$CONTAINER" ]; then
-    echo -e "${YELLOW}Warning: No ${ENV} container found (${PRODUCT_NAME}-${ENV})${NC}"
-    return 1
-  fi
+# Load product name
+PRODUCT_NAME=$(parse_yaml_key "product.name" "")
 
-  echo -e "${BLUE}Restarting ${ENV} environment...${NC}"
-  echo -e "Container: ${YELLOW}${CONTAINER}${NC}"
-  echo ""
+if [ -z "$PRODUCT_NAME" ]; then
+    echo -e "${RED}Error: Product name not configured${NC}"
+    exit 1
+fi
 
-  docker restart "$CONTAINER"
+# Get Application Server SSH details
+APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
+APPLICATION_SERVER_USER=$(parse_yaml_key ".servers.application.user" "")
+APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "")
+APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
 
-  if [ $? -eq 0 ]; then
-    echo ""
-    echo -e "${GREEN}✓ ${ENV} container restarted successfully${NC}"
+if [ -z "$APPLICATION_SERVER_HOST" ]; then
+    echo -e "${RED}Error: Application Server host not configured${NC}"
+    exit 1
+fi
 
-    # Wait a moment for container to start
-    sleep 3
+if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
+    echo -e "${RED}Error: SSH key not found: $APPLICATION_SERVER_SSH_KEY${NC}"
+    exit 1
+fi
 
-    # Show status
-    echo ""
-    echo -e "${BLUE}Container status:${NC}"
-    docker ps --filter "name=$CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
 
-    return 0
-  else
-    echo -e "${RED}✗ Failed to restart ${ENV} container${NC}"
-    return 1
-  fi
-}
+# Build container filter
+CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}Restart Docker Containers${NC}"
+echo -e "${BLUE}Restart Container - ${PRODUCT_NAME}${NC}"
+echo -e "${BLUE}Environment: ${ENVIRONMENT^}${NC}"
+echo -e "${BLUE}On Application Server: ${APP_SERVER}${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 
-# Main logic
-if [ "$ENVIRONMENT" == "all" ]; then
-  # Restart production
-  restart_environment "production"
-  PROD_RESULT=$?
+# Find the most recent container for this environment
+CONTAINER=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
 
-  echo ""
-  echo -e "${BLUE}---------------------------------------------------${NC}"
-  echo ""
-
-  # Restart staging
-  restart_environment "staging"
-  STAGING_RESULT=$?
-
-  echo ""
-  echo -e "${BLUE}==================================================${NC}"
-  echo -e "${BLUE}Restart Summary${NC}"
-  echo -e "${BLUE}==================================================${NC}"
-
-  if [ $PROD_RESULT -eq 0 ]; then
-    echo -e "${GREEN}✓ Production: Restarted${NC}"
-  else
-    echo -e "${RED}✗ Production: Failed${NC}"
-  fi
-
-  if [ $STAGING_RESULT -eq 0 ]; then
-    echo -e "${GREEN}✓ Staging: Restarted${NC}"
-  else
-    echo -e "${RED}✗ Staging: Failed${NC}"
-  fi
-  echo ""
-
-  # Show all containers
-  echo -e "${BLUE}All Containers:${NC}"
-  docker ps --filter "name=${PRODUCT_NAME}" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-  echo ""
-
-  if [ $PROD_RESULT -ne 0 ] || [ $STAGING_RESULT -ne 0 ]; then
+# Check if container exists
+if [ -z "$CONTAINER" ]; then
+    echo -e "${YELLOW}Warning: No container found for ${ENVIRONMENT} environment${NC}"
+    echo -e "${YELLOW}Looking for containers matching: ${CONTAINER_FILTER}-${NC}"
+    echo ""
+    echo "Available containers:"
+    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+        "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | grep ${PRODUCT_NAME} || echo '  None found'"
     exit 1
-  fi
+fi
+
+echo -e "${CYAN}Container: ${CONTAINER}${NC}"
+echo ""
+
+# Restart the container
+echo -e "${BLUE}Restarting container...${NC}"
+
+ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "docker restart \"$CONTAINER\"" > /dev/null
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Container restarted successfully${NC}"
+    echo ""
+
+    # Wait a moment for container to start
+    echo "Waiting for container to be ready..."
+    sleep 3
+    echo ""
+
+    # Show status
+    echo -e "${BLUE}Container status:${NC}"
+    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+        "docker ps --filter 'name=$CONTAINER' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+    echo ""
 else
-  restart_environment "$ENVIRONMENT"
-  exit $?
+    echo -e "${RED}✗ Failed to restart container${NC}"
+    exit 1
 fi

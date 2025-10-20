@@ -1,103 +1,182 @@
 #!/bin/bash
-# View logs for specific environment or all containers
-# Supports following logs in real-time
+# View logs for containers on Application Server
+# Runs from LOCAL MACHINE and SSHs to Application Server
+# Product-agnostic version - uses axon.config.yml
 
-# Colors for output
+set -e
+
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
+PRODUCT_ROOT="$PWD"
+
+# Default configuration file
+CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
+ENVIRONMENT=""
+FOLLOW=false
+LINES="50"
+SINCE=""
 
 # Parse arguments
-ENVIRONMENT=${1}
-FOLLOW=${2}
-PRODUCT_NAME=${3}
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        --follow|-f)
+            FOLLOW=true
+            shift
+            ;;
+        -n|--lines|--tail)
+            LINES="$2"
+            shift 2
+            ;;
+        --since)
+            SINCE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 <environment> [OPTIONS]"
+            echo ""
+            echo "View container logs for specified environment."
+            echo ""
+            echo "OPTIONS:"
+            echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
+            echo "  -f, --follow         Follow log output (stream in real-time)"
+            echo "  -n, --lines N        Number of lines to show (default: 50)"
+            echo "  --tail N             Same as --lines"
+            echo "  --since DURATION     Show logs since duration (e.g., 1h, 30m)"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  environment          Environment to check logs for"
+            echo ""
+            echo "Examples:"
+            echo "  $0 production                # Last 50 lines"
+            echo "  $0 staging --follow          # Follow logs in real-time"
+            echo "  $0 production --lines 100    # Last 100 lines"
+            echo "  $0 staging --since 1h        # Logs from last hour"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            # Positional argument
+            if [ -z "$ENVIRONMENT" ]; then
+                ENVIRONMENT="$1"
+            else
+                echo -e "${RED}Error: Too many positional arguments${NC}"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
-# Show usage if no arguments
+# Validate environment provided
 if [ -z "$ENVIRONMENT" ]; then
-  echo -e "${BLUE}View Docker Container Logs${NC}"
-  echo ""
-  echo "Usage:"
-  echo "  $0 <environment> [follow] [product_name]"
-  echo ""
-  echo "Arguments:"
-  echo "  environment    Any environment from axon.config.yml or 'all'"
-  echo "  follow         Optional: 'follow' to stream logs in real-time"
-  echo "  product_name   Optional: filter by specific product"
-  echo ""
-  echo "Examples:"
-  echo "  $0 production           # Show last 50 lines"
-  echo "  $0 staging              # Show last 50 lines"
-  echo "  $0 development          # Show last 50 lines (custom env)"
-  echo "  $0 all                  # Show all environments"
-  echo "  $0 production follow    # Follow logs in real-time"
-  exit 0
+    echo -e "${RED}Error: Environment is required${NC}"
+    echo "Usage: $0 <environment> [OPTIONS]"
+    echo "Use --help for more information"
+    exit 1
 fi
 
-# Note: Environment validation is not needed here
-# The script accepts any environment name defined in axon.config.yml or "all"
-
-# Check if Docker is running
-if ! docker info &> /dev/null 2>&1; then
-  echo -e "${RED}Error: Docker is not running${NC}"
-  exit 1
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Function to show logs for an environment
-show_logs() {
-  local ENV=$1
+# Validate config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+    exit 1
+fi
 
-  # Find the most recent container for this environment (sorted by name which includes timestamp)
-  local CONTAINER=$(docker ps -a --filter "name=${PRODUCT_NAME}-${ENV}-" --format '{{.Names}}' | sort -r | head -n 1)
+# Source config parser
+source "$MODULE_DIR/lib/config-parser.sh"
 
-  # Check if container exists
-  if [ -z "$CONTAINER" ]; then
-    echo -e "${YELLOW}Warning: No ${ENV} container found (${PRODUCT_NAME}-${ENV})${NC}"
-    return 1
-  fi
+# Load product name
+PRODUCT_NAME=$(parse_yaml_key "product.name" "")
 
-  echo -e "${BLUE}Logs for ${ENV} environment:${NC}"
-  echo -e "${BLUE}Container: ${CONTAINER}${NC}"
-  echo ""
+if [ -z "$PRODUCT_NAME" ]; then
+    echo -e "${RED}Error: Product name not configured${NC}"
+    exit 1
+fi
 
-  if [ "$FOLLOW" == "follow" ]; then
+# Get Application Server SSH details
+APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
+APPLICATION_SERVER_USER=$(parse_yaml_key ".servers.application.user" "")
+APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "")
+APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
+
+if [ -z "$APPLICATION_SERVER_HOST" ]; then
+    echo -e "${RED}Error: Application Server host not configured${NC}"
+    exit 1
+fi
+
+if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
+    echo -e "${RED}Error: SSH key not found: $APPLICATION_SERVER_SSH_KEY${NC}"
+    exit 1
+fi
+
+APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
+
+# Build container filter
+CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
+
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${BLUE}Container Logs - ${PRODUCT_NAME}${NC}"
+echo -e "${BLUE}Environment: ${ENVIRONMENT^}${NC}"
+echo -e "${BLUE}On Application Server: ${APP_SERVER}${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo ""
+
+# Find the most recent container for this environment
+CONTAINER=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
+
+# Check if container exists
+if [ -z "$CONTAINER" ]; then
+    echo -e "${YELLOW}Warning: No container found for ${ENVIRONMENT} environment${NC}"
+    echo -e "${YELLOW}Looking for containers matching: ${CONTAINER_FILTER}-${NC}"
+    echo ""
+    echo "Available containers:"
+    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+        "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | grep ${PRODUCT_NAME} || echo '  None found'"
+    exit 1
+fi
+
+echo -e "${CYAN}Container: ${CONTAINER}${NC}"
+echo ""
+
+# Build docker logs command
+LOGS_CMD="docker logs"
+
+if [ "$FOLLOW" = true ]; then
+    LOGS_CMD="$LOGS_CMD -f"
     echo -e "${GREEN}Following logs (Ctrl+C to exit)...${NC}"
     echo ""
-    docker logs -f --tail=100 "$CONTAINER"
-  else
-    docker logs --tail=50 "$CONTAINER"
-  fi
-}
-
-# Main logic
-if [ "$ENVIRONMENT" == "all" ]; then
-  echo -e "${BLUE}==================================================${NC}"
-  echo -e "${BLUE}All Container Logs${NC}"
-  echo -e "${BLUE}==================================================${NC}"
-  echo ""
-
-  if [ "$FOLLOW" == "follow" ]; then
-    echo -e "${GREEN}Following all logs (Ctrl+C to exit)...${NC}"
-    echo ""
-    # Get all containers and follow them
-    CONTAINERS=$(docker ps -a --filter "name=${PRODUCT_NAME}-" --format '{{.Names}}' | sort -r)
-    if [ -z "$CONTAINERS" ]; then
-      echo -e "${YELLOW}No containers found${NC}"
-      exit 0
-    fi
-
-    # Follow logs from all containers (Docker will multiplex them)
-    docker logs -f --tail=100 $(echo $CONTAINERS | tr '\n' ' ')
-  else
-    # Show production logs
-    show_logs "production"
-    echo ""
-    echo -e "${BLUE}---------------------------------------------------${NC}"
-    echo ""
-    # Show staging logs
-    show_logs "staging"
-  fi
-else
-  show_logs "$ENVIRONMENT"
 fi
+
+if [ -n "$SINCE" ]; then
+    LOGS_CMD="$LOGS_CMD --since $SINCE"
+fi
+
+LOGS_CMD="$LOGS_CMD --tail $LINES \"$CONTAINER\""
+
+# Execute docker logs command on Application Server
+ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "$LOGS_CMD"

@@ -412,11 +412,15 @@ cmd_logs() {
     local logs_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
 
     if [ "$FOLLOW" = true ]; then
-        logs_args+=("follow")
+        logs_args+=("--follow")
     fi
 
     if [ -n "$LINES" ]; then
-        logs_args+=("$LINES")
+        logs_args+=("--lines" "$LINES")
+    fi
+
+    if [ -n "$SINCE" ]; then
+        logs_args+=("--since" "$SINCE")
     fi
 
     verbose "Calling logs.sh with args: ${logs_args[*]}"
