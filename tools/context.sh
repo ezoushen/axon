@@ -274,7 +274,7 @@ cmd_context_list() {
 
     # Print header
     printf "%-2s %-15s %-20s %-40s %-15s\n" "" "NAME" "PRODUCT" "PROJECT ROOT" "LAST USED"
-    printf "%.80s\n" "────────────────────────────────────────────────────────────────────────────────"
+    printf "%s\n" "--------------------------------------------------------------------------------"
 
     # Print each context
     echo "$contexts" | while IFS=$'\t' read -r marker name product project_root last_used; do
