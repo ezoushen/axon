@@ -312,6 +312,7 @@ clear_current_context() {
 #   context: context_name (only if mode=context)
 resolve_config() {
     local explicit_config=$1  # From -c flag (optional)
+    local context_override=$2 # From --context flag (optional)
 
     # 1. Explicit -c flag (highest priority)
     if [ -n "$explicit_config" ]; then
@@ -326,7 +327,41 @@ resolve_config() {
         return 0
     fi
 
-    # 2. Local axon.config.yml in CWD
+    # 2. Context override --context flag (one-off override)
+    if [ -n "$context_override" ]; then
+        if ! context_exists "$context_override"; then
+            echo "mode: error"
+            echo "error: Context '$context_override' does not exist"
+            return 1
+        fi
+
+        local config=$(get_context_field "$context_override" "config")
+        local project_root=$(get_context_field "$context_override" "project_root")
+
+        # Validate config exists
+        if [ ! -f "$config" ]; then
+            echo "mode: error"
+            echo "error: Config file not found: $config"
+            echo "hint: Context '$context_override' may be outdated"
+            return 1
+        fi
+
+        # Validate project root exists
+        if [ ! -d "$project_root" ]; then
+            echo "mode: error"
+            echo "error: Project root not found: $project_root"
+            echo "hint: Context '$context_override' may be outdated"
+            return 1
+        fi
+
+        echo "mode: context"
+        echo "config: $config"
+        echo "project_root: $project_root"
+        echo "context: $context_override"
+        return 0
+    fi
+
+    # 3. Local axon.config.yml in CWD
     if [ -f "$PWD/axon.config.yml" ]; then
         echo "mode: local"
         echo "config: $PWD/axon.config.yml"
@@ -334,7 +369,7 @@ resolve_config() {
         return 0
     fi
 
-    # 3. Active context
+    # 4. Active context
     local current=$(get_current_context)
     if [ -n "$current" ]; then
         if ! context_exists "$current"; then
@@ -369,7 +404,7 @@ resolve_config() {
         return 0
     fi
 
-    # 4. Nothing found - error
+    # 5. Nothing found - error
     echo "mode: error"
     echo "error: No config file found and no active context"
     return 1

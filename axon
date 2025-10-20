@@ -41,6 +41,7 @@ COMMAND=""
 ENVIRONMENT=""
 CONFIG_FILE="axon.config.yml"
 CONFIG_FILE_EXPLICIT=""  # Set when -c flag is used
+CONTEXT_OVERRIDE=""       # Set when --context flag is used
 PROJECT_ROOT="$PWD"       # Will be updated by context resolution
 CONTEXT_MODE="local"      # local|explicit|context:name|error
 VERBOSE=false
@@ -523,6 +524,29 @@ if [ "$1" = "--version" ]; then
     exit 0
 fi
 
+# Parse global flags that can come before the command
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --context)
+            CONTEXT_OVERRIDE="$2"
+            shift 2
+            ;;
+        -c|--config)
+            CONFIG_FILE="$2"
+            CONFIG_FILE_EXPLICIT="$2"
+            shift 2
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            # Not a global flag, assume it's the command
+            break
+            ;;
+    esac
+done
+
 # First argument should be command
 COMMAND="$1"
 shift
@@ -550,17 +574,9 @@ fi
 
 # Parse arguments based on command
 # Note: Some commands require environment, others don't
+# Global flags (-c, --context, -v) are already parsed above
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -c|--config)
-            CONFIG_FILE="$2"
-            CONFIG_FILE_EXPLICIT="$2"  # Mark as explicitly set
-            shift 2
-            ;;
-        -v|--verbose)
-            VERBOSE=true
-            shift
-            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -694,23 +710,26 @@ if [ "$SKIP_CONTEXT_RESOLUTION" = false ]; then
     verbose "Resolving config and project root..."
 
     # Use resolve_config from context-manager.sh
-    RESOLVED=$(resolve_config "$CONFIG_FILE_EXPLICIT" 2>/dev/null)
+    # Temporarily disable set -e so command substitution failures don't exit the script
+    set +e
+    RESOLVED=$(resolve_config "$CONFIG_FILE_EXPLICIT" "$CONTEXT_OVERRIDE" 2>/dev/null)
     RESOLVE_EXIT=$?
+    set -e
 
     if [ $RESOLVE_EXIT -ne 0 ]; then
         # Error occurred during resolution
         ERROR_MSG=$(echo "$RESOLVED" | grep "^error:" | cut -d':' -f2-)
         HINT_MSG=$(echo "$RESOLVED" | grep "^hint:" | cut -d':' -f2-)
 
-        echo -e "${RED}Error:${ERROR_MSG}${NC}"
+        echo -e "${RED}Error:${ERROR_MSG}${NC}" >&2
         if [ -n "$HINT_MSG" ]; then
-            echo -e "${YELLOW}Hint:${HINT_MSG}${NC}"
+            echo -e "${YELLOW}Hint:${HINT_MSG}${NC}" >&2
         fi
-        echo ""
-        echo "Options:"
-        echo "  - Work with an existing context: axon context list"
-        echo "  - Create a new context: axon context add <name>"
-        echo "  - Create config in this directory: axon init-config"
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  - Work with an existing context: axon context list" >&2
+        echo "  - Create a new context: axon context add <name>" >&2
+        echo "  - Create config in this directory: axon init-config" >&2
         exit 1
     fi
 
