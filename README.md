@@ -226,6 +226,109 @@ All deployment settings are in `axon.config.yml` (product root). The system auto
 
 See `deploy/config.example.yml` for all available options with `[REQUIRED]` and `[OPTIONAL]` markings.
 
+## Context Management
+
+AXON provides kubectl-like context management for seamless project switching. Instead of navigating to each project directory, save project configurations as contexts and access them globally.
+
+### Quick Start
+
+```bash
+# Add current project as a context
+cd ~/projects/my-app
+axon context add my-app
+
+# Switch to a context (sets it as active)
+axon context use my-app
+
+# Deploy from anywhere without cd
+axon deploy production
+
+# Or use one-off override without changing active context
+axon --context my-app deploy staging
+```
+
+### Context Commands
+
+```bash
+# Manage contexts
+axon context add <name> [config]       # Add new context
+axon context use <name>                # Switch to context
+axon context list                      # List all contexts
+axon context current                   # Show current context
+axon context show <name>               # Show detailed info
+axon context validate <name>           # Validate configuration
+axon context remove <name>             # Remove context
+
+# Import/export (for team sharing or backup)
+axon context export <name>             # Export to YAML file
+axon context import <file> --name <name>  # Import from file
+```
+
+### Context Resolution
+
+AXON resolves which configuration to use in this order:
+
+1. **Explicit `-c` flag** (highest priority)
+   ```bash
+   axon -c custom.yml deploy production
+   ```
+
+2. **One-off `--context` override**
+   ```bash
+   axon --context backend deploy staging
+   ```
+
+3. **Local `axon.config.yml`** in current directory
+   ```bash
+   cd ~/projects/my-app && axon deploy production
+   ```
+
+4. **Active context** (via `axon context use`)
+   ```bash
+   axon context use my-app
+   axon deploy production  # Uses my-app context
+   ```
+
+5. **Error** if none found
+
+### Use Cases
+
+**Multiple Projects:**
+```bash
+# Set up contexts once
+axon context add frontend ~/projects/frontend/axon.config.yml
+axon context add backend ~/projects/backend/axon.config.yml
+axon context add mobile ~/projects/mobile/axon.config.yml
+
+# Switch between projects instantly
+axon context use frontend
+axon deploy production
+
+axon context use backend
+axon deploy staging
+```
+
+**Team Sharing:**
+```bash
+# Developer A exports context
+axon context export my-app -o team-context.yml
+
+# Developer B imports on their machine
+axon context import team-context.yml --name my-app --root ~/dev/my-app
+```
+
+**Temporary Override:**
+```bash
+# Active context is frontend
+axon context use frontend
+
+# Quickly check backend status without switching
+axon --context backend status
+
+# Active context remains frontend
+axon context current  # Shows: frontend
+```
+
 ## Usage
 
 AXON uses a subcommand interface: `axon <command> [environment] [options]`
@@ -294,6 +397,7 @@ axon setup app-server --config custom.yml
 
 ```bash
 -c, --config FILE      # Config file (default: axon.config.yml)
+--context NAME         # Use context for this command (one-off override)
 -v, --verbose          # Verbose output
 --dry-run              # Show what would be done
 -h, --help             # Show help
@@ -328,6 +432,10 @@ axon build production --verbose
 
 # Check what would happen (dry-run)
 axon run staging --dry-run
+
+# Use context for one-off command
+axon --context backend status
+axon --context frontend deploy production
 ```
 
 ## Requirements
