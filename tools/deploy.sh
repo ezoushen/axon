@@ -24,6 +24,9 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
 PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 
+# Source SSH batch execution library for performance optimization
+source "$MODULE_DIR/lib/ssh-batch.sh"
+
 # Default values
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
@@ -447,18 +450,25 @@ echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
 CURRENT_PORT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" \
     "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null" || echo "")
 
-# Try to find current container (may have timestamp suffix)
-if [ -z "$CURRENT_PORT" ]; then
-    echo -e "  No active deployment detected (first deployment)"
-    CURRENT_CONTAINER=""
-else
+# Batch: Find current container, create directory, check env file (App Server)
+ssh_batch_start
+if [ -n "$CURRENT_PORT" ]; then
+    ssh_batch_add "docker ps --filter 'publish=${CURRENT_PORT}' --format '{{.Names}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' | head -1" "current_container"
+fi
+ssh_batch_add "mkdir -p $APP_DEPLOY_PATH" "create_dir"
+ssh_batch_add "[ -f '$ENV_PATH' ] && echo 'YES' || echo 'NO'" "check_env"
+ssh_batch_execute "$APP_SSH_KEY" "$APP_SERVER"
+
+# Extract results
+if [ -n "$CURRENT_PORT" ]; then
+    CURRENT_CONTAINER=$(ssh_batch_result "current_container")
     echo -e "  Current active port: ${YELLOW}$CURRENT_PORT${NC}"
-    # Find container by port (handle both old port-based and new timestamp-based names)
-    CURRENT_CONTAINER=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-        "docker ps --filter 'publish=${CURRENT_PORT}' --format '{{.Names}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' | head -1" || echo "")
     if [ -n "$CURRENT_CONTAINER" ]; then
         echo -e "  Current container:   ${YELLOW}$CURRENT_CONTAINER${NC}"
     fi
+else
+    echo -e "  No active deployment detected (first deployment)"
+    CURRENT_CONTAINER=""
 fi
 
 # Step 2: Generate new container name (timestamp-based for uniqueness)
@@ -472,11 +482,8 @@ echo ""
 # Step 2: Check deployment files on Application Server
 echo -e "${BLUE}Step 2/9: Checking deployment files on Application Server...${NC}"
 
-# Create deployment directory if it doesn't exist
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" "mkdir -p $APP_DEPLOY_PATH"
-
 # Check if .env file exists on Application Server (don't copy - may contain secrets)
-ENV_EXISTS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" "[ -f '$ENV_PATH' ] && echo 'YES' || echo 'NO'")
+ENV_EXISTS=$(ssh_batch_result "check_env")
 
 if [ "$ENV_EXISTS" = "NO" ]; then
     echo -e "${YELLOW}⚠ Warning: Environment file not found on Application Server: ${ENV_PATH}${NC}"
@@ -742,16 +749,22 @@ EOF
 fi
 echo ""
 
-# Step 7: Update nginx upstream on System Server
+# Step 7-9: Update and reload nginx on System Server (batched)
 echo -e "${BLUE}Step 6/9: Updating System Server nginx...${NC}"
 
 UPSTREAM_CONFIG="upstream $NGINX_UPSTREAM_NAME {
     server $APP_UPSTREAM_IP:$APP_PORT;
 }"
 
-ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
+# Batch: Update config, test, and reload nginx (System Server)
+ssh_batch_start
+ssh_batch_add "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null" "update_nginx"
+ssh_batch_add "sudo nginx -t 2>&1" "test_nginx"
+ssh_batch_add "sudo nginx -s reload" "reload_nginx"
+ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
 
-if [ $? -ne 0 ]; then
+# Check if update succeeded
+if [ $(ssh_batch_exitcode "update_nginx") -ne 0 ]; then
     echo -e "${RED}Error: Failed to update nginx upstream file${NC}"
     exit 1
 fi
@@ -759,10 +772,10 @@ fi
 echo -e "  ✓ nginx upstream updated to port $APP_PORT"
 echo ""
 
-# Step 8: Test nginx configuration on System Server
+# Step 8: Test nginx configuration
 echo -e "${BLUE}Step 7/9: Testing nginx configuration on System Server...${NC}"
 
-NGINX_TEST_OUTPUT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -t" 2>&1)
+NGINX_TEST_OUTPUT=$(ssh_batch_result "test_nginx")
 
 if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
     echo -e "${RED}Error: nginx configuration test failed!${NC}"
@@ -800,9 +813,8 @@ echo ""
 # Step 9: Reload nginx (ZERO DOWNTIME!)
 echo -e "${BLUE}Step 8/9: Reloading nginx on System Server (zero-downtime)...${NC}"
 
-ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "sudo nginx -s reload"
-
-if [ $? -ne 0 ]; then
+# Check reload result from batch
+if [ $(ssh_batch_exitcode "reload_nginx") -ne 0 ]; then
     echo -e "${RED}Error: nginx reload failed!${NC}"
     exit 1
 fi
@@ -867,21 +879,25 @@ echo -e "  Container status: ${BLUE}ssh -i $APP_SSH_KEY $APP_SERVER 'docker ps |
 echo -e "  nginx upstream:   ${BLUE}ssh -i $SSH_KEY $SYSTEM_SERVER 'cat $NGINX_UPSTREAM_FILE'${NC}"
 echo ""
 
+# Batch: Display container status and logs (App Server)
+ssh_batch_start
+ssh_batch_add "docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" "container_status"
+ssh_batch_add "if docker ps --filter 'name=${CONTAINER_NAME}' --format '{{.Names}}' | grep -q .; then docker logs --tail=20 '${CONTAINER_NAME}' 2>&1 | head -20; else echo 'Container not found'; fi" "container_logs"
+ssh_batch_execute "$APP_SSH_KEY" "$APP_SERVER"
+
 # Display container status on Application Server
 echo -e "${CYAN}Container Status on Application Server:${NC}"
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}' \
-     --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+ssh_batch_result "container_status"
 echo ""
 
 # Display recent logs from Application Server
 echo -e "${CYAN}Recent Logs (last 20 lines):${NC}"
-ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-    "if docker ps --filter 'name=${CONTAINER_NAME}' --format '{{.Names}}' | grep -q .; then \
-        docker logs --tail=20 '${CONTAINER_NAME}' 2>&1 | head -20; \
-    else \
-        echo 'Container ${CONTAINER_NAME} not found'; \
-    fi"
+LOGS_OUTPUT=$(ssh_batch_result "container_logs")
+if [ "$LOGS_OUTPUT" != "Container not found" ]; then
+    echo "$LOGS_OUTPUT"
+else
+    echo "Container ${CONTAINER_NAME} not found"
+fi
 echo ""
 
 exit 0
