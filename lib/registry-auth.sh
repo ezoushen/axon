@@ -317,6 +317,13 @@ auth_azure_acr() {
 if [ -z "$(type -t expand_env_vars)" ]; then
     expand_env_vars() {
         local value=$1
+
+        if ! command -v envsubst >/dev/null 2>&1; then
+            echo "Error: envsubst is not installed (required for environment variable expansion)" >&2
+            echo "Install: brew install gettext (macOS) or apt-get install gettext-base (Linux)" >&2
+            return 1
+        fi
+
         echo "$value" | envsubst
     }
 fi

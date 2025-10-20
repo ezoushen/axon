@@ -149,8 +149,15 @@ install_tool "yq" \
     "sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq"
 echo ""
 
-# 2. Docker - REQUIRED
-echo -e "${BLUE}2. Docker${NC}"
+# 2. envsubst (environment variable substitution) - REQUIRED
+echo -e "${BLUE}2. envsubst (environment variable substitution)${NC}"
+install_tool "envsubst" \
+    "brew install gettext && brew link --force gettext" \
+    "sudo apt-get install -y gettext-base"
+echo ""
+
+# 3. Docker - REQUIRED
+echo -e "${BLUE}3. Docker${NC}"
 if command_exists docker; then
     echo -e "${GREEN}✓ Docker is already installed${NC}"
     docker --version
@@ -181,8 +188,8 @@ else
 fi
 echo ""
 
-# 3. AWS CLI - REQUIRED
-echo -e "${BLUE}3. AWS CLI${NC}"
+# 4. AWS CLI - REQUIRED
+echo -e "${BLUE}4. AWS CLI${NC}"
 install_tool "aws" \
     "brew install awscli" \
     "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip' && unzip awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip"
@@ -192,8 +199,8 @@ if command_exists aws; then
 fi
 echo ""
 
-# 4. Node.js and npm - REQUIRED (for decomposerize)
-echo -e "${BLUE}4. Node.js and npm${NC}"
+# 5. Node.js and npm - REQUIRED (for decomposerize)
+echo -e "${BLUE}5. Node.js and npm${NC}"
 install_tool "node" \
     "brew install node" \
     "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs"
@@ -206,8 +213,8 @@ elif command_exists node; then
 fi
 echo ""
 
-# 5. decomposerize - REQUIRED
-echo -e "${BLUE}5. decomposerize${NC}"
+# 6. decomposerize - REQUIRED
+echo -e "${BLUE}6. decomposerize${NC}"
 if command_exists decomposerize; then
     echo -e "${GREEN}✓ decomposerize is already installed${NC}"
 else
@@ -232,8 +239,8 @@ else
 fi
 echo ""
 
-# 6. SSH (usually pre-installed)
-echo -e "${BLUE}6. SSH Client${NC}"
+# 7. SSH (usually pre-installed)
+echo -e "${BLUE}7. SSH Client${NC}"
 if command_exists ssh; then
     echo -e "${GREEN}✓ SSH is available${NC}"
 else
@@ -256,6 +263,10 @@ MISSING_TOOLS=()
 # Check required tools
 if ! command_exists yq; then
     MISSING_TOOLS+=("yq")
+fi
+
+if ! command_exists envsubst; then
+    MISSING_TOOLS+=("envsubst")
 fi
 
 if ! command_exists docker; then

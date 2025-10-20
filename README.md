@@ -88,7 +88,8 @@ axon setup local --auto-install
 **Manual installation:**
 ```bash
 # macOS - core tools
-brew install yq docker node
+brew install yq gettext docker node
+brew link --force gettext  # For envsubst
 npm install -g decomposerize
 
 # Registry-specific CLI (install based on your registry choice)
@@ -345,6 +346,7 @@ axon run staging --dry-run
 
 ### Local Machine
 - **yq** (YAML processor)
+- **envsubst** (environment variable substitution - from gettext package)
 - **Docker** (container runtime)
 - **Registry CLI** (AWS CLI / gcloud / Azure CLI - depending on provider, optional for Docker Hub)
 - **Node.js and npm** (for decomposerize)

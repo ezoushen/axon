@@ -260,25 +260,21 @@ build_image_uri() {
 # Expand environment variables in config values
 # Usage: expand_env_vars "$value"
 # Supports ${VAR_NAME} syntax
+# Requires: envsubst command (from gettext package)
 expand_env_vars() {
     local value=$1
 
-    # Use envsubst if available (preferred)
-    if command -v envsubst >/dev/null 2>&1; then
-        echo "$value" | envsubst
-        return
+    # Check if envsubst is available
+    if ! command -v envsubst >/dev/null 2>&1; then
+        echo "Error: envsubst is not installed (required for environment variable expansion)" >&2
+        echo "" >&2
+        echo "Install envsubst:" >&2
+        echo "  macOS:   brew install gettext && brew link --force gettext" >&2
+        echo "  Ubuntu:  sudo apt-get install gettext-base" >&2
+        echo "  CentOS:  sudo yum install gettext" >&2
+        echo "" >&2
+        return 1
     fi
 
-    # Fallback: Simple bash-based expansion
-    # This handles ${VAR} syntax only
-    local result="$value"
-
-    # Find all ${VAR} patterns and replace them
-    while [[ "$result" =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\} ]]; do
-        local var_name="${BASH_REMATCH[1]}"
-        local var_value="${!var_name}"
-        result="${result//\$\{${var_name}\}/${var_value}}"
-    done
-
-    echo "$result"
+    echo "$value" | envsubst
 }
