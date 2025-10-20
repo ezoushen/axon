@@ -138,9 +138,12 @@ APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
 # Build container filter
 CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
 
+# Convert environment to title case (Bash 3.2 compatible)
+ENV_DISPLAY="$(echo "${ENVIRONMENT:0:1}" | tr '[:lower:]' '[:upper:]')${ENVIRONMENT:1}"
+
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}Container Logs - ${PRODUCT_NAME}${NC}"
-echo -e "${BLUE}Environment: ${ENVIRONMENT^}${NC}"
+echo -e "${BLUE}Environment: ${ENV_DISPLAY}${NC}"
 echo -e "${BLUE}On Application Server: ${APP_SERVER}${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""

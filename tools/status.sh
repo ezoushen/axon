@@ -129,7 +129,9 @@ if [ "$ENVIRONMENT" == "all" ]; then
     ENV_DISPLAY="All Environments"
 else
     CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
-    ENV_DISPLAY="${ENVIRONMENT^} Environment"
+    # Convert environment to title case (Bash 3.2 compatible)
+    ENV_TITLE="$(echo "${ENVIRONMENT:0:1}" | tr '[:lower:]' '[:upper:]')${ENVIRONMENT:1}"
+    ENV_DISPLAY="${ENV_TITLE} Environment"
 fi
 
 echo -e "${BLUE}==================================================${NC}"
