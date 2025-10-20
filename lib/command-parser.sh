@@ -175,14 +175,22 @@ Usage: axon status [environment] [options]
 
 Show container status for all environments or a specific environment.
 
+Display modes (can be combined):
+  --detailed, --inspect     Show comprehensive container information
+  --configuration, --env    Show configuration (env vars, volumes, ports)
+  --health                  Show health check status and history
+
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
   -h, --help           Show this help
 
 EXAMPLES:
-  axon status                    # All environments
-  axon status production         # Specific environment
-  axon status --config custom.yml
+  axon status                       # Summary of all environments
+  axon status production            # Summary of specific environment
+  axon status production --detailed # Detailed information
+  axon status staging --health      # Health check status
+  axon status --configuration       # Configuration for all environments
+  axon status production --detailed --health  # Combined views
 EOF
             ;;
         logs)
