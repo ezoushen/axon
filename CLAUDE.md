@@ -8,3 +8,4 @@ Read @README.md
 - Use `git add` command to stage changes for your piece of work
 - Use `.claude/cursor-git-commit.sh AXON` to generate the commit message for your staged changes and create the git commit
 - You're now ok to do the next thing
+- Never commit your implementation plan docuements, only those documents for teaching how to use a feature are worth committing
