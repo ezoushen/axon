@@ -16,7 +16,7 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
-PRODUCT_ROOT="$PWD"
+PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 
 # Default values
 OUTPUT_FILE="axon.config.yml"

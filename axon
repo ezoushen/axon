@@ -33,16 +33,23 @@ PRODUCT_ROOT="$PWD"
 # Source command parser library
 source "$SCRIPT_DIR/lib/command-parser.sh"
 
+# Source context manager library
+source "$SCRIPT_DIR/lib/context-manager.sh"
+
 # Global variables
 COMMAND=""
 ENVIRONMENT=""
 CONFIG_FILE="axon.config.yml"
+CONFIG_FILE_EXPLICIT=""  # Set when -c flag is used
+PROJECT_ROOT="$PWD"       # Will be updated by context resolution
+CONTEXT_MODE="local"      # local|explicit|context:name|error
 VERBOSE=false
 DRY_RUN=false
 
 # Export variables that child scripts need to see
 export VERBOSE
 export DRY_RUN
+export PROJECT_ROOT
 
 # Command-specific variables
 SKIP_GIT=false
@@ -534,12 +541,20 @@ if [ $# -gt 0 ] && ([ "$1" = "--help" ] || [ "$1" = "-h" ]); then
     exit 0
 fi
 
+# Special handling for context command - pass all args directly to handler
+if [ "$COMMAND" = "context" ]; then
+    source "$SCRIPT_DIR/tools/context.sh"
+    handle_context_command "$@"
+    exit $?
+fi
+
 # Parse arguments based on command
 # Note: Some commands require environment, others don't
 while [[ $# -gt 0 ]]; do
     case $1 in
         -c|--config)
             CONFIG_FILE="$2"
+            CONFIG_FILE_EXPLICIT="$2"  # Mark as explicitly set
             shift 2
             ;;
         -v|--verbose)
@@ -652,6 +667,75 @@ if command_requires_env "$COMMAND"; then
         echo "Run 'axon $COMMAND --help' for usage information"
         exit 1
     fi
+fi
+
+#==============================================================================
+# Context Resolution
+#==============================================================================
+
+# Resolve config and project root using context system
+# Skip for commands that don't need config (context, init-config, setup local, --version, --help)
+SKIP_CONTEXT_RESOLUTION=false
+case "$COMMAND" in
+    context)
+        SKIP_CONTEXT_RESOLUTION=true
+        ;;
+    init-config)
+        SKIP_CONTEXT_RESOLUTION=true
+        ;;
+    setup)
+        if [ "$SETUP_TARGET" = "local" ]; then
+            SKIP_CONTEXT_RESOLUTION=true
+        fi
+        ;;
+esac
+
+if [ "$SKIP_CONTEXT_RESOLUTION" = false ]; then
+    verbose "Resolving config and project root..."
+
+    # Use resolve_config from context-manager.sh
+    RESOLVED=$(resolve_config "$CONFIG_FILE_EXPLICIT" 2>/dev/null)
+    RESOLVE_EXIT=$?
+
+    if [ $RESOLVE_EXIT -ne 0 ]; then
+        # Error occurred during resolution
+        ERROR_MSG=$(echo "$RESOLVED" | grep "^error:" | cut -d':' -f2-)
+        HINT_MSG=$(echo "$RESOLVED" | grep "^hint:" | cut -d':' -f2-)
+
+        echo -e "${RED}Error:${ERROR_MSG}${NC}"
+        if [ -n "$HINT_MSG" ]; then
+            echo -e "${YELLOW}Hint:${HINT_MSG}${NC}"
+        fi
+        echo ""
+        echo "Options:"
+        echo "  - Work with an existing context: axon context list"
+        echo "  - Create a new context: axon context add <name>"
+        echo "  - Create config in this directory: axon init-config"
+        exit 1
+    fi
+
+    # Extract resolved values
+    CONTEXT_MODE=$(echo "$RESOLVED" | grep "^mode:" | cut -d' ' -f2-)
+    CONFIG_FILE=$(echo "$RESOLVED" | grep "^config:" | cut -d' ' -f2-)
+    PROJECT_ROOT=$(echo "$RESOLVED" | grep "^project_root:" | cut -d' ' -f2-)
+    CONTEXT_NAME=$(echo "$RESOLVED" | grep "^context:" | cut -d' ' -f2-)
+
+    # Export for child scripts
+    export PROJECT_ROOT
+    export CONFIG_FILE
+
+    # If using context mode, cd to project root (Option A from design)
+    if [ "$CONTEXT_MODE" = "context" ] && [ -n "$PROJECT_ROOT" ] && [ "$PROJECT_ROOT" != "$PWD" ]; then
+        verbose "Switching to project root: $PROJECT_ROOT"
+        cd "$PROJECT_ROOT" || {
+            echo -e "${RED}Error: Cannot access project root: $PROJECT_ROOT${NC}"
+            exit 1
+        }
+    fi
+
+    verbose "Config resolved via: $CONTEXT_MODE"
+    verbose "Config file: $CONFIG_FILE"
+    verbose "Project root: $PROJECT_ROOT"
 fi
 
 #==============================================================================

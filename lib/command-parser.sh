@@ -3,7 +3,7 @@
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands
-AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health validate setup init-config"
+AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health validate setup init-config context"
 
 # Commands that require environment argument
 AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart"
@@ -32,6 +32,13 @@ UTILITY COMMANDS:
   validate                 Validate configuration file
   init-config              Generate axon.config.yml file
 
+CONTEXT COMMANDS:
+  context add <name>       Add a new global context
+  context use <name>       Switch to a context (deploy from anywhere)
+  context list             List all contexts
+  context current          Show current active context
+  context remove <name>    Remove a context
+
 SETUP COMMANDS:
   setup local              Setup local machine (install required tools)
   setup app-server         Setup Application Server (Docker, AWS CLI, etc.)
@@ -55,6 +62,9 @@ EXAMPLES:
   axon validate --strict
   axon init-config
   axon init-config --interactive
+  axon context add my-app
+  axon context use my-app
+  axon context list
   axon setup local --auto-install
   axon setup app-server
   axon setup system-server
@@ -300,6 +310,76 @@ NOTES:
   - Generated file is automatically added to .gitignore
   - Contains server IPs and secrets - keep it private
   - Use 'axon validate' after editing to check correctness
+EOF
+            ;;
+        context)
+            cat <<EOF
+Usage: axon context <command> [options]
+
+Manage global contexts for deploying multiple projects from anywhere.
+
+A context stores the config file location and project root, allowing you to
+use AXON commands without being in the project directory.
+
+COMMANDS:
+  add <name> [config]      Add a new context
+                           - Auto-detects config in current directory if not specified
+                           - Example: axon context add my-app
+                           - Example: axon context add my-app ~/path/to/config.yml
+
+  use <name>               Switch to a context (deploy from anywhere)
+                           - Example: axon context use my-app
+                           - After switching, you can run commands from any directory
+
+  list                     List all contexts with details
+                           - Shows current active context with * marker
+                           - Example: axon context list
+
+  current                  Show details of current active context
+                           - Example: axon context current
+
+  remove <name>            Remove a context
+                           - Example: axon context remove my-app
+                           - Example: axon context remove my-app --force
+
+OPTIONS:
+  -h, --help               Show this help
+  -f, --force              Force removal without confirmation (remove only)
+
+EXAMPLES:
+  # Add context from current directory
+  cd ~/projects/my-app
+  axon context add my-app
+
+  # Add context with explicit path
+  axon context add backend ~/projects/backend/axon.config.yml
+
+  # Switch to context and deploy from anywhere
+  axon context use my-app
+  cd ~
+  axon deploy production    # Deploys my-app!
+
+  # List all contexts
+  axon context list
+
+  # Check current context
+  axon context current
+
+  # Remove context
+  axon context remove my-app
+
+PRECEDENCE (how AXON finds config):
+  1. Explicit -c flag       (highest priority)
+  2. Local axon.config.yml  (in current directory)
+  3. Active context         (from 'axon context use')
+  4. Error                  (no config found)
+
+NOTES:
+  - Contexts are stored in ~/.axon/contexts/
+  - Local config always takes precedence over context
+  - Use -c flag to override everything
+  - Context references the config file (doesn't copy it)
+  - Single source of truth: edit config in project, changes apply immediately
 EOF
             ;;
         setup)
