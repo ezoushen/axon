@@ -155,11 +155,57 @@ ssh_batch_raw_output() {
 # Async Parallel Execution Support
 # ==============================================================================
 
-# Global associative arrays for async batch tracking
-declare -A _SSH_BATCH_ASYNC_PIDS=()
-declare -A _SSH_BATCH_ASYNC_OUTPUTS=()
-declare -A _SSH_BATCH_ASYNC_COMMANDS=()
-declare -A _SSH_BATCH_ASYNC_MARKERS=()
+# Global indexed arrays for async batch tracking (Bash 3.2 compatible)
+# Each entry is stored as "batch_id:value"
+_SSH_BATCH_ASYNC_PIDS=()
+_SSH_BATCH_ASYNC_OUTPUTS=()
+_SSH_BATCH_ASYNC_COMMANDS=()
+_SSH_BATCH_ASYNC_MARKERS=()
+
+# Helper: Get value from array by batch_id
+_async_get() {
+    local array_name=$1
+    local batch_id=$2
+    local array_ref="${array_name}[@]"
+
+    for entry in "${!array_ref}"; do
+        if [[ "$entry" == "${batch_id}:"* ]]; then
+            echo "${entry#*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Helper: Set value in array by batch_id
+_async_set() {
+    local array_name=$1
+    local batch_id=$2
+    local value=$3
+
+    # Remove existing entry if present
+    _async_unset "$array_name" "$batch_id"
+
+    # Add new entry (properly handle special characters and newlines)
+    local entry="${batch_id}:${value}"
+    eval "${array_name}+=(\"$(printf '%s' "$entry" | sed 's/"/\\"/g')\")"
+}
+
+# Helper: Unset value in array by batch_id
+_async_unset() {
+    local array_name=$1
+    local batch_id=$2
+    local array_ref="${array_name}[@]"
+    local new_array=()
+
+    for entry in "${!array_ref}"; do
+        if [[ "$entry" != "${batch_id}:"* ]]; then
+            new_array+=("$entry")
+        fi
+    done
+
+    eval "${array_name}=(\"\${new_array[@]}\")"
+}
 
 # Execute batch asynchronously in background
 # Args: ssh_key server batch_id [options]
@@ -192,8 +238,8 @@ ssh_batch_execute_async() {
     for marker in "${_SSH_BATCH_MARKERS[@]}"; do
         markers_str+="$marker"$'\n'
     done
-    _SSH_BATCH_ASYNC_COMMANDS[$batch_id]="$commands_str"
-    _SSH_BATCH_ASYNC_MARKERS[$batch_id]="$markers_str"
+    _async_set "_SSH_BATCH_ASYNC_COMMANDS" "$batch_id" "$commands_str"
+    _async_set "_SSH_BATCH_ASYNC_MARKERS" "$batch_id" "$markers_str"
 
     # Build remote script
     local script="#!/bin/bash
@@ -230,8 +276,8 @@ EOF
     } > "$temp_output" 2>&1 &
 
     # Store PID and output file
-    _SSH_BATCH_ASYNC_PIDS[$batch_id]=$!
-    _SSH_BATCH_ASYNC_OUTPUTS[$batch_id]="$temp_output"
+    _async_set "_SSH_BATCH_ASYNC_PIDS" "$batch_id" "$!"
+    _async_set "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id" "$temp_output"
 }
 
 # Wait for one or more async batches to complete
@@ -241,12 +287,11 @@ ssh_batch_wait() {
     local exit_code=0
 
     for batch_id in "$@"; do
-        if [ -z "${_SSH_BATCH_ASYNC_PIDS[$batch_id]}" ]; then
+        local pid=$(_async_get "_SSH_BATCH_ASYNC_PIDS" "$batch_id")
+        if [ -z "$pid" ]; then
             echo "Error: Unknown batch_id: $batch_id" >&2
             return 1
         fi
-
-        local pid="${_SSH_BATCH_ASYNC_PIDS[$batch_id]}"
 
         # Wait for this specific job
         wait "$pid"
@@ -266,8 +311,8 @@ ssh_batch_result_from() {
     local batch_id=$1
     local label=$2
 
-    local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
-    if [ ! -f "$output_file" ]; then
+    local output_file=$(_async_get "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id")
+    if [ -z "$output_file" ] || [ ! -f "$output_file" ]; then
         echo "Error: Output file not found for batch $batch_id" >&2
         return 1
     fi
@@ -275,7 +320,7 @@ ssh_batch_result_from() {
     local batch_output=$(cat "$output_file")
 
     # Reconstruct markers from stored data
-    local markers_str="${_SSH_BATCH_ASYNC_MARKERS[$batch_id]}"
+    local markers_str=$(_async_get "_SSH_BATCH_ASYNC_MARKERS" "$batch_id")
 
     # Find the marker for this label
     local marker=""
@@ -305,8 +350,8 @@ ssh_batch_exitcode_from() {
     local batch_id=$1
     local label=$2
 
-    local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
-    if [ ! -f "$output_file" ]; then
+    local output_file=$(_async_get "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id")
+    if [ -z "$output_file" ] || [ ! -f "$output_file" ]; then
         echo "255"
         return 1
     fi
@@ -314,7 +359,7 @@ ssh_batch_exitcode_from() {
     local batch_output=$(cat "$output_file")
 
     # Reconstruct markers
-    local markers_str="${_SSH_BATCH_ASYNC_MARKERS[$batch_id]}"
+    local markers_str=$(_async_get "_SSH_BATCH_ASYNC_MARKERS" "$batch_id")
 
     local marker=""
     while IFS= read -r marker_label; do
@@ -337,14 +382,14 @@ ssh_batch_exitcode_from() {
 # Args: batch_id1 [batch_id2 ...]
 ssh_batch_cleanup() {
     for batch_id in "$@"; do
-        local output_file="${_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]}"
-        if [ -f "$output_file" ]; then
+        local output_file=$(_async_get "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id")
+        if [ -n "$output_file" ] && [ -f "$output_file" ]; then
             rm -f "$output_file"
         fi
-        unset "_SSH_BATCH_ASYNC_PIDS[$batch_id]"
-        unset "_SSH_BATCH_ASYNC_OUTPUTS[$batch_id]"
-        unset "_SSH_BATCH_ASYNC_COMMANDS[$batch_id]"
-        unset "_SSH_BATCH_ASYNC_MARKERS[$batch_id]"
+        _async_unset "_SSH_BATCH_ASYNC_PIDS" "$batch_id"
+        _async_unset "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id"
+        _async_unset "_SSH_BATCH_ASYNC_COMMANDS" "$batch_id"
+        _async_unset "_SSH_BATCH_ASYNC_MARKERS" "$batch_id"
     done
 }
 

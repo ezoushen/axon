@@ -356,11 +356,13 @@ Tested on separate regions (50ms latency):
 
 ## Compatibility
 
-- ✅ Bash 3.2+ (macOS compatible)
+- ✅ Bash 3.2+ (macOS compatible) - Uses indexed arrays instead of associative arrays
 - ✅ Works with all SSH key types
 - ✅ Compatible with existing AXON configs
 - ✅ No breaking changes
 - ✅ Falls back gracefully on errors
+
+**Note:** The implementation uses indexed arrays with helper functions (`_async_get`, `_async_set`, `_async_unset`) to ensure Bash 3.2 compatibility on macOS, avoiding the need for Bash 4.0+ associative arrays.
 
 ## Migration from Sequential
 
