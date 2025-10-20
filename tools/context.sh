@@ -812,6 +812,244 @@ cmd_context_remove() {
 }
 
 # ==============================================================================
+# Command: axon context export
+# ==============================================================================
+
+cmd_context_export() {
+    local name=""
+    local output_file=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -o|--output)
+                output_file="$2"
+                shift 2
+                ;;
+            -h|--help)
+                echo "Usage: axon context export <name> [-o output_file]"
+                echo ""
+                echo "Export a context to a YAML file for sharing or backup."
+                echo ""
+                echo "Arguments:"
+                echo "  name                 Context name to export"
+                echo ""
+                echo "Options:"
+                echo "  -o, --output FILE    Output file (default: <name>-context.yml)"
+                echo "  -h, --help           Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  axon context export my-app"
+                echo "  axon context export my-app -o backup.yml"
+                exit 0
+                ;;
+            -*)
+                echo -e "${RED}Error: Unknown option: $1${NC}"
+                exit 1
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error: Too many arguments${NC}"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate name provided
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: Context name required${NC}"
+        echo "Usage: axon context export <name> [-o output_file]"
+        exit 1
+    fi
+
+    # Check if context exists
+    if ! context_exists "$name"; then
+        echo -e "${RED}Error: Context '$name' does not exist${NC}"
+        exit 1
+    fi
+
+    # Determine output file
+    if [ -z "$output_file" ]; then
+        output_file="${name}-context.yml"
+    fi
+
+    # Load context
+    local context_file=$(get_context_file "$name")
+    local config=$(get_context_field "$name" "config")
+    local project_root=$(get_context_field "$name" "project_root")
+    local description=$(get_context_field "$name" "description")
+
+    # Make paths relative to home for portability
+    local config_portable="${config/#$HOME/~}"
+    local project_root_portable="${project_root/#$HOME/~}"
+
+    # Create export file
+    cat > "$output_file" <<EOF
+# AXON Context Export: $name
+# Created: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+#
+# This file can be imported on another machine using:
+#   axon context import $output_file --name <new-name> --root <project-root>
+
+name: $name
+description: "$description"
+
+# Paths (may need adjustment on import)
+config: $config_portable
+project_root: $project_root_portable
+EOF
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Context '$name' exported to: $output_file${NC}"
+        echo ""
+        echo "To import on another machine:"
+        echo "  axon context import $output_file --name <new-name> --root <new-root>"
+    else
+        echo -e "${RED}Error: Failed to export context${NC}"
+        exit 1
+    fi
+}
+
+# ==============================================================================
+# Command: axon context import
+# ==============================================================================
+
+cmd_context_import() {
+    local import_file=""
+    local new_name=""
+    local new_root=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --name)
+                new_name="$2"
+                shift 2
+                ;;
+            --root)
+                new_root="$2"
+                shift 2
+                ;;
+            -h|--help)
+                echo "Usage: axon context import <file> --name <name> [--root <project_root>]"
+                echo ""
+                echo "Import a context from an exported YAML file."
+                echo ""
+                echo "Arguments:"
+                echo "  file                  Exported context file"
+                echo ""
+                echo "Options:"
+                echo "  --name NAME           Name for the imported context (required)"
+                echo "  --root PATH           Project root path (default: auto-detect)"
+                echo "  -h, --help            Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  axon context import my-app-context.yml --name my-app"
+                echo "  axon context import backup.yml --name my-app --root ~/projects/my-app"
+                exit 0
+                ;;
+            -*)
+                echo -e "${RED}Error: Unknown option: $1${NC}"
+                exit 1
+                ;;
+            *)
+                if [ -z "$import_file" ]; then
+                    import_file="$1"
+                else
+                    echo -e "${RED}Error: Too many arguments${NC}"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate import file provided
+    if [ -z "$import_file" ]; then
+        echo -e "${RED}Error: Import file required${NC}"
+        echo "Usage: axon context import <file> --name <name> [--root <project_root>]"
+        exit 1
+    fi
+
+    # Check if import file exists
+    if [ ! -f "$import_file" ]; then
+        echo -e "${RED}Error: Import file not found: $import_file${NC}"
+        exit 1
+    fi
+
+    # Validate name provided
+    if [ -z "$new_name" ]; then
+        echo -e "${RED}Error: --name is required${NC}"
+        echo "Usage: axon context import <file> --name <name> [--root <project_root>]"
+        exit 1
+    fi
+
+    # Validate name format
+    if ! validate_context_name "$new_name"; then
+        exit 1
+    fi
+
+    # Check if context already exists
+    if context_exists "$new_name"; then
+        echo -e "${RED}Error: Context '$new_name' already exists${NC}"
+        exit 1
+    fi
+
+    # Read from import file
+    local imported_config=$(yq eval '.config' "$import_file" 2>/dev/null)
+    local imported_root=$(yq eval '.project_root' "$import_file" 2>/dev/null)
+    local imported_desc=$(yq eval '.description' "$import_file" 2>/dev/null)
+
+    # Expand ~ to $HOME
+    imported_config="${imported_config/#\~/$HOME}"
+    imported_root="${imported_root/#\~/$HOME}"
+
+    # Use provided root or imported root
+    local final_root="${new_root:-$imported_root}"
+
+    # Validate project root exists
+    if [ ! -d "$final_root" ]; then
+        echo -e "${RED}Error: Project root not found: $final_root${NC}"
+        echo ""
+        echo "Please provide a valid project root using --root flag"
+        exit 1
+    fi
+
+    # Determine config file path
+    local final_config=""
+    if [ -f "${final_root}/axon.config.yml" ]; then
+        final_config="${final_root}/axon.config.yml"
+    else
+        echo -e "${RED}Error: Config file not found in project root: ${final_root}/axon.config.yml${NC}"
+        exit 1
+    fi
+
+    # Validate config file
+    if ! validate_config_file "$final_config"; then
+        exit 1
+    fi
+
+    # Create context
+    if save_context "$new_name" "$final_config" "$final_root" "$imported_desc"; then
+        echo -e "${GREEN}Context '$new_name' imported successfully${NC}"
+        echo ""
+        echo "Details:"
+        echo "  Config:       $final_config"
+        echo "  Project Root: $final_root"
+        echo ""
+        echo "Switch to this context:"
+        echo "  axon context use $new_name"
+    else
+        echo -e "${RED}Error: Failed to import context${NC}"
+        exit 1
+    fi
+}
+
+# ==============================================================================
 # Command Dispatcher
 # ==============================================================================
 
@@ -844,6 +1082,12 @@ handle_context_command() {
         validate)
             cmd_context_validate "$@"
             ;;
+        export)
+            cmd_context_export "$@"
+            ;;
+        import)
+            cmd_context_import "$@"
+            ;;
         remove|rm)
             cmd_context_remove "$@"
             ;;
@@ -859,6 +1103,8 @@ handle_context_command() {
             echo "  current                Show current context"
             echo "  show <name>            Show detailed context information"
             echo "  validate <name>        Validate a context configuration"
+            echo "  export <name>          Export context to file"
+            echo "  import <file>          Import context from file"
             echo "  remove <name>          Remove a context"
             echo ""
             echo "Options:"
@@ -870,6 +1116,8 @@ handle_context_command() {
             echo "  axon context list"
             echo "  axon context show my-app"
             echo "  axon context validate my-app"
+            echo "  axon context export my-app"
+            echo "  axon context import my-app-context.yml --name my-app"
             echo "  axon context remove my-app"
             ;;
         *)
