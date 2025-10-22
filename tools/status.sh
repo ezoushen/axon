@@ -452,35 +452,35 @@ echo -e "${CYAN}Detailed Status:${NC}"
 echo ""
 
 # Get detailed info for all containers in one SSH call
-CONTAINER_DETAILS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<'EOF_REMOTE'
-CONTAINER_FILTER="'"$CONTAINER_FILTER"'"
-CONTAINERS=$(docker ps -a --filter "name=${CONTAINER_FILTER}" --format "{{.Names}}" | sort)
+CONTAINER_DETAILS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_REMOTE
+CONTAINER_FILTER="${CONTAINER_FILTER}"
+CONTAINERS=\$(docker ps -a --filter "name=\${CONTAINER_FILTER}" --format "{{.Names}}" | sort)
 
-for CONTAINER in $CONTAINERS; do
+for CONTAINER in \$CONTAINERS; do
     # Parse environment from container name
-    if [[ $CONTAINER == *"production"* ]]; then
+    if [[ \$CONTAINER == *"production"* ]]; then
         ENV="PRODUCTION"
-    elif [[ $CONTAINER == *"staging"* ]]; then
+    elif [[ \$CONTAINER == *"staging"* ]]; then
         ENV="STAGING"
     else
         ENV="UNKNOWN"
     fi
 
     # Get container details
-    STATUS=$(docker inspect --format='{{.State.Status}}' "$CONTAINER" 2>/dev/null)
-    HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null)
-    [ "$HEALTH" == "<no value>" ] && HEALTH="N/A"
+    STATUS=\$(docker inspect --format='{{.State.Status}}' "\$CONTAINER" 2>/dev/null)
+    HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' "\$CONTAINER" 2>/dev/null)
+    [ "\$HEALTH" == "<no value>" ] && HEALTH="N/A"
 
-    IMAGE=$(docker inspect --format='{{.Config.Image}}' "$CONTAINER" 2>/dev/null)
-    IMAGE_TAG=$(echo "$IMAGE" | cut -d':' -f2)
+    IMAGE=\$(docker inspect --format='{{.Config.Image}}' "\$CONTAINER" 2>/dev/null)
+    IMAGE_TAG=\$(echo "\$IMAGE" | cut -d':' -f2)
 
     STARTED=""
-    if [ "$STATUS" == "running" ]; then
-        STARTED=$(docker inspect --format='{{.State.StartedAt}}' "$CONTAINER" | cut -d'.' -f1)
+    if [ "\$STATUS" == "running" ]; then
+        STARTED=\$(docker inspect --format='{{.State.StartedAt}}' "\$CONTAINER" | cut -d'.' -f1)
     fi
 
     # Output in parseable format
-    echo "CONTAINER:${CONTAINER}|ENV:${ENV}|STATUS:${STATUS}|HEALTH:${HEALTH}|IMAGE_TAG:${IMAGE_TAG}|STARTED:${STARTED}"
+    echo "CONTAINER:\${CONTAINER}|ENV:\${ENV}|STATUS:\${STATUS}|HEALTH:\${HEALTH}|IMAGE_TAG:\${IMAGE_TAG}|STARTED:\${STARTED}"
 done
 EOF_REMOTE
 )
@@ -491,13 +491,13 @@ while IFS= read -r LINE; do
         continue
     fi
 
-    # Parse the line
-    CONTAINER=$(echo "$LINE" | grep -oP 'CONTAINER:\K[^|]+')
-    ENV=$(echo "$LINE" | grep -oP 'ENV:\K[^|]+')
-    STATUS=$(echo "$LINE" | grep -oP 'STATUS:\K[^|]+')
-    HEALTH=$(echo "$LINE" | grep -oP 'HEALTH:\K[^|]+')
-    IMAGE_TAG=$(echo "$LINE" | grep -oP 'IMAGE_TAG:\K[^|]+')
-    STARTED=$(echo "$LINE" | grep -oP 'STARTED:\K[^|]+')
+    # Parse the line (macOS/BSD compatible - no grep -P)
+    CONTAINER=$(echo "$LINE" | sed 's/.*CONTAINER:\([^|]*\).*/\1/')
+    ENV=$(echo "$LINE" | sed 's/.*ENV:\([^|]*\).*/\1/')
+    STATUS=$(echo "$LINE" | sed 's/.*STATUS:\([^|]*\).*/\1/')
+    HEALTH=$(echo "$LINE" | sed 's/.*HEALTH:\([^|]*\).*/\1/')
+    IMAGE_TAG=$(echo "$LINE" | sed 's/.*IMAGE_TAG:\([^|]*\).*/\1/')
+    STARTED=$(echo "$LINE" | sed 's/.*STARTED:\([^|]*\).*/\1/')
 
     # Environment color
     case "$ENV" in
