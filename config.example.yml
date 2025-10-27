@@ -96,6 +96,64 @@ servers:
     ssh_key: "~/.ssh/app_server_key"     # [REQUIRED] SSH private key path (must exist locally)
 
 # ==============================================================================
+# nginx Configuration
+# ==============================================================================
+# AXON automatically manages nginx configuration on System Server
+# Run 'axon setup system-server' to initialize the nginx configuration
+nginx:
+  # Domain configuration for each environment
+  # If not specified, uses catch-all server name "_" (accepts any domain)
+  domain:
+    production: "example.com"            # [OPTIONAL] Domain for production environment
+    staging: "staging.example.com"       # [OPTIONAL] Domain for staging environment
+    # development: "dev.example.com"     # [OPTIONAL] Domain for development environment
+
+  # SSL certificate configuration for each environment
+  # Provide paths to SSL certificate files on System Server
+  # If not specified, HTTPS server block will not be generated
+  ssl:
+    production:
+      certificate: "/etc/ssl/certs/example.com.crt"      # [REQUIRED for HTTPS] SSL certificate path
+      certificate_key: "/etc/ssl/private/example.com.key" # [REQUIRED for HTTPS] SSL private key path
+    staging:
+      certificate: "/etc/ssl/certs/staging.example.com.crt"      # [REQUIRED for HTTPS] SSL certificate path
+      certificate_key: "/etc/ssl/private/staging.example.com.key" # [REQUIRED for HTTPS] SSL private key path
+    # development:
+    #   certificate: "/etc/ssl/certs/dev.example.com.crt"
+    #   certificate_key: "/etc/ssl/private/dev.example.com.key"
+
+  # Proxy settings (reasonable defaults provided)
+  proxy:
+    timeout: 60                          # [OPTIONAL] Proxy timeout in seconds (default: 60)
+    buffer_size: "128k"                  # [OPTIONAL] Proxy buffer size (default: 128k)
+    buffers: "4 256k"                    # [OPTIONAL] Number and size of proxy buffers (default: 4 256k)
+    busy_buffers_size: "256k"            # [OPTIONAL] Busy buffers size (default: 256k)
+
+  # Advanced: Custom nginx properties (optional)
+  # Add any nginx directives here - they will be inserted into each server block
+  # This gives you full control over nginx configuration without modifying scripts
+  # custom_properties: |                 # [OPTIONAL] Raw nginx directives
+  #   # Custom headers
+  #   add_header X-Frame-Options "SAMEORIGIN" always;
+  #   add_header X-Content-Type-Options "nosniff" always;
+  #   add_header X-XSS-Protection "1; mode=block" always;
+  #
+  #   # Client body size limit
+  #   client_max_body_size 50M;
+  #
+  #   # Rate limiting (requires zone definition in main nginx.conf)
+  #   # limit_req zone=api_limit burst=10 nodelay;
+  #
+  #   # Proxy caching (requires cache definition in main nginx.conf)
+  #   # proxy_cache my_cache;
+  #   # proxy_cache_valid 200 60m;
+
+  # Advanced: nginx path overrides (rarely needed)
+  # paths:
+  #   config: "/etc/nginx/nginx.conf"    # [OPTIONAL] Main nginx config path (default: /etc/nginx/nginx.conf)
+  #   axon_dir: "/etc/nginx/axon.d"      # [OPTIONAL] AXON config directory (default: /etc/nginx/axon.d)
+
+# ==============================================================================
 # Environment Configurations
 # ==============================================================================
 # You can define any number of environments (production, staging, development, qa, etc.)

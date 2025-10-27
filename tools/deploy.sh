@@ -27,6 +27,9 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 # Source SSH batch execution library for performance optimization
 source "$MODULE_DIR/lib/ssh-batch.sh"
 
+# Source defaults library for nginx configuration functions
+source "$MODULE_DIR/lib/defaults.sh"
+
 # Default values
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
@@ -361,11 +364,13 @@ APP_SERVER_PRIVATE_IP="$APPLICATION_SERVER_PRIVATE_IP"
 # Use private IP for nginx upstream (falls back to public host if not set)
 APP_UPSTREAM_IP="${APP_SERVER_PRIVATE_IP:-$APP_SERVER_HOST}"
 
-# Auto-generate nginx upstream file path and name (same logic as setup script)
-# File path: /etc/nginx/upstreams/{product}-{environment}.conf (keeps hyphens)
-# Upstream name: {product}_{environment}_backend (hyphens converted to underscores)
-NGINX_UPSTREAM_FILE="/etc/nginx/upstreams/${PRODUCT_NAME}-${ENVIRONMENT}.conf"
-NGINX_UPSTREAM_NAME="${PRODUCT_NAME//-/_}_${ENVIRONMENT}_backend"
+# Get nginx paths and names from defaults library
+NGINX_AXON_DIR=$(get_nginx_axon_dir "$CONFIG_FILE")
+NGINX_UPSTREAM_FILENAME=$(get_upstream_filename "$PRODUCT_NAME" "$ENVIRONMENT")
+NGINX_UPSTREAM_FILE="${NGINX_AXON_DIR}/upstreams/${NGINX_UPSTREAM_FILENAME}"
+NGINX_UPSTREAM_NAME=$(get_upstream_name "$PRODUCT_NAME" "$ENVIRONMENT")
+NGINX_SITE_FILENAME=$(get_site_filename "$PRODUCT_NAME" "$ENVIRONMENT")
+NGINX_SITE_FILE="${NGINX_AXON_DIR}/sites/${NGINX_SITE_FILENAME}"
 
 # Use ENV_FILE_PATH from load_config, rename to ENV_PATH for this script
 ENV_PATH="$ENV_FILE_PATH"
@@ -442,6 +447,85 @@ if [ ! -f "$APP_SSH_KEY" ]; then
     echo "Please run setup scripts first or check your configuration."
     exit 1
 fi
+
+# Step 0: Pre-flight nginx validation on System Server
+echo -e "${BLUE}Step 0/9: Validating nginx setup on System Server...${NC}"
+
+# Determine sudo usage
+if [ "$SYSTEM_SERVER_USER" = "root" ]; then
+    USE_SUDO=""
+else
+    USE_SUDO="sudo"
+fi
+
+# Batch pre-flight checks on System Server
+ssh_batch_start
+ssh_batch_add "command -v nginx > /dev/null 2>&1 && echo 'INSTALLED' || echo 'NOT_INSTALLED'" "nginx_installed"
+ssh_batch_add "${USE_SUDO} systemctl is-active nginx 2>/dev/null || (pgrep nginx > /dev/null 2>&1 && echo 'active' || echo 'inactive')" "nginx_running"
+ssh_batch_add "[ -d '${NGINX_AXON_DIR}/upstreams' ] && echo 'EXISTS' || echo 'MISSING'" "upstreams_dir"
+ssh_batch_add "[ -d '${NGINX_AXON_DIR}/sites' ] && echo 'EXISTS' || echo 'MISSING'" "sites_dir"
+ssh_batch_add "${USE_SUDO} nginx -t 2>&1 | grep -q 'successful' && echo 'VALID' || echo 'INVALID'" "nginx_config_valid"
+ssh_batch_add "grep -qF 'include ${NGINX_AXON_DIR}/upstreams/*.conf' /etc/nginx/nginx.conf && echo 'INCLUDED' || echo 'MISSING'" "upstreams_included"
+ssh_batch_add "grep -qF 'include ${NGINX_AXON_DIR}/sites/*.conf' /etc/nginx/nginx.conf && echo 'INCLUDED' || echo 'MISSING'" "sites_included"
+ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
+
+# Check nginx installation
+NGINX_INSTALLED=$(ssh_batch_result "nginx_installed" | tr -d '[:space:]')
+if [ "$NGINX_INSTALLED" != "INSTALLED" ]; then
+    echo -e "  ${RED}✗ nginx is not installed on System Server${NC}"
+    echo -e ""
+    echo -e "  Please install nginx first:"
+    echo -e "  ${CYAN}ssh $SYSTEM_SERVER '${USE_SUDO} apt update && ${USE_SUDO} apt install -y nginx'${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓ nginx is installed${NC}"
+
+# Check nginx is running
+NGINX_RUNNING=$(ssh_batch_result "nginx_running" | tr -d '[:space:]')
+if [ "$NGINX_RUNNING" != "active" ]; then
+    echo -e "  ${YELLOW}⚠ nginx is not running${NC}"
+    echo -e "  ${YELLOW}  Start nginx: ssh $SYSTEM_SERVER '${USE_SUDO} systemctl start nginx'${NC}"
+fi
+
+# Check AXON directories exist
+UPSTREAMS_DIR=$(ssh_batch_result "upstreams_dir" | tr -d '[:space:]')
+SITES_DIR=$(ssh_batch_result "sites_dir" | tr -d '[:space:]')
+
+if [ "$UPSTREAMS_DIR" != "EXISTS" ] || [ "$SITES_DIR" != "EXISTS" ]; then
+    echo -e "  ${RED}✗ AXON directories not found on System Server${NC}"
+    echo -e ""
+    echo -e "  Please run setup first:"
+    echo -e "  ${CYAN}axon setup system-server${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓ AXON directories exist${NC}"
+
+# Check nginx config validity
+NGINX_CONFIG_VALID=$(ssh_batch_result "nginx_config_valid" | tr -d '[:space:]')
+if [ "$NGINX_CONFIG_VALID" != "VALID" ]; then
+    echo -e "  ${RED}✗ nginx configuration is invalid${NC}"
+    echo -e ""
+    echo -e "  Please fix nginx configuration on System Server:"
+    echo -e "  ${CYAN}ssh $SYSTEM_SERVER '${USE_SUDO} nginx -t'${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓ nginx configuration is valid${NC}"
+
+# Check AXON includes in nginx.conf
+UPSTREAMS_INCLUDED=$(ssh_batch_result "upstreams_included" | tr -d '[:space:]')
+SITES_INCLUDED=$(ssh_batch_result "sites_included" | tr -d '[:space:]')
+
+if [ "$UPSTREAMS_INCLUDED" != "INCLUDED" ] || [ "$SITES_INCLUDED" != "INCLUDED" ]; then
+    echo -e "  ${RED}✗ AXON includes not found in nginx.conf${NC}"
+    echo -e ""
+    echo -e "  Please run setup first:"
+    echo -e "  ${CYAN}axon setup system-server${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓ AXON includes are configured${NC}"
+
+echo -e "  ${GREEN}✓ All pre-flight checks passed${NC}"
+echo ""
 
 # Step 1: Detect current deployment (PARALLELIZED)
 echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
@@ -764,31 +848,216 @@ EOF
 fi
 echo ""
 
-# Step 7-9: Update and reload nginx on System Server (batched)
-echo -e "${BLUE}Step 6/9: Updating System Server nginx...${NC}"
+# Step 6: Generate nginx configs (site + upstream)
+echo -e "${BLUE}Step 6/9: Generating nginx configurations for ${ENVIRONMENT}...${NC}"
 
-UPSTREAM_CONFIG="upstream $NGINX_UPSTREAM_NAME {
-    server $APP_UPSTREAM_IP:$APP_PORT;
-}"
+# Get nginx settings for this environment
+DOMAIN=$(get_nginx_domain "$ENVIRONMENT" "$CONFIG_FILE")
+PROXY_TIMEOUT=$(get_nginx_proxy_setting "timeout" "$CONFIG_FILE")
+PROXY_BUFFER_SIZE=$(get_nginx_proxy_setting "buffer_size" "$CONFIG_FILE")
+PROXY_BUFFERS=$(get_nginx_proxy_setting "buffers" "$CONFIG_FILE")
+PROXY_BUSY_BUFFERS=$(get_nginx_proxy_setting "busy_buffers_size" "$CONFIG_FILE")
+CUSTOM_PROPS=$(get_nginx_custom_properties "$CONFIG_FILE")
+HAS_SSL=$(has_ssl_config "$ENVIRONMENT" "$CONFIG_FILE")
+SSL_CERT=$(get_ssl_certificate "$ENVIRONMENT" "$CONFIG_FILE")
+SSL_KEY=$(get_ssl_certificate_key "$ENVIRONMENT" "$CONFIG_FILE")
 
-# Batch: Update config, test, and reload nginx (System Server)
+# Normalize timeout value (strip any existing 's' suffix to avoid duplication)
+PROXY_TIMEOUT=$(echo "$PROXY_TIMEOUT" | sed 's/s$//')
+
+# Generate site config
+echo -e "  Generating site config..."
+TEMP_SITE_FILE="/tmp/${NGINX_SITE_FILENAME%.conf}-site.conf"
+cat > "$TEMP_SITE_FILE" <<EOFSITE
+# AXON-managed site configuration for ${PRODUCT_NAME} - ${ENVIRONMENT}
+# Auto-generated by AXON deployment
+# Last updated: $(date)
+
+# HTTP Server
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    # Access logging
+    access_log /var/log/nginx/${PRODUCT_NAME}-${ENVIRONMENT}.log combined;
+
+    # To redirect HTTP to HTTPS, uncomment the line below and comment out the location block:
+    # return 301 https://\$server_name\$request_uri;
+
+    location / {
+        proxy_pass http://${NGINX_UPSTREAM_NAME};
+
+        # Proxy protocol and headers
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host:\$server_port;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # WebSocket support
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+
+        # Proxy timeouts
+        proxy_connect_timeout ${PROXY_TIMEOUT}s;
+        proxy_send_timeout ${PROXY_TIMEOUT}s;
+        proxy_read_timeout ${PROXY_TIMEOUT}s;
+
+        # Buffer sizes
+        proxy_buffer_size ${PROXY_BUFFER_SIZE};
+        proxy_buffers ${PROXY_BUFFERS};
+        proxy_busy_buffers_size ${PROXY_BUSY_BUFFERS};
+EOFSITE
+
+# Add custom properties if present
+if [ -n "$CUSTOM_PROPS" ]; then
+    echo "" >> "$TEMP_SITE_FILE"
+    echo "        # Custom nginx properties from config" >> "$TEMP_SITE_FILE"
+    echo "$CUSTOM_PROPS" | sed 's/^/        /' >> "$TEMP_SITE_FILE"
+fi
+
+# Close HTTP location and server block
+cat >> "$TEMP_SITE_FILE" <<'EOFSITE2'
+    }
+
+    # Health check endpoint (optional, no logging)
+    location /health {
+        access_log off;
+        proxy_pass http://UPSTREAM_NAME_PLACEHOLDER/health;
+    }
+}
+EOFSITE2
+
+# Generate HTTPS server block if SSL is configured
+if [ "$HAS_SSL" = "true" ]; then
+    cat >> "$TEMP_SITE_FILE" <<EOFHTTPS
+
+# HTTPS Server
+server {
+    listen 443 ssl http2;
+    server_name ${DOMAIN};
+
+    # Access logging
+    access_log /var/log/nginx/${PRODUCT_NAME}-${ENVIRONMENT}.log combined;
+
+    # SSL certificates
+    ssl_certificate ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        proxy_pass http://${NGINX_UPSTREAM_NAME};
+
+        # Proxy protocol and headers
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host:\$server_port;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # WebSocket support
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+
+        # Proxy timeouts
+        proxy_connect_timeout ${PROXY_TIMEOUT}s;
+        proxy_send_timeout ${PROXY_TIMEOUT}s;
+        proxy_read_timeout ${PROXY_TIMEOUT}s;
+
+        # Buffer sizes
+        proxy_buffer_size ${PROXY_BUFFER_SIZE};
+        proxy_buffers ${PROXY_BUFFERS};
+        proxy_busy_buffers_size ${PROXY_BUSY_BUFFERS};
+EOFHTTPS
+
+    # Add custom properties to HTTPS block if present
+    if [ -n "$CUSTOM_PROPS" ]; then
+        echo "" >> "$TEMP_SITE_FILE"
+        echo "        # Custom nginx properties from config" >> "$TEMP_SITE_FILE"
+        echo "$CUSTOM_PROPS" | sed 's/^/        /' >> "$TEMP_SITE_FILE"
+    fi
+
+    # Close HTTPS location and server block
+    cat >> "$TEMP_SITE_FILE" <<'EOFHTTPS2'
+    }
+
+    # Health check endpoint (optional, no logging)
+    location /health {
+        access_log off;
+        proxy_pass http://UPSTREAM_NAME_PLACEHOLDER/health;
+    }
+}
+EOFHTTPS2
+fi
+
+# Replace placeholders
+sed -i.bak "s|UPSTREAM_NAME_PLACEHOLDER|${NGINX_UPSTREAM_NAME}|g" "$TEMP_SITE_FILE"
+rm -f "${TEMP_SITE_FILE}.bak"
+
+echo -e "  ✓ Site config generated: ${NGINX_SITE_FILENAME}"
+
+# Generate upstream config
+echo -e "  Generating upstream config..."
+TEMP_UPSTREAM_FILE="/tmp/${NGINX_UPSTREAM_FILENAME%.conf}-upstream.conf"
+cat > "$TEMP_UPSTREAM_FILE" <<EOFUPSTREAM
+# AXON-managed upstream for ${PRODUCT_NAME} - ${ENVIRONMENT}
+# Auto-generated by AXON deployment
+# Last updated: $(date)
+
+upstream ${NGINX_UPSTREAM_NAME} {
+    server ${APP_UPSTREAM_IP}:${APP_PORT};
+}
+EOFUPSTREAM
+
+echo -e "  ✓ Upstream config generated: ${NGINX_UPSTREAM_FILENAME}"
+
+# Step 7: Upload and apply nginx configs
+echo -e "${BLUE}Step 7/9: Updating System Server nginx...${NC}"
+
+# Batch: Ensure directories, upload configs, test, and reload nginx
 ssh_batch_start
-ssh_batch_add "echo '$UPSTREAM_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null" "update_nginx"
-ssh_batch_add "sudo nginx -t 2>&1" "test_nginx"
-ssh_batch_add "sudo nginx -s reload" "reload_nginx"
+ssh_batch_add "${USE_SUDO} mkdir -p ${NGINX_AXON_DIR}/upstreams ${NGINX_AXON_DIR}/sites" "ensure_dirs"
 ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
 
-# Check if update succeeded
-if [ $(ssh_batch_exitcode "update_nginx") -ne 0 ]; then
-    echo -e "${RED}Error: Failed to update nginx upstream file${NC}"
+# Upload both configs (using distinct temp names on both local and remote)
+REMOTE_TEMP_SITE="/tmp/${NGINX_SITE_FILENAME%.conf}-site.conf"
+REMOTE_TEMP_UPSTREAM="/tmp/${NGINX_UPSTREAM_FILENAME%.conf}-upstream.conf"
+
+scp -i "$SSH_KEY" "$TEMP_SITE_FILE" \
+    "${SYSTEM_SERVER}:${REMOTE_TEMP_SITE}" > /dev/null 2>&1
+scp -i "$SSH_KEY" "$TEMP_UPSTREAM_FILE" \
+    "${SYSTEM_SERVER}:${REMOTE_TEMP_UPSTREAM}" > /dev/null 2>&1
+
+# Move to final locations and validate
+ssh_batch_start
+ssh_batch_add "${USE_SUDO} mv ${REMOTE_TEMP_SITE} ${NGINX_SITE_FILE}" "move_site"
+ssh_batch_add "${USE_SUDO} mv ${REMOTE_TEMP_UPSTREAM} ${NGINX_UPSTREAM_FILE}" "move_upstream"
+ssh_batch_add "${USE_SUDO} nginx -t 2>&1" "test_nginx"
+ssh_batch_add "${USE_SUDO} nginx -s reload" "reload_nginx"
+ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
+
+# Check if upload succeeded
+if [ $(ssh_batch_exitcode "move_site") -ne 0 ] || [ $(ssh_batch_exitcode "move_upstream") -ne 0 ]; then
+    echo -e "${RED}Error: Failed to update nginx configuration files${NC}"
+    # Cleanup local temp files
+    rm -f "$TEMP_SITE_FILE" "$TEMP_UPSTREAM_FILE"
     exit 1
 fi
 
-echo -e "  ✓ nginx upstream updated to port $APP_PORT"
+echo -e "  ✓ Site config: ${NGINX_SITE_FILE}"
+echo -e "  ✓ Upstream config: ${NGINX_UPSTREAM_FILE} (port $APP_PORT)"
+
+# Cleanup local temp files
+rm -f "$TEMP_SITE_FILE" "$TEMP_UPSTREAM_FILE"
 echo ""
 
 # Step 8: Test nginx configuration
-echo -e "${BLUE}Step 7/9: Testing nginx configuration on System Server...${NC}"
+echo -e "${BLUE}Step 8/9: Testing nginx configuration on System Server...${NC}"
 
 NGINX_TEST_OUTPUT=$(ssh_batch_result "test_nginx")
 
@@ -804,7 +1073,7 @@ if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
     ROLLBACK_CONFIG="upstream $NGINX_UPSTREAM_NAME {
     server $APP_UPSTREAM_IP:$CURRENT_PORT;
 }"
-    ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | sudo tee $NGINX_UPSTREAM_FILE > /dev/null"
+    ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | ${USE_SUDO} tee $NGINX_UPSTREAM_FILE > /dev/null"
 
     # Stop new container
     echo -e "${YELLOW}Stopping new container on Application Server...${NC}"
@@ -823,19 +1092,15 @@ EOF
 fi
 
 echo -e "  ✓ nginx configuration is valid"
-echo ""
 
-# Step 9: Reload nginx (ZERO DOWNTIME!)
-echo -e "${BLUE}Step 8/9: Reloading nginx on System Server (zero-downtime)...${NC}"
-
-# Check reload result from batch
+# Check reload result from batch (reload happened during Step 7)
 if [ $(ssh_batch_exitcode "reload_nginx") -ne 0 ]; then
     echo -e "${RED}Error: nginx reload failed!${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}  ✓ nginx reloaded successfully!${NC}"
-echo -e "${GREEN}  ✓ Traffic now flows to new container (port $APP_PORT)${NC}"
+echo -e "  ${GREEN}✓ nginx reloaded successfully (zero-downtime)${NC}"
+echo -e "  ${GREEN}✓ Traffic now flows to new container (port $APP_PORT)${NC}"
 echo ""
 
 # Step 9: Graceful shutdown of old containers (BACKGROUND)

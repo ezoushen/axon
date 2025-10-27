@@ -21,6 +21,7 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
 STRICT_MODE=false
+CHECK_REMOTE=false
 ERRORS=0
 WARNINGS=0
 
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             STRICT_MODE=true
             shift
             ;;
+        --check-remote)
+            CHECK_REMOTE=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -48,6 +53,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -c, --config FILE       Specify config file (default: axon.config.yml)"
             echo "  -e, --environment ENV   Validate specific environment only"
             echo "  --strict                Treat warnings as errors"
+            echo "  --check-remote          Check remote nginx configuration (requires SSH)"
             echo "  -h, --help              Show this help message"
             echo ""
             echo "Examples:"
@@ -55,6 +61,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --config custom.yml                # Validate custom config"
             echo "  $0 --environment production           # Validate production env only"
             echo "  $0 --strict                           # Fail on warnings"
+            echo "  $0 --check-remote                     # Validate + check remote nginx"
             exit 0
             ;;
         -*)
@@ -75,8 +82,9 @@ if [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Source config parser
+# Source config parser and defaults library
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}Configuration Validator${NC}"
@@ -331,6 +339,283 @@ else
     fi
 fi
 
+# Function to validate hostname or underscore
+is_valid_hostname() {
+    local value="$1"
+    if [ "$value" = "_" ]; then
+        return 0
+    fi
+    # Basic hostname validation: alphanumeric, hyphens, dots
+    if echo "$value" | grep -qE '^[a-zA-Z0-9.-]+$'; then
+        return 0
+    fi
+    return 1
+}
+
+# Function to validate proxy settings
+validate_nginx_proxy_settings() {
+    echo ""
+    echo -e "${BLUE}Nginx Proxy Settings${NC}"
+    echo ""
+
+    local timeout=$(get_nginx_proxy_setting "timeout" "$CONFIG_FILE")
+    local buffer_size=$(get_nginx_proxy_setting "buffer_size" "$CONFIG_FILE")
+    local buffers=$(get_nginx_proxy_setting "buffers" "$CONFIG_FILE")
+    local busy_buffers=$(get_nginx_proxy_setting "busy_buffers_size" "$CONFIG_FILE")
+
+    # Validate timeout is a number
+    if ! echo "$timeout" | grep -qE '^[0-9]+$'; then
+        report_error "nginx.proxy.timeout must be a number: ${timeout}"
+    else
+        report_success "Proxy timeout: ${timeout}s"
+    fi
+
+    # Buffer sizes should have units (k, m, etc)
+    if echo "$buffer_size" | grep -qE '^[0-9]+[kmgKMG]?$'; then
+        report_success "Proxy buffer_size: ${buffer_size}"
+    else
+        report_error "nginx.proxy.buffer_size invalid format: ${buffer_size}"
+    fi
+
+    if echo "$buffers" | grep -qE '^[0-9]+ [0-9]+[kmgKMG]?$'; then
+        report_success "Proxy buffers: ${buffers}"
+    else
+        report_error "nginx.proxy.buffers invalid format: ${buffers}"
+    fi
+
+    if echo "$busy_buffers" | grep -qE '^[0-9]+[kmgKMG]?$'; then
+        report_success "Proxy busy_buffers_size: ${busy_buffers}"
+    else
+        report_error "nginx.proxy.busy_buffers_size invalid format: ${busy_buffers}"
+    fi
+}
+
+# Function to check environment naming conflicts
+check_environment_conflicts() {
+    echo ""
+    echo -e "${BLUE}Environment Conflict Detection${NC}"
+    echo ""
+
+    # Get product name
+    local product=$(parse_yaml_key "product.name" "" "$CONFIG_FILE")
+    if [ -z "$product" ]; then
+        report_warning "Cannot check conflicts without product.name"
+        return
+    fi
+
+    # Get all environments
+    local envs=$(get_configured_environments "$CONFIG_FILE")
+    if [ -z "$envs" ]; then
+        report_warning "No environments found"
+        return
+    fi
+
+    local env_count=$(echo "$envs" | wc -w | tr -d ' ')
+    report_success "Found ${env_count} environment(s): ${envs}"
+
+    # Check for duplicate names
+    local duplicates=$(echo "$envs" | tr ' ' '\n' | sort | uniq -d)
+    if [ -n "$duplicates" ]; then
+        report_error "Duplicate environment names found: ${duplicates}"
+    fi
+
+    # Check each environment name is valid
+    for env in $envs; do
+        if ! echo "$env" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+            report_error "Invalid environment name '${env}' (use only alphanumeric, hyphens, underscores)"
+        fi
+    done
+
+    # Check for filename conflicts
+    # Generate all filenames and check for duplicates
+    local filenames=""
+    for env in $envs; do
+        local filename=$(get_site_filename "$product" "$env")
+        filenames="${filenames}${filename}"$'\n'
+    done
+
+    local duplicate_files=$(echo "$filenames" | sort | uniq -d)
+    if [ -n "$duplicate_files" ]; then
+        report_error "Filename conflict detected: Multiple environments generate same filename:"
+        echo "$duplicate_files" | while read -r file; do
+            if [ -n "$file" ]; then
+                echo "    ${file}"
+            fi
+        done
+    else
+        report_success "No filename conflicts detected"
+    fi
+}
+
+# Function to validate nginx configuration
+validate_nginx_config() {
+    echo ""
+    echo -e "${BLUE}Nginx Configuration${NC}"
+    echo ""
+
+    # Check if nginx section exists
+    local nginx_configured=$(parse_yaml_key "nginx" "" "$CONFIG_FILE")
+
+    if [ -z "$nginx_configured" ] || [ "$nginx_configured" = "null" ]; then
+        echo -e "  ${BLUE}○ Nginx configuration: <not set> (will use all defaults)${NC}"
+        return
+    fi
+
+    report_success "Nginx configuration found"
+
+    # Validate domains
+    local envs=$(get_configured_environments "$CONFIG_FILE")
+    for env in $envs; do
+        local domain=$(get_nginx_domain "$env" "$CONFIG_FILE")
+        if [ "$domain" = "_" ]; then
+            echo -e "  ${BLUE}○ nginx.domain.${env}: <not set> (will use catch-all \"_\")${NC}"
+        else
+            if is_valid_hostname "$domain"; then
+                report_success "nginx.domain.${env}: ${domain}"
+            else
+                report_error "nginx.domain.${env} invalid hostname: ${domain}"
+            fi
+        fi
+    done
+
+    # Validate SSL configuration
+    for env in $envs; do
+        local ssl_cert=$(get_ssl_certificate "$env" "$CONFIG_FILE")
+        local ssl_key=$(get_ssl_certificate_key "$env" "$CONFIG_FILE")
+
+        if [ -n "$ssl_cert" ] || [ -n "$ssl_key" ]; then
+            if [ -n "$ssl_cert" ] && [ -n "$ssl_key" ]; then
+                report_success "nginx.ssl.${env}: certificate and key configured"
+            elif [ -n "$ssl_cert" ]; then
+                report_error "nginx.ssl.${env}.certificate_key is required when certificate is set"
+            else
+                report_error "nginx.ssl.${env}.certificate is required when certificate_key is set"
+            fi
+        else
+            echo -e "  ${BLUE}○ nginx.ssl.${env}: <not set> (HTTP only)${NC}"
+        fi
+    done
+
+    # Validate proxy settings
+    validate_nginx_proxy_settings
+
+    # Check custom properties
+    local custom_props=$(get_nginx_custom_properties "$CONFIG_FILE")
+    if [ -n "$custom_props" ]; then
+        report_success "Custom nginx properties: configured"
+        if ! command_exists yq; then
+            report_warning "yq not installed - custom properties may not be parsed correctly"
+        fi
+    else
+        echo -e "  ${BLUE}○ Custom nginx properties: <not set>${NC}"
+    fi
+
+    # Check environment conflicts
+    check_environment_conflicts
+}
+
+# Function to validate remote nginx (optional)
+validate_remote_nginx() {
+    if [ "$CHECK_REMOTE" != "true" ]; then
+        echo ""
+        echo -e "  ${BLUE}○ Remote nginx check skipped (use --check-remote to enable)${NC}"
+        return
+    fi
+
+    echo ""
+    echo -e "${BLUE}Remote Nginx Validation${NC}"
+    echo ""
+
+    # Get System Server info
+    local sys_host=$(parse_yaml_key "servers.system.host" "" "$CONFIG_FILE")
+    local sys_user=$(parse_yaml_key "servers.system.user" "ubuntu" "$CONFIG_FILE")
+    local sys_key=$(parse_yaml_key "servers.system.ssh_key" "" "$CONFIG_FILE")
+
+    if [ -z "$sys_host" ]; then
+        report_warning "Cannot check remote nginx: servers.system.host not configured"
+        return
+    fi
+
+    # Expand tilde in SSH key path
+    sys_key="${sys_key/#\~/$HOME}"
+
+    if [ ! -f "$sys_key" ]; then
+        report_warning "Cannot check remote nginx: SSH key not found: ${sys_key}"
+        return
+    fi
+
+    # Get nginx paths
+    local nginx_axon_dir=$(get_nginx_axon_dir "$CONFIG_FILE")
+    local product=$(parse_yaml_key "product.name" "" "$CONFIG_FILE")
+
+    echo -e "  Checking ${sys_user}@${sys_host}..."
+
+    # Check SSH connection
+    if ! ssh -i "$sys_key" -o ConnectTimeout=5 -o BatchMode=yes \
+        "${sys_user}@${sys_host}" "echo 'OK'" > /dev/null 2>&1; then
+        report_warning "Cannot connect to System Server via SSH"
+        return
+    fi
+
+    # Check nginx installed
+    local nginx_check=$(ssh -i "$sys_key" "${sys_user}@${sys_host}" \
+        "nginx -v 2>&1 || echo 'NOT_INSTALLED'" 2>/dev/null)
+
+    if echo "$nginx_check" | grep -q "NOT_INSTALLED"; then
+        report_error "nginx not installed on System Server"
+        return
+    fi
+
+    report_success "nginx is installed"
+
+    # Check nginx config validity
+    local nginx_test=$(ssh -i "$sys_key" "${sys_user}@${sys_host}" \
+        "sudo nginx -t 2>&1" 2>/dev/null)
+
+    if echo "$nginx_test" | grep -q "successful"; then
+        report_success "nginx configuration is valid on System Server"
+    else
+        report_error "nginx configuration test failed on System Server"
+        echo "$nginx_test"
+    fi
+
+    # Check if axon.d exists
+    local axon_exists=$(ssh -i "$sys_key" "${sys_user}@${sys_host}" \
+        "[ -d '$nginx_axon_dir' ] && echo 'YES' || echo 'NO'" 2>/dev/null)
+
+    if [ "$axon_exists" = "YES" ]; then
+        report_success "AXON directory exists: ${nginx_axon_dir}"
+
+        # Check if includes are in nginx.conf
+        local includes_check=$(ssh -i "$sys_key" "${sys_user}@${sys_host}" \
+            "grep -c 'include ${nginx_axon_dir}' /etc/nginx/nginx.conf 2>/dev/null || echo '0'" 2>/dev/null)
+
+        if [ "$includes_check" -gt "0" ]; then
+            report_success "AXON includes found in nginx.conf"
+        else
+            report_warning "AXON includes not found in nginx.conf - run setup script"
+        fi
+
+        # Check for environment configs
+        if [ -n "$product" ]; then
+            local envs=$(get_configured_environments "$CONFIG_FILE")
+            for env in $envs; do
+                local site_file=$(get_site_filename "$product" "$env")
+                local site_exists=$(ssh -i "$sys_key" "${sys_user}@${sys_host}" \
+                    "[ -f '${nginx_axon_dir}/sites/${site_file}' ] && echo 'YES' || echo 'NO'" 2>/dev/null)
+
+                if [ "$site_exists" = "YES" ]; then
+                    report_success "Site config exists: ${env}"
+                else
+                    report_warning "Site config missing for ${env} - run setup script"
+                fi
+            done
+        fi
+    else
+        report_warning "AXON directory not found: ${nginx_axon_dir} - run setup script"
+    fi
+}
+
 echo ""
 echo -e "${BLUE}Health Check Configuration${NC}"
 echo ""
@@ -392,6 +677,12 @@ if [ -n "$COMPOSE_OVERRIDE" ] && [ "$COMPOSE_OVERRIDE" != "null" ]; then
 else
     echo -e "  ${BLUE}○ Docker compose override: <not set>${NC}"
 fi
+
+# Validate nginx configuration
+validate_nginx_config
+
+# Validate remote nginx (optional)
+validate_remote_nginx
 
 # Summary
 echo ""
