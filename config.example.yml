@@ -211,6 +211,8 @@ docker:
   # Container runtime configuration
   container_port: 3000                      # [OPTIONAL] Internal port the app listens on (default: 3000)
   restart_policy: "unless-stopped"          # [OPTIONAL] Docker restart policy (default: unless-stopped)
+  shutdown_timeout: 30                      # [OPTIONAL] Graceful shutdown timeout in seconds (default: 30)
+                                            # Time to wait for container to stop before sending SIGKILL
 
   # Network configuration
   # Template variables: ${PRODUCT_NAME}, ${ENVIRONMENT}

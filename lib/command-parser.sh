@@ -3,9 +3,9 @@
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands
-AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health validate setup init-config context"
+AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health validate install uninstall delete init-config context"
 
-# Commands that require environment argument
+# Commands that require environment argument (delete is optional with --all)
 AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart"
 
 # Show main help
@@ -29,6 +29,7 @@ UTILITY COMMANDS:
   logs <env>               View container logs
   restart <env>            Restart container
   health [env]             Check container health status
+  delete <env>             Remove environment-specific configs (Docker + nginx)
   validate                 Validate configuration file
   init-config              Generate axon.config.yml file
 
@@ -39,10 +40,15 @@ CONTEXT COMMANDS:
   context current          Show current active context
   context remove <name>    Remove a context
 
-SETUP COMMANDS:
-  setup local              Setup local machine (install required tools)
-  setup app-server         Setup Application Server (Docker, AWS CLI, etc.)
-  setup system-server      Setup System Server (nginx, upstreams)
+INSTALLATION COMMANDS:
+  install [server]         Install AXON on servers (default: all servers)
+  install local            Install tools on local machine
+  install app-server       Install Docker and tools on Application Server
+  install system-server    Install nginx and setup on System Server
+  uninstall [server]       Uninstall AXON from servers (default: all servers)
+  uninstall local          Remove AXON tools from local machine
+  uninstall app-server     Remove AXON setup from Application Server
+  uninstall system-server  Remove AXON setup from System Server
 
 GLOBAL OPTIONS:
   -c, --config FILE        Config file path (default: axon.config.yml)
@@ -65,9 +71,11 @@ EXAMPLES:
   axon context add my-app
   axon context use my-app
   axon context list
-  axon setup local --auto-install
-  axon setup app-server
-  axon setup system-server
+  axon install local --auto-install
+  axon install app-server
+  axon install system-server
+  axon install
+  axon uninstall local
 
 For command-specific help:
   axon <command> --help
@@ -238,6 +246,54 @@ EXAMPLES:
   axon restart staging --config custom.yml
 EOF
             ;;
+        delete)
+            cat <<EOF
+Usage: axon delete <environment|--all> [options]
+
+Remove environment-specific configurations including Docker containers and nginx configs.
+
+This command cleans up a specific environment (or all environments) while leaving the AXON
+installation intact. It removes:
+  - Docker containers for the environment(s)
+  - Docker images tagged for the environment(s)
+  - nginx site configuration(s)
+  - nginx upstream configuration(s)
+
+OPTIONS:
+  -c, --config FILE    Config file (default: axon.config.yml)
+  -f, --force          Skip confirmation prompt
+  --all                Delete all configured environments
+  -h, --help           Show this help
+
+EXAMPLES:
+  # Remove staging environment with confirmation
+  axon delete staging
+
+  # Force delete production without confirmation
+  axon delete production --force
+
+  # Delete with custom config
+  axon delete staging --config custom.yml
+
+  # Delete all environments (with confirmation)
+  axon delete --all
+
+  # Force delete all environments without confirmations
+  axon delete --all --force
+
+VALIDATION:
+  - Checks if environment exists before deletion
+  - Shows available environments if target not found
+  - Lists resources found (containers, nginx configs)
+  - Graceful container shutdown with configurable timeout
+
+NOTES:
+  - This does NOT remove the entire AXON installation
+  - Use 'axon uninstall' to remove AXON completely
+  - nginx will be reloaded after removing configs
+  - Deleted environments cannot be recovered
+EOF
+            ;;
         health)
             cat <<EOF
 Usage: axon health [environment] [options]
@@ -382,16 +438,17 @@ NOTES:
   - Single source of truth: edit config in project, changes apply immediately
 EOF
             ;;
-        setup)
+        install)
             cat <<EOF
-Usage: axon setup <target> [options]
+Usage: axon install [server] [options]
 
-Setup and configure servers or local machine for AXON deployment.
+Install AXON on servers or local machine. If no server is specified, installs on all servers.
 
-TARGETS:
-  local              Setup local machine (install required tools)
-  app-server         Setup Application Server (Docker, AWS CLI, etc.)
-  system-server      Setup System Server (nginx, upstreams)
+SERVERS:
+  (none)             Install on all servers (local + app-server + system-server)
+  local              Install tools on local machine only
+  app-server         Install Docker and tools on Application Server only
+  system-server      Install nginx and setup on System Server only
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
@@ -399,22 +456,64 @@ OPTIONS:
   -h, --help           Show this help
 
 EXAMPLES:
+  # Install on all servers
+  axon install
+
   # Check what tools are missing on local machine
-  axon setup local
+  axon install local
 
   # Auto-install all missing tools on local machine
-  axon setup local --auto-install
+  axon install local --auto-install
 
-  # Setup Application Server using config
-  axon setup app-server --config axon.config.yml
+  # Install on Application Server using config
+  axon install app-server --config axon.config.yml
 
-  # Setup System Server (nginx, upstreams)
-  axon setup system-server
+  # Install on System Server (nginx, upstreams)
+  axon install system-server
 
 NOTES:
   - 'local' runs on your machine
   - 'app-server' and 'system-server' connect via SSH using config
   - Requires sudo permissions on remote servers
+  - Installing 'all' runs: local → app-server → system-server
+EOF
+            ;;
+        uninstall)
+            cat <<EOF
+Usage: axon uninstall [server] [options]
+
+Uninstall AXON from servers or local machine. If no server is specified, uninstalls from all servers.
+
+SERVERS:
+  (none)             Uninstall from all servers (local + app-server + system-server)
+  local              Remove AXON tools from local machine only
+  app-server         Remove AXON setup from Application Server only
+  system-server      Remove AXON nginx configs from System Server only
+
+OPTIONS:
+  -c, --config FILE    Config file (default: axon.config.yml)
+  -f, --force          Skip confirmation prompts
+  -h, --help           Show this help
+
+EXAMPLES:
+  # Uninstall from all servers
+  axon uninstall
+
+  # Uninstall from local machine only
+  axon uninstall local
+
+  # Uninstall from Application Server
+  axon uninstall app-server --config axon.config.yml
+
+  # Uninstall from System Server with force
+  axon uninstall system-server --force
+
+NOTES:
+  - Uninstalls will prompt for confirmation unless --force is used
+  - 'local' removes AXON-installed tools (careful with shared tools)
+  - 'app-server' removes deployment artifacts and AXON directories
+  - 'system-server' removes nginx configs and AXON directories
+  - Uninstalling 'all' runs: system-server → app-server → local
 EOF
             ;;
         *)

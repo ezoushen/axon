@@ -73,16 +73,16 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions, including c
 
 ## Quick Start
 
-### 1. Setup Prerequisites
+### 1. Install Prerequisites
 
 **Check what's missing:**
 ```bash
-axon setup local
+axon install local
 ```
 
 **Auto-install missing tools:**
 ```bash
-axon setup local --auto-install
+axon install local --auto-install
 ```
 
 **Manual installation:**
@@ -371,6 +371,10 @@ axon logs production --lines 100        # Last 100 lines
 
 # Operations
 axon restart production                 # Restart container
+axon delete staging                     # Delete environment (Docker + nginx)
+axon delete production --force          # Delete without confirmation
+axon delete --all                       # Delete all environments
+axon delete --all --force               # Delete all without confirmations
 axon validate                           # Validate config file
 axon validate --strict                  # Strict validation
 
@@ -380,17 +384,23 @@ axon init-config --interactive          # Interactive config generation
 axon init-config --file custom.yml      # Custom filename
 ```
 
-### Setup Commands
+### Installation & Uninstallation Commands
 
 ```bash
-# Setup local machine (check/install tools)
-axon setup local                        # Check what's missing
-axon setup local --auto-install         # Auto-install missing tools
+# Install on servers (check/install tools and setup)
+axon install                            # Install on all servers
+axon install local                      # Check what's missing on local
+axon install local --auto-install       # Auto-install missing tools
+axon install app-server                 # Install on Application Server
+axon install system-server              # Install on System Server (nginx)
+axon install app-server --config custom.yml
 
-# Setup servers (via SSH, requires config)
-axon setup app-server                   # Setup Application Server
-axon setup system-server                # Setup System Server (nginx)
-axon setup app-server --config custom.yml
+# Uninstall from servers (cleanup)
+axon uninstall                          # Uninstall from all servers
+axon uninstall local                    # Remove from local machine
+axon uninstall app-server               # Remove from Application Server
+axon uninstall system-server            # Remove from System Server
+axon uninstall local --force            # Skip confirmations
 ```
 
 ### Global Options
@@ -461,7 +471,7 @@ axon --context frontend deploy production
 - **decomposerize** (docker-compose to docker run converter)
 - **SSH client** (for server access)
 
-**Quick setup:** Run `./setup/setup-local-machine.sh` to install all tools automatically.
+**Quick install:** Run `axon install local --auto-install` to install all tools automatically.
 
 ## How It Works
 

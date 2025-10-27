@@ -62,10 +62,11 @@ LINES=""
 SINCE=""
 TIMEOUT=""
 STRICT=false
-SETUP_TARGET=""
+INSTALL_TARGET=""
 AUTO_INSTALL=false
 INTERACTIVE=false
 OUTPUT_FILE=""
+DELETE_ALL=false
 # Status command flags
 STATUS_DETAILED=false
 STATUS_CONFIG=false
@@ -326,65 +327,205 @@ cmd_build_and_push() {
     echo ""
 }
 
-# Setup command
-cmd_setup() {
-    verbose "Executing setup command for target: $SETUP_TARGET"
+# Install command
+cmd_install() {
+    verbose "Executing install command for target: $INSTALL_TARGET"
 
-    # Validate setup target
-    if [ -z "$SETUP_TARGET" ]; then
-        echo -e "${RED}Error: Setup target required${NC}"
+    # If no target specified, install on all servers
+    if [ -z "$INSTALL_TARGET" ]; then
+        echo -e "${CYAN}Installing AXON on all servers...${NC}"
         echo ""
-        echo "Available targets:"
-        echo "  local         - Setup local machine (install tools)"
-        echo "  app-server    - Setup Application Server via SSH"
-        echo "  system-server - Setup System Server via SSH"
+
+        # Install local first
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 1/3: Installing on Local Machine${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo "Usage: axon setup <target> [options]"
-        echo "Run 'axon setup --help' for more information"
-        exit 1
+
+        INSTALL_TARGET="local"
+        cmd_install
+
+        echo ""
+        echo -e "${GREEN}✓ Local machine installation completed${NC}"
+        echo ""
+
+        # Install app-server
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 2/3: Installing on Application Server${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        INSTALL_TARGET="app-server"
+        cmd_install
+
+        echo ""
+        echo -e "${GREEN}✓ Application Server installation completed${NC}"
+        echo ""
+
+        # Install system-server
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 3/3: Installing on System Server${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        INSTALL_TARGET="system-server"
+        cmd_install
+
+        echo ""
+        echo -e "${GREEN}===========================================================${NC}"
+        echo -e "${GREEN}✓ AXON installation completed on all servers!${NC}"
+        echo -e "${GREEN}===========================================================${NC}"
+        echo ""
+        return 0
     fi
 
-    case "$SETUP_TARGET" in
+    case "$INSTALL_TARGET" in
         local)
-            verbose "Setting up local machine"
-            local setup_args=()
+            verbose "Installing on local machine"
+            local install_args=()
             if [ "$AUTO_INSTALL" = true ]; then
-                setup_args+=("--auto-install")
+                install_args+=("--auto-install")
             fi
 
-            verbose "Calling setup-local-machine.sh with args: ${setup_args[*]}"
-            execute "\"$SCRIPT_DIR/setup/setup-local-machine.sh\" ${setup_args[*]}"
+            verbose "Calling setup-local-machine.sh with args: ${install_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-local-machine.sh\" ${install_args[*]}"
             ;;
 
         app-server)
-            verbose "Setting up Application Server"
+            verbose "Installing on Application Server"
             validate_config_file
 
-            local setup_args=("--config" "$CONFIG_FILE")
+            local install_args=("--config" "$CONFIG_FILE")
 
-            verbose "Calling setup-application-server.sh with args: ${setup_args[*]}"
-            execute "\"$SCRIPT_DIR/setup/setup-application-server.sh\" ${setup_args[*]}"
+            verbose "Calling setup-application-server.sh with args: ${install_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-application-server.sh\" ${install_args[*]}"
             ;;
 
         system-server)
-            verbose "Setting up System Server"
+            verbose "Installing on System Server"
             validate_config_file
 
-            local setup_args=("--config" "$CONFIG_FILE")
+            local install_args=("--config" "$CONFIG_FILE")
 
-            verbose "Calling setup-system-server.sh with args: ${setup_args[*]}"
-            execute "\"$SCRIPT_DIR/setup/setup-system-server.sh\" ${setup_args[*]}"
+            verbose "Calling setup-system-server.sh with args: ${install_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/setup-system-server.sh\" ${install_args[*]}"
             ;;
 
         *)
-            echo -e "${RED}Error: Unknown setup target: ${SETUP_TARGET}${NC}"
+            echo -e "${RED}Error: Unknown install target: ${INSTALL_TARGET}${NC}"
             echo ""
             echo "Available targets:"
-            echo "  local         - Setup local machine"
-            echo "  app-server    - Setup Application Server"
-            echo "  system-server - Setup System Server"
+            echo "  (none)        - Install on all servers"
+            echo "  local         - Install on local machine"
+            echo "  app-server    - Install on Application Server"
+            echo "  system-server - Install on System Server"
             echo ""
-            echo "Run 'axon setup --help' for more information"
+            echo "Run 'axon install --help' for more information"
+            exit 1
+            ;;
+    esac
+}
+
+# Uninstall command
+cmd_uninstall() {
+    verbose "Executing uninstall command for target: $INSTALL_TARGET"
+
+    # If no target specified, uninstall from all servers (reverse order)
+    if [ -z "$INSTALL_TARGET" ]; then
+        echo -e "${CYAN}Uninstalling AXON from all servers...${NC}"
+        echo ""
+
+        # Uninstall system-server first (reverse order)
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 1/3: Uninstalling from System Server${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        INSTALL_TARGET="system-server"
+        cmd_uninstall
+
+        echo ""
+        echo -e "${GREEN}✓ System Server uninstallation completed${NC}"
+        echo ""
+
+        # Uninstall app-server
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 2/3: Uninstalling from Application Server${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        INSTALL_TARGET="app-server"
+        cmd_uninstall
+
+        echo ""
+        echo -e "${GREEN}✓ Application Server uninstallation completed${NC}"
+        echo ""
+
+        # Uninstall local last
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Step 3/3: Uninstalling from Local Machine${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        INSTALL_TARGET="local"
+        cmd_uninstall
+
+        echo ""
+        echo -e "${GREEN}===========================================================${NC}"
+        echo -e "${GREEN}✓ AXON uninstallation completed from all servers!${NC}"
+        echo -e "${GREEN}===========================================================${NC}"
+        echo ""
+        return 0
+    fi
+
+    case "$INSTALL_TARGET" in
+        local)
+            verbose "Uninstalling from local machine"
+            local uninstall_args=()
+            if [ "$FORCE" = true ]; then
+                uninstall_args+=("--force")
+            fi
+
+            verbose "Calling uninstall-local-machine.sh with args: ${uninstall_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/uninstall-local-machine.sh\" ${uninstall_args[*]}"
+            ;;
+
+        app-server)
+            verbose "Uninstalling from Application Server"
+            validate_config_file
+
+            local uninstall_args=("--config" "$CONFIG_FILE")
+            if [ "$FORCE" = true ]; then
+                uninstall_args+=("--force")
+            fi
+
+            verbose "Calling uninstall-application-server.sh with args: ${uninstall_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/uninstall-application-server.sh\" ${uninstall_args[*]}"
+            ;;
+
+        system-server)
+            verbose "Uninstalling from System Server"
+            validate_config_file
+
+            local uninstall_args=("--config" "$CONFIG_FILE")
+            if [ "$FORCE" = true ]; then
+                uninstall_args+=("--force")
+            fi
+
+            verbose "Calling uninstall-system-server.sh with args: ${uninstall_args[*]}"
+            execute "\"$SCRIPT_DIR/setup/uninstall-system-server.sh\" ${uninstall_args[*]}"
+            ;;
+
+        *)
+            echo -e "${RED}Error: Unknown uninstall target: ${INSTALL_TARGET}${NC}"
+            echo ""
+            echo "Available targets:"
+            echo "  (none)        - Uninstall from all servers"
+            echo "  local         - Uninstall from local machine"
+            echo "  app-server    - Uninstall from Application Server"
+            echo "  system-server - Uninstall from System Server"
+            echo ""
+            echo "Run 'axon uninstall --help' for more information"
             exit 1
             ;;
     esac
@@ -448,6 +589,29 @@ cmd_restart() {
 
     verbose "Calling restart.sh with args: ${restart_args[*]}"
     execute "\"$SCRIPT_DIR/tools/restart.sh\" ${restart_args[*]}"
+}
+
+# Delete command
+cmd_delete() {
+    if [ "$DELETE_ALL" = true ]; then
+        verbose "Executing delete command for all environments"
+    else
+        verbose "Executing delete command for environment: $ENVIRONMENT"
+    fi
+    validate_config_file
+
+    local delete_args=("--config" "$CONFIG_FILE")
+    if [ "$FORCE" = true ]; then
+        delete_args+=("--force")
+    fi
+    if [ "$DELETE_ALL" = true ]; then
+        delete_args+=("--all")
+    else
+        delete_args+=("$ENVIRONMENT")
+    fi
+
+    verbose "Calling delete.sh with args: ${delete_args[*]}"
+    execute "\"$SCRIPT_DIR/tools/delete.sh\" ${delete_args[*]}"
 }
 
 # Health command
@@ -641,6 +805,10 @@ while [[ $# -gt 0 ]]; do
             STATUS_HEALTH=true
             shift
             ;;
+        --all)
+            DELETE_ALL=true
+            shift
+            ;;
         -h|--help)
             show_command_help "$COMMAND"
             exit 0
@@ -651,14 +819,14 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            # Positional argument (environment or setup target)
-            if [ "$COMMAND" = "setup" ]; then
-                # For setup command, first positional is the target
-                if [ -z "$SETUP_TARGET" ]; then
-                    SETUP_TARGET="$1"
+            # Positional argument (environment or install/uninstall target)
+            if [ "$COMMAND" = "install" ] || [ "$COMMAND" = "uninstall" ]; then
+                # For install/uninstall commands, first positional is the target (optional)
+                if [ -z "$INSTALL_TARGET" ]; then
+                    INSTALL_TARGET="$1"
                 else
                     echo -e "${RED}Error: Too many positional arguments${NC}"
-                    echo "Run 'axon setup --help' for usage information"
+                    echo "Run 'axon $COMMAND --help' for usage information"
                     exit 1
                 fi
             else
@@ -685,6 +853,15 @@ if command_requires_env "$COMMAND"; then
     fi
 fi
 
+# Special validation for delete command (allow --all without environment)
+if [ "$COMMAND" = "delete" ]; then
+    if [ "$DELETE_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+        echo -e "${RED}Error: Environment parameter required for delete command (or use --all)${NC}"
+        echo "Run 'axon delete --help' for usage information"
+        exit 1
+    fi
+fi
+
 #==============================================================================
 # Context Resolution
 #==============================================================================
@@ -699,8 +876,8 @@ case "$COMMAND" in
     init-config)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
-    setup)
-        if [ "$SETUP_TARGET" = "local" ]; then
+    install|uninstall)
+        if [ "$INSTALL_TARGET" = "local" ]; then
             SKIP_CONTEXT_RESOLUTION=true
         fi
         ;;
@@ -794,14 +971,20 @@ case "$COMMAND" in
     restart)
         cmd_restart
         ;;
+    delete)
+        cmd_delete
+        ;;
     health)
         cmd_health
         ;;
     validate)
         cmd_validate
         ;;
-    setup)
-        cmd_setup
+    install)
+        cmd_install
+        ;;
+    uninstall)
+        cmd_uninstall
         ;;
     init-config)
         cmd_init_config
