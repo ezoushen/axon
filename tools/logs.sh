@@ -22,6 +22,7 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 # Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
+LOGS_ALL=false
 FOLLOW=false
 LINES="50"
 SINCE=""
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
         -c|--config)
             CONFIG_FILE="$2"
             shift 2
+            ;;
+        --all)
+            LOGS_ALL=true
+            shift
             ;;
         --follow|-f)
             FOLLOW=true
@@ -46,12 +51,13 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Usage: $0 <environment> [OPTIONS]"
+            echo "Usage: $0 <environment|--all> [OPTIONS]"
             echo ""
-            echo "View container logs for specified environment."
+            echo "View container logs for a specific environment or all environments."
             echo ""
             echo "OPTIONS:"
             echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
+            echo "  --all                View logs for all environments"
             echo "  -f, --follow         Follow log output (stream in real-time)"
             echo "  -n, --lines N        Number of lines to show (default: 50)"
             echo "  --tail N             Same as --lines"
@@ -59,13 +65,15 @@ while [[ $# -gt 0 ]]; do
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  environment          Environment to check logs for"
+            echo "  environment          Specific environment to check logs for"
             echo ""
             echo "Examples:"
             echo "  $0 production                # Last 50 lines"
+            echo "  $0 --all                     # Logs from all environments"
             echo "  $0 staging --follow          # Follow logs in real-time"
             echo "  $0 production --lines 100    # Last 100 lines"
             echo "  $0 staging --since 1h        # Logs from last hour"
+            echo "  $0 --all --lines 20          # Last 20 lines from each environment"
             exit 0
             ;;
         -*)
@@ -87,12 +95,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate environment provided
-if [ -z "$ENVIRONMENT" ]; then
-    echo -e "${RED}Error: Environment is required${NC}"
-    echo "Usage: $0 <environment> [OPTIONS]"
-    echo "Use --help for more information"
+# Validate required arguments
+if [ "$LOGS_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Environment is required (or use --all to view all environments)${NC}"
+    echo "Use --help for usage information"
     exit 1
+fi
+
+# Conflict check
+if [ "$LOGS_ALL" = true ] && [ -n "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Cannot specify both --all and a specific environment${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Set ENVIRONMENT to 'all' if --all flag is used
+if [ "$LOGS_ALL" = true ]; then
+    ENVIRONMENT="all"
 fi
 
 # Make CONFIG_FILE absolute path if it's relative
@@ -106,8 +125,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Source config parser
+# Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
 
 # Load product name
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
@@ -135,11 +155,45 @@ fi
 
 APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
 
-# Build container filter
-CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
+# Validate environment exists if specific environment requested
+if [ "$ENVIRONMENT" != "all" ]; then
+    AVAILABLE_ENVS=$(get_configured_environments "$CONFIG_FILE")
 
-# Convert environment to title case (Bash 3.2 compatible)
-ENV_DISPLAY="$(echo "${ENVIRONMENT:0:1}" | tr '[:lower:]' '[:upper:]')${ENVIRONMENT:1}"
+    if [ -z "$AVAILABLE_ENVS" ]; then
+        echo -e "${RED}Error: No environments configured in ${CONFIG_FILE}${NC}"
+        exit 1
+    fi
+
+    # Check if requested environment is in the list
+    ENV_FOUND=false
+    for env in $AVAILABLE_ENVS; do
+        if [ "$env" = "$ENVIRONMENT" ]; then
+            ENV_FOUND=true
+            break
+        fi
+    done
+
+    if [ "$ENV_FOUND" = false ]; then
+        echo -e "${RED}Error: Environment '${ENVIRONMENT}' not found in configuration${NC}"
+        echo ""
+        echo -e "${BLUE}Available environments:${NC}"
+        for env in $AVAILABLE_ENVS; do
+            echo -e "  - ${env}"
+        done
+        echo ""
+        exit 1
+    fi
+fi
+
+# Build container filter based on environment
+if [ "$ENVIRONMENT" == "all" ]; then
+    CONTAINER_FILTER="${PRODUCT_NAME}"
+    ENV_DISPLAY="All Environments"
+else
+    CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
+    # Convert environment to title case (Bash 3.2 compatible)
+    ENV_DISPLAY="$(echo "${ENVIRONMENT:0:1}" | tr '[:lower:]' '[:upper:]')${ENVIRONMENT:1}"
+fi
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}Container Logs - ${PRODUCT_NAME}${NC}"

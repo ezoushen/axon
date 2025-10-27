@@ -22,6 +22,8 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 # Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
+RESTART_ALL=false
+FORCE=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -30,20 +32,32 @@ while [[ $# -gt 0 ]]; do
             CONFIG_FILE="$2"
             shift 2
             ;;
+        --all)
+            RESTART_ALL=true
+            shift
+            ;;
+        -f|--force)
+            FORCE=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 <environment> [OPTIONS]"
+            echo "Usage: $0 <environment|--all> [OPTIONS]"
             echo ""
-            echo "Restart container for specified environment."
+            echo "Restart container for a specific environment or all environments."
             echo ""
             echo "OPTIONS:"
             echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
+            echo "  --all                Restart all environments"
+            echo "  -f, --force          Skip confirmation prompt (when using --all)"
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  environment          Environment to restart"
+            echo "  environment          Specific environment to restart"
             echo ""
             echo "Examples:"
             echo "  $0 production        # Restart production container"
+            echo "  $0 --all             # Restart all environments (with confirmation)"
+            echo "  $0 --all --force     # Restart all without confirmation"
             echo "  $0 staging           # Restart staging container"
             exit 0
             ;;
@@ -66,12 +80,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate environment provided
-if [ -z "$ENVIRONMENT" ]; then
-    echo -e "${RED}Error: Environment is required${NC}"
-    echo "Usage: $0 <environment> [OPTIONS]"
-    echo "Use --help for more information"
+# Validate required arguments
+if [ "$RESTART_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Environment is required (or use --all to restart all environments)${NC}"
+    echo "Use --help for usage information"
     exit 1
+fi
+
+# Conflict check
+if [ "$RESTART_ALL" = true ] && [ -n "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Cannot specify both --all and a specific environment${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Set ENVIRONMENT to 'all' if --all flag is used
+if [ "$RESTART_ALL" = true ]; then
+    ENVIRONMENT="all"
 fi
 
 # Make CONFIG_FILE absolute path if it's relative
@@ -85,8 +110,76 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Source config parser
+# Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
+
+# Handle --all flag (restart all environments)
+if [ "$ENVIRONMENT" == "all" ]; then
+    # Get all configured environments
+    AVAILABLE_ENVS=$(get_configured_environments "$CONFIG_FILE")
+
+    if [ -z "$AVAILABLE_ENVS" ]; then
+        echo -e "${YELLOW}No environments configured${NC}"
+        exit 0
+    fi
+
+    echo -e "${BLUE}Found environments:${NC}"
+    for env in $AVAILABLE_ENVS; do
+        echo -e "  - ${env}"
+    done
+    echo ""
+
+    # Confirm unless --force
+    if [ "$FORCE" = false ]; then
+        ENV_COUNT=$(echo "$AVAILABLE_ENVS" | wc -w | tr -d ' ')
+        echo -e "${YELLOW}Warning: You are about to restart ${ENV_COUNT} environment(s).${NC}"
+        echo -e "${YELLOW}This will cause brief downtime for all environments.${NC}"
+        read -p "Are you sure? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Restart cancelled.${NC}"
+            exit 0
+        fi
+    fi
+
+    # Restart each environment
+    SUCCESS_COUNT=0
+    FAILED_COUNT=0
+    FAILED_ENVS=""
+
+    for env in $AVAILABLE_ENVS; do
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Restarting environment: ${env}${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        # Recursively call this script for each environment
+        if "$0" --config "$CONFIG_FILE" "$env"; then
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            echo ""
+        else
+            FAILED_COUNT=$((FAILED_COUNT + 1))
+            FAILED_ENVS="${FAILED_ENVS} ${env}"
+            echo ""
+        fi
+    done
+
+    # Summary
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${BLUE}Restart All Environments - Summary${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    echo ""
+    echo -e "  Total environments: ${ENV_COUNT}"
+    echo -e "  ${GREEN}Successful: ${SUCCESS_COUNT}${NC}"
+    if [ $FAILED_COUNT -gt 0 ]; then
+        echo -e "  ${RED}Failed: ${FAILED_COUNT}${NC}"
+        echo -e "  ${YELLOW}Failed environments:${FAILED_ENVS}${NC}"
+        exit 1
+    fi
+    echo ""
+    exit 0
+fi
 
 # Load product name
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
@@ -113,6 +206,34 @@ if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
 fi
 
 APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
+
+# Validate environment exists
+AVAILABLE_ENVS=$(get_configured_environments "$CONFIG_FILE")
+
+if [ -z "$AVAILABLE_ENVS" ]; then
+    echo -e "${RED}Error: No environments configured in ${CONFIG_FILE}${NC}"
+    exit 1
+fi
+
+# Check if requested environment is in the list
+ENV_FOUND=false
+for env in $AVAILABLE_ENVS; do
+    if [ "$env" = "$ENVIRONMENT" ]; then
+        ENV_FOUND=true
+        break
+    fi
+done
+
+if [ "$ENV_FOUND" = false ]; then
+    echo -e "${RED}Error: Environment '${ENVIRONMENT}' not found in configuration${NC}"
+    echo ""
+    echo -e "${BLUE}Available environments:${NC}"
+    for env in $AVAILABLE_ENVS; do
+        echo -e "  - ${env}"
+    done
+    echo ""
+    exit 1
+fi
 
 # Build container filter
 CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"

@@ -20,6 +20,7 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 # Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
+STATUS_ALL=false
 # Status display flags
 SHOW_DETAILED=false
 SHOW_CONFIG=false
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
         -c|--config)
             CONFIG_FILE="$2"
             shift 2
+            ;;
+        --all)
+            STATUS_ALL=true
+            shift
             ;;
         --detailed|--inspect)
             SHOW_DETAILED=true
@@ -45,24 +50,27 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS] [environment]"
+            echo "Usage: $0 <environment|--all> [OPTIONS]"
+            echo ""
+            echo "Show container status for a specific environment or all environments."
             echo ""
             echo "Options:"
             echo "  -c, --config FILE         Specify config file (default: axon.config.yml)"
+            echo "  --all                     Show status for all environments"
             echo "  --detailed, --inspect     Show detailed container information"
             echo "  --configuration           Show container configuration (env vars, volumes, ports)"
             echo "  --health                  Show health check status and history"
             echo "  -h, --help                Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  environment               Environment to check (default: all)"
+            echo "  environment               Specific environment to check"
             echo ""
             echo "Examples:"
-            echo "  $0                        # Check all environments (summary)"
+            echo "  $0 --all                  # Check all environments (summary)"
             echo "  $0 production             # Check production only (summary)"
             echo "  $0 production --detailed  # Show detailed information"
             echo "  $0 staging --health       # Show health check status"
-            echo "  $0 --configuration        # Show configuration for all environments"
+            echo "  $0 --all --configuration  # Show configuration for all environments"
             exit 0
             ;;
         -*)
@@ -84,8 +92,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Default environment to 'all'
-ENVIRONMENT=${ENVIRONMENT:-all}
+# Validate required arguments
+if [ "$STATUS_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Environment is required (or use --all to show all environments)${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Conflict check
+if [ "$STATUS_ALL" = true ] && [ -n "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Cannot specify both --all and a specific environment${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Set ENVIRONMENT to 'all' if --all flag is used
+if [ "$STATUS_ALL" = true ]; then
+    ENVIRONMENT="all"
+fi
 
 # Make CONFIG_FILE absolute path if it's relative
 if [[ "$CONFIG_FILE" != /* ]]; then
@@ -98,8 +122,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Source config parser
+# Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
 
 # Load product name only for initial setup (don't need full config yet)
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
@@ -122,6 +147,36 @@ if [ ! -f "$APPLICATION_SERVER_SSH_KEY" ]; then
 fi
 
 APP_SERVER="${APPLICATION_SERVER_USER}@${APPLICATION_SERVER_HOST}"
+
+# Validate environment exists if specific environment requested
+if [ "$ENVIRONMENT" != "all" ]; then
+    AVAILABLE_ENVS=$(get_configured_environments "$CONFIG_FILE")
+
+    if [ -z "$AVAILABLE_ENVS" ]; then
+        echo -e "${RED}Error: No environments configured in ${CONFIG_FILE}${NC}"
+        exit 1
+    fi
+
+    # Check if requested environment is in the list
+    ENV_FOUND=false
+    for env in $AVAILABLE_ENVS; do
+        if [ "$env" = "$ENVIRONMENT" ]; then
+            ENV_FOUND=true
+            break
+        fi
+    done
+
+    if [ "$ENV_FOUND" = false ]; then
+        echo -e "${RED}Error: Environment '${ENVIRONMENT}' not found in configuration${NC}"
+        echo ""
+        echo -e "${BLUE}Available environments:${NC}"
+        for env in $AVAILABLE_ENVS; do
+            echo -e "  - ${env}"
+        done
+        echo ""
+        exit 1
+    fi
+fi
 
 # Build container name filter based on environment
 if [ "$ENVIRONMENT" == "all" ]; then

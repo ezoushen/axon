@@ -20,6 +20,7 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 # Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""
+HEALTH_ALL=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -28,18 +29,25 @@ while [[ $# -gt 0 ]]; do
             CONFIG_FILE="$2"
             shift 2
             ;;
+        --all)
+            HEALTH_ALL=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS] [environment]"
+            echo "Usage: $0 <environment|--all> [OPTIONS]"
+            echo ""
+            echo "Check container health status for a specific environment or all environments."
             echo ""
             echo "Options:"
             echo "  -c, --config FILE    Specify config file (default: axon.config.yml)"
+            echo "  --all                Check health for all environments"
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  environment          Environment to check (default: all)"
+            echo "  environment          Specific environment to check"
             echo ""
             echo "Examples:"
-            echo "  $0                   # Check all environments"
+            echo "  $0 --all             # Check all environments"
             echo "  $0 production        # Check production only"
             echo "  $0 --config custom.yml staging"
             exit 0
@@ -63,8 +71,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Default environment to 'all'
-ENVIRONMENT=${ENVIRONMENT:-all}
+# Validate required arguments
+if [ "$HEALTH_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Environment is required (or use --all to check all environments)${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Conflict check
+if [ "$HEALTH_ALL" = true ] && [ -n "$ENVIRONMENT" ]; then
+    echo -e "${RED}Error: Cannot specify both --all and a specific environment${NC}"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Set ENVIRONMENT to 'all' if --all flag is used
+if [ "$HEALTH_ALL" = true ]; then
+    ENVIRONMENT="all"
+fi
 
 # Make CONFIG_FILE absolute path if it's relative
 if [[ "$CONFIG_FILE" != /* ]]; then
@@ -77,8 +101,39 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Source config parser
+# Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
+
+# Validate environment exists if specific environment requested
+if [ "$ENVIRONMENT" != "all" ]; then
+    AVAILABLE_ENVS=$(get_configured_environments "$CONFIG_FILE")
+
+    if [ -z "$AVAILABLE_ENVS" ]; then
+        echo -e "${RED}Error: No environments configured in ${CONFIG_FILE}${NC}"
+        exit 1
+    fi
+
+    # Check if requested environment is in the list
+    ENV_FOUND=false
+    for env in $AVAILABLE_ENVS; do
+        if [ "$env" = "$ENVIRONMENT" ]; then
+            ENV_FOUND=true
+            break
+        fi
+    done
+
+    if [ "$ENV_FOUND" = false ]; then
+        echo -e "${RED}Error: Environment '${ENVIRONMENT}' not found in configuration${NC}"
+        echo ""
+        echo -e "${BLUE}Available environments:${NC}"
+        for env in $AVAILABLE_ENVS; do
+            echo -e "  - ${env}"
+        done
+        echo ""
+        exit 1
+    fi
+fi
 
 check_environment() {
     local env=$1

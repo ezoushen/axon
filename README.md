@@ -359,18 +359,22 @@ axon build-and-push production
 
 ```bash
 # Status and health
-axon status                             # All environments
+axon status --all                       # All environments (requires --all)
 axon status production                  # Specific environment
-axon health                             # Check all health
+axon health --all                       # Check all health (requires --all)
 axon health staging                     # Check specific health
 
 # Logs
 axon logs production                    # View logs
+axon logs --all                         # View logs from all environments
 axon logs staging --follow              # Follow logs in real-time
 axon logs production --lines 100        # Last 100 lines
+axon logs --all --lines 50              # Last 50 lines from each environment
 
 # Operations
 axon restart production                 # Restart container
+axon restart --all                      # Restart all environments (with confirmation)
+axon restart --all --force              # Restart all without confirmation
 axon delete staging                     # Delete environment (Docker + nginx)
 axon delete production --force          # Delete without confirmation
 axon delete --all                       # Delete all environments

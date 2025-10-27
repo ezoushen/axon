@@ -25,11 +25,11 @@ CONVENIENCE COMMANDS:
   build-and-push <env>     Build and push to ECR (skip deploy)
 
 UTILITY COMMANDS:
-  status [env]             Show container status for all or specific environment
-  logs <env>               View container logs
-  restart <env>            Restart container
-  health [env]             Check container health status
-  delete <env>             Remove environment-specific configs (Docker + nginx)
+  status <env|--all>       Show container status (specific environment or all)
+  logs <env|--all>         View container logs (specific environment or all)
+  restart <env|--all>      Restart container (specific environment or all)
+  health <env|--all>       Check container health status (specific environment or all)
+  delete <env|--all>       Remove environment-specific configs (Docker + nginx)
   validate                 Validate configuration file
   init-config              Generate axon.config.yml file
 
@@ -189,9 +189,9 @@ EOF
             ;;
         status)
             cat <<EOF
-Usage: axon status [environment] [options]
+Usage: axon status <environment|--all> [options]
 
-Show container status for all environments or a specific environment.
+Show container status for a specific environment or all environments.
 
 Display modes (can be combined):
   --detailed, --inspect     Show comprehensive container information
@@ -200,25 +200,27 @@ Display modes (can be combined):
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
+  --all                Show status for all environments
   -h, --help           Show this help
 
 EXAMPLES:
-  axon status                       # Summary of all environments
+  axon status --all                 # Summary of all environments
   axon status production            # Summary of specific environment
   axon status production --detailed # Detailed information
   axon status staging --health      # Health check status
-  axon status --configuration       # Configuration for all environments
+  axon status --all --configuration # Configuration for all environments
   axon status production --detailed --health  # Combined views
 EOF
             ;;
         logs)
             cat <<EOF
-Usage: axon logs <environment> [options]
+Usage: axon logs <environment|--all> [options]
 
-View container logs for specified environment.
+View container logs for a specific environment or all environments.
 
 OPTIONS:
   -c, --config FILE      Config file (default: axon.config.yml)
+  --all                  View logs for all environments
   -f, --follow           Follow log output in real-time
   -n, --lines <number>   Number of lines to show (default: from script)
   --since <time>         Show logs since timestamp
@@ -226,23 +228,29 @@ OPTIONS:
 
 EXAMPLES:
   axon logs production
+  axon logs --all                   # View logs from all environments
   axon logs staging --follow
   axon logs production --lines 100
   axon logs staging --since "2024-01-01"
+  axon logs --all --lines 50        # Last 50 lines from each environment
 EOF
             ;;
         restart)
             cat <<EOF
-Usage: axon restart <environment> [options]
+Usage: axon restart <environment|--all> [options]
 
-Restart container for specified environment.
+Restart container for a specific environment or all environments.
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
+  --all                Restart all environments
+  -f, --force          Skip confirmation prompt (when using --all)
   -h, --help           Show this help
 
 EXAMPLES:
   axon restart production
+  axon restart --all                # Restart all environments (with confirmation)
+  axon restart --all --force        # Restart all without confirmation
   axon restart staging --config custom.yml
 EOF
             ;;
@@ -296,16 +304,17 @@ EOF
             ;;
         health)
             cat <<EOF
-Usage: axon health [environment] [options]
+Usage: axon health <environment|--all> [options]
 
-Check container health status for all environments or a specific environment.
+Check container health status for a specific environment or all environments.
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
+  --all                Check health for all environments
   -h, --help           Show this help
 
 EXAMPLES:
-  axon health                    # All environments
+  axon health --all              # All environments
   axon health production         # Specific environment
 EOF
             ;;

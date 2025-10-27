@@ -66,6 +66,11 @@ INSTALL_TARGET=""
 AUTO_INSTALL=false
 INTERACTIVE=false
 OUTPUT_FILE=""
+# --all flags for environment commands
+STATUS_ALL=false
+HEALTH_ALL=false
+LOGS_ALL=false
+RESTART_ALL=false
 DELETE_ALL=false
 # Status command flags
 STATUS_DETAILED=false
@@ -533,11 +538,18 @@ cmd_uninstall() {
 
 # Status command
 cmd_status() {
-    verbose "Executing status command"
+    if [ "$STATUS_ALL" = true ]; then
+        verbose "Executing status command for all environments"
+    else
+        verbose "Executing status command for environment: $ENVIRONMENT"
+    fi
     validate_config_file
 
     local status_args=("--config" "$CONFIG_FILE")
-    if [ -n "$ENVIRONMENT" ]; then
+
+    if [ "$STATUS_ALL" = true ]; then
+        status_args+=("--all")
+    elif [ -n "$ENVIRONMENT" ]; then
         status_args+=("$ENVIRONMENT")
     fi
 
@@ -559,10 +571,20 @@ cmd_status() {
 
 # Logs command
 cmd_logs() {
-    verbose "Executing logs command for environment: $ENVIRONMENT"
+    if [ "$LOGS_ALL" = true ]; then
+        verbose "Executing logs command for all environments"
+    else
+        verbose "Executing logs command for environment: $ENVIRONMENT"
+    fi
     validate_config_file
 
-    local logs_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+    local logs_args=("--config" "$CONFIG_FILE")
+
+    if [ "$LOGS_ALL" = true ]; then
+        logs_args+=("--all")
+    else
+        logs_args+=("$ENVIRONMENT")
+    fi
 
     if [ "$FOLLOW" = true ]; then
         logs_args+=("--follow")
@@ -582,10 +604,23 @@ cmd_logs() {
 
 # Restart command
 cmd_restart() {
-    verbose "Executing restart command for environment: $ENVIRONMENT"
+    if [ "$RESTART_ALL" = true ]; then
+        verbose "Executing restart command for all environments"
+    else
+        verbose "Executing restart command for environment: $ENVIRONMENT"
+    fi
     validate_config_file
 
-    local restart_args=("--config" "$CONFIG_FILE" "$ENVIRONMENT")
+    local restart_args=("--config" "$CONFIG_FILE")
+
+    if [ "$RESTART_ALL" = true ]; then
+        restart_args+=("--all")
+        if [ "$FORCE" = true ]; then
+            restart_args+=("--force")
+        fi
+    else
+        restart_args+=("$ENVIRONMENT")
+    fi
 
     verbose "Calling restart.sh with args: ${restart_args[*]}"
     execute "\"$SCRIPT_DIR/tools/restart.sh\" ${restart_args[*]}"
@@ -616,11 +651,18 @@ cmd_delete() {
 
 # Health command
 cmd_health() {
-    verbose "Executing health check command"
+    if [ "$HEALTH_ALL" = true ]; then
+        verbose "Executing health check command for all environments"
+    else
+        verbose "Executing health check command for environment: $ENVIRONMENT"
+    fi
     validate_config_file
 
     local health_args=("--config" "$CONFIG_FILE")
-    if [ -n "$ENVIRONMENT" ]; then
+
+    if [ "$HEALTH_ALL" = true ]; then
+        health_args+=("--all")
+    elif [ -n "$ENVIRONMENT" ]; then
         health_args+=("$ENVIRONMENT")
     fi
 
@@ -806,7 +848,28 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --all)
-            DELETE_ALL=true
+            # Set appropriate flag based on command
+            case "$COMMAND" in
+                status)
+                    STATUS_ALL=true
+                    ;;
+                health)
+                    HEALTH_ALL=true
+                    ;;
+                logs)
+                    LOGS_ALL=true
+                    ;;
+                restart)
+                    RESTART_ALL=true
+                    ;;
+                delete)
+                    DELETE_ALL=true
+                    ;;
+                *)
+                    echo -e "${RED}Error: --all flag is not supported for command: ${COMMAND}${NC}"
+                    exit 1
+                    ;;
+            esac
             shift
             ;;
         -h|--help)
@@ -853,14 +916,44 @@ if command_requires_env "$COMMAND"; then
     fi
 fi
 
-# Special validation for delete command (allow --all without environment)
-if [ "$COMMAND" = "delete" ]; then
-    if [ "$DELETE_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
-        echo -e "${RED}Error: Environment parameter required for delete command (or use --all)${NC}"
-        echo "Run 'axon delete --help' for usage information"
-        exit 1
-    fi
-fi
+# Special validation for commands that support --all flag
+case "$COMMAND" in
+    status)
+        if [ "$STATUS_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for status command (or use --all)${NC}"
+            echo "Run 'axon status --help' for usage information"
+            exit 1
+        fi
+        ;;
+    health)
+        if [ "$HEALTH_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for health command (or use --all)${NC}"
+            echo "Run 'axon health --help' for usage information"
+            exit 1
+        fi
+        ;;
+    logs)
+        if [ "$LOGS_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for logs command (or use --all)${NC}"
+            echo "Run 'axon logs --help' for usage information"
+            exit 1
+        fi
+        ;;
+    restart)
+        if [ "$RESTART_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for restart command (or use --all)${NC}"
+            echo "Run 'axon restart --help' for usage information"
+            exit 1
+        fi
+        ;;
+    delete)
+        if [ "$DELETE_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for delete command (or use --all)${NC}"
+            echo "Run 'axon delete --help' for usage information"
+            exit 1
+        fi
+        ;;
+esac
 
 #==============================================================================
 # Context Resolution
