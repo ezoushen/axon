@@ -102,24 +102,88 @@ if [ "$INTERACTIVE" = true ]; then
     PRODUCT_DESC=${PRODUCT_DESC:-My Product}
     echo ""
 
-    # AWS Configuration
-    echo -e "${GREEN}AWS Configuration${NC}"
+    # Product Type
+    echo -e "${GREEN}Deployment Type${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    read -p "AWS profile name [default]: " AWS_PROFILE
-    AWS_PROFILE=${AWS_PROFILE:-default}
-
-    read -p "AWS region [ap-northeast-1]: " AWS_REGION
-    AWS_REGION=${AWS_REGION:-ap-northeast-1}
-
-    read -p "AWS account ID (12 digits): " AWS_ACCOUNT_ID
-    while [[ ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; do
-        echo -e "${YELLOW}Please enter a valid 12-digit AWS account ID${NC}"
-        read -p "AWS account ID: " AWS_ACCOUNT_ID
-    done
-
-    read -p "ECR repository name [$PRODUCT_NAME]: " ECR_REPO
-    ECR_REPO=${ECR_REPO:-$PRODUCT_NAME}
+    echo "  1) docker - Container-based deployment (Docker + nginx proxy)"
+    echo "  2) static - Static file deployment (HTML/JS/CSS served by nginx)"
     echo ""
+    read -p "Select deployment type [1]: " TYPE_CHOICE
+    TYPE_CHOICE=${TYPE_CHOICE:-1}
+
+    case "$TYPE_CHOICE" in
+        1|docker)
+            PRODUCT_TYPE="docker"
+            ;;
+        2|static)
+            PRODUCT_TYPE="static"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice. Defaulting to 'docker'${NC}"
+            PRODUCT_TYPE="docker"
+            ;;
+    esac
+    echo "Selected: ${PRODUCT_TYPE}"
+    echo ""
+
+    # Type-specific configuration
+    if [ "$PRODUCT_TYPE" = "docker" ]; then
+        # AWS Configuration (Docker only)
+        echo -e "${GREEN}Container Registry Configuration (AWS ECR)${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "AWS profile name [default]: " AWS_PROFILE
+        AWS_PROFILE=${AWS_PROFILE:-default}
+
+        read -p "AWS region [ap-northeast-1]: " AWS_REGION
+        AWS_REGION=${AWS_REGION:-ap-northeast-1}
+
+        read -p "AWS account ID (12 digits): " AWS_ACCOUNT_ID
+        while [[ ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; do
+            echo -e "${YELLOW}Please enter a valid 12-digit AWS account ID${NC}"
+            read -p "AWS account ID: " AWS_ACCOUNT_ID
+        done
+
+        read -p "ECR repository name [$PRODUCT_NAME]: " ECR_REPO
+        ECR_REPO=${ECR_REPO:-$PRODUCT_NAME}
+        echo ""
+    else
+        # Static site configuration
+        echo -e "${GREEN}Static Site Build Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Build command [npm run build]: " BUILD_COMMAND
+        BUILD_COMMAND=${BUILD_COMMAND:-npm run build}
+
+        read -p "Build output directory [dist]: " BUILD_OUTPUT_DIR
+        BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-dist}
+        echo ""
+
+        echo -e "${GREEN}Static Site Deployment Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME]: " DEPLOY_PATH
+        DEPLOY_PATH=${DEPLOY_PATH:-/var/www/$PRODUCT_NAME}
+
+        read -p "Deploy user (file owner) [www-data]: " DEPLOY_USER
+        DEPLOY_USER=${DEPLOY_USER:-www-data}
+
+        read -p "Keep releases (number of old releases to keep) [5]: " KEEP_RELEASES
+        KEEP_RELEASES=${KEEP_RELEASES:-5}
+        echo ""
+
+        echo -e "${GREEN}Domain Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Production domain (e.g., example.com): " PROD_DOMAIN
+        while [ -z "$PROD_DOMAIN" ]; do
+            echo -e "${YELLOW}Production domain is required${NC}"
+            read -p "Production domain: " PROD_DOMAIN
+        done
+
+        read -p "Staging domain (e.g., staging.example.com): " STAGING_DOMAIN
+        while [ -z "$STAGING_DOMAIN" ]; do
+            echo -e "${YELLOW}Staging domain is required${NC}"
+            read -p "Staging domain: " STAGING_DOMAIN
+        done
+        echo ""
+    fi
 
     # Server Configuration
     echo -e "${GREEN}System Server (nginx + SSL)${NC}"
@@ -133,48 +197,94 @@ if [ "$INTERACTIVE" = true ]; then
     SYS_KEY=${SYS_KEY:-~/.ssh/id_rsa}
     echo ""
 
-    echo -e "${GREEN}Application Server (Docker)${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    read -p "Application server public host/IP (for SSH): " APP_HOST
+    # Docker-specific server and environment configuration
+    if [ "$PRODUCT_TYPE" = "docker" ]; then
+        echo -e "${GREEN}Application Server (Docker)${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Application server public host/IP (for SSH): " APP_HOST
 
-    read -p "Application server private IP (for nginx upstream): " APP_PRIVATE_IP
+        read -p "Application server private IP (for nginx upstream): " APP_PRIVATE_IP
 
-    read -p "Application server user [ubuntu]: " APP_USER
-    APP_USER=${APP_USER:-ubuntu}
+        read -p "Application server user [ubuntu]: " APP_USER
+        APP_USER=${APP_USER:-ubuntu}
 
-    read -p "Application server SSH key path [~/.ssh/id_rsa]: " APP_KEY
-    APP_KEY=${APP_KEY:-~/.ssh/id_rsa}
-    echo ""
+        read -p "Application server SSH key path [~/.ssh/id_rsa]: " APP_KEY
+        APP_KEY=${APP_KEY:-~/.ssh/id_rsa}
+        echo ""
 
-    # Environment Paths
-    echo -e "${GREEN}Environment Configuration${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    read -p "Production .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.production]: " PROD_ENV
-    PROD_ENV=${PROD_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.production}
+        # Environment Paths
+        echo -e "${GREEN}Environment Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Production .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.production]: " PROD_ENV
+        PROD_ENV=${PROD_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.production}
 
-    read -p "Staging .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.staging]: " STAGING_ENV
-    STAGING_ENV=${STAGING_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.staging}
-    echo ""
+        read -p "Staging .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.staging]: " STAGING_ENV
+        STAGING_ENV=${STAGING_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.staging}
+        echo ""
 
-    # Docker Configuration
-    echo -e "${GREEN}Docker Configuration${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    read -p "Container internal port [3000]: " CONTAINER_PORT
-    CONTAINER_PORT=${CONTAINER_PORT:-3000}
+        # Docker Configuration
+        echo -e "${GREEN}Docker Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Container internal port [3000]: " CONTAINER_PORT
+        CONTAINER_PORT=${CONTAINER_PORT:-3000}
 
-    read -p "Health check endpoint [/api/health]: " HEALTH_ENDPOINT
-    HEALTH_ENDPOINT=${HEALTH_ENDPOINT:-/api/health}
-    echo ""
+        read -p "Health check endpoint [/api/health]: " HEALTH_ENDPOINT
+        HEALTH_ENDPOINT=${HEALTH_ENDPOINT:-/api/health}
+        echo ""
+    fi
 
     # Generate configuration file
-    cat > "$OUTPUT_FILE" <<EOF
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        # Generate static site configuration
+        cat > "$OUTPUT_FILE" <<EOF
 # AXON Deployment Configuration
-# Generated by: axon init-config --interactive
+# Generated by: axon init-config --interactive (static site)
 # Date: $(date +"%Y-%m-%d %H:%M:%S")
 
 # Product Information
 product:
   name: "${PRODUCT_NAME}"
+  type: "static"
+  description: "${PRODUCT_DESC}"
+
+# Static Site Configuration
+static:
+  build_command: "${BUILD_COMMAND}"
+  build_output_dir: "${BUILD_OUTPUT_DIR}"
+  deploy_path: "${DEPLOY_PATH}"
+  deploy_user: "${DEPLOY_USER}"
+  keep_releases: ${KEEP_RELEASES}
+  shared_dirs: []
+  required_files:
+    - "index.html"
+
+# Server Configuration
+servers:
+  # System Server (nginx + SSL + static files)
+  system:
+    host: "${SYS_HOST}"
+    user: "${SYS_USER}"
+    ssh_key: "${SYS_KEY}"
+
+# Environment Configurations
+environments:
+  production:
+    domain: "${PROD_DOMAIN}"
+
+  staging:
+    domain: "${STAGING_DOMAIN}"
+EOF
+    else
+        # Generate Docker configuration
+        cat > "$OUTPUT_FILE" <<EOF
+# AXON Deployment Configuration
+# Generated by: axon init-config --interactive (docker)
+# Date: $(date +"%Y-%m-%d %H:%M:%S")
+
+# Product Information
+product:
+  name: "${PRODUCT_NAME}"
+  type: "docker"
   description: "${PRODUCT_DESC}"
 
 # AWS Configuration
@@ -242,6 +352,7 @@ docker:
     max_size: "10m"
     max_file: 3
 EOF
+    fi
 
 else
     # Non-interactive mode - copy example config
@@ -288,11 +399,16 @@ echo ""
 echo "Next steps:"
 if [ "$INTERACTIVE" = false ]; then
     echo "  1. Edit ${CONFIG_BASENAME} with your server details"
-    echo "  2. Update AWS credentials and server information"
+    echo "  2. Update product type (docker or static) and corresponding configuration"
     echo "  3. Validate: axon validate --config ${CONFIG_BASENAME}"
 else
     echo "  1. Validate: axon validate --config ${CONFIG_BASENAME}"
-    echo "  2. Setup servers: axon setup app-server && axon setup system-server"
-    echo "  3. Deploy: axon run staging"
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        echo "  2. Install on System Server: axon install system-server"
+        echo "  3. Deploy: axon run staging"
+    else
+        echo "  2. Install on servers: axon install app-server && axon install system-server"
+        echo "  3. Deploy: axon run staging"
+    fi
 fi
 echo ""
