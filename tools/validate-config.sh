@@ -271,38 +271,126 @@ validate_registry_config() {
 # Function to validate environment configuration
 validate_environment() {
     local env=$1
+    local product_type=${2:-$PRODUCT_TYPE}
     echo ""
     echo -e "${BLUE}Validating environment: ${env}${NC}"
     echo ""
 
-    # Required fields
-    validate_required "environments.${env}.env_path" "Environment file path"
+    if [ "$product_type" = "docker" ]; then
+        # Docker type - require env_path
+        validate_required "environments.${env}.env_path" "Environment file path"
 
-    # Optional fields
-    validate_optional "environments.${env}.image_tag" "Image tag" "${env}"
+        # Optional fields
+        validate_optional "environments.${env}.image_tag" "Image tag" "${env}"
 
-    # Check if env_path looks reasonable
-    local env_path=$(parse_yaml_key "environments.${env}.env_path" "" "$CONFIG_FILE")
-    if [ -n "$env_path" ] && [ "$env_path" != "null" ]; then
-        if [[ ! "$env_path" =~ ^/ ]]; then
-            report_warning "env_path should be an absolute path: ${env_path}"
+        # Check if env_path looks reasonable
+        local env_path=$(parse_yaml_key "environments.${env}.env_path" "" "$CONFIG_FILE")
+        if [ -n "$env_path" ] && [ "$env_path" != "null" ]; then
+            if [[ ! "$env_path" =~ ^/ ]]; then
+                report_warning "env_path should be an absolute path: ${env_path}"
+            fi
+
+            if [[ ! "$env_path" =~ \.env ]]; then
+                report_warning "env_path should point to a .env file: ${env_path}"
+            fi
+        fi
+    else
+        # Static type - env_path not used
+        local env_path=$(parse_yaml_key "environments.${env}.env_path" "" "$CONFIG_FILE")
+        if [ -n "$env_path" ] && [ "$env_path" != "null" ]; then
+            report_warning "env_path ignored for static sites (environment: ${env})"
         fi
 
-        if [[ ! "$env_path" =~ \.env ]]; then
-            report_warning "env_path should point to a .env file: ${env_path}"
+        local image_tag=$(parse_yaml_key "environments.${env}.image_tag" "" "$CONFIG_FILE")
+        if [ -n "$image_tag" ] && [ "$image_tag" != "null" ]; then
+            report_warning "image_tag ignored for static sites (environment: ${env})"
         fi
+
+        report_success "Environment configured: ${env}"
     fi
 }
 
 echo -e "${BLUE}Product Configuration${NC}"
 echo ""
 validate_required "product.name" "Product name"
+
+# Validate product type
+PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+if [ "$PRODUCT_TYPE" != "docker" ] && [ "$PRODUCT_TYPE" != "static" ]; then
+    report_error "Invalid product.type: ${PRODUCT_TYPE} (must be 'docker' or 'static')"
+    PRODUCT_TYPE="docker"  # Default for validation continuation
+else
+    report_success "Product type: ${PRODUCT_TYPE}"
+fi
+
 validate_optional "product.description" "Product description" "(none)"
 
-echo ""
-echo -e "${BLUE}Registry Configuration${NC}"
-echo ""
-validate_registry_config
+# Validate static-specific or docker-specific configurations based on type
+if [ "$PRODUCT_TYPE" = "static" ]; then
+    # Static site configuration validation
+    echo ""
+    echo -e "${BLUE}Static Site Configuration${NC}"
+    echo ""
+    validate_required "static.build_command" "Build command"
+    validate_required "static.build_output_dir" "Build output directory"
+    validate_required "static.deploy_path" "Deploy path"
+    validate_optional "static.deploy_user" "Deploy user" "www-data"
+    validate_optional "static.keep_releases" "Keep releases" "5"
+
+    # Check if build output dir exists (local validation)
+    BUILD_OUTPUT_DIR=$(parse_yaml_key "static.build_output_dir" "" "$CONFIG_FILE")
+    if [ -n "$BUILD_OUTPUT_DIR" ] && [ -d "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR" ]; then
+        report_success "Build output directory exists: $BUILD_OUTPUT_DIR ✓"
+    else
+        report_warning "Build output directory not found: $PRODUCT_ROOT/$BUILD_OUTPUT_DIR (will be created during build)"
+    fi
+
+    # Check for shared_dirs
+    SHARED_DIRS=$(get_static_shared_dirs "$CONFIG_FILE")
+    if [ -n "$SHARED_DIRS" ]; then
+        local dir_count=$(echo "$SHARED_DIRS" | wc -l | tr -d ' ')
+        report_success "Shared directories: ${dir_count} configured"
+    else
+        echo -e "  ${BLUE}○ Shared directories: <not set>${NC}"
+    fi
+
+    # Check for required_files
+    REQUIRED_FILES=$(get_static_required_files "$CONFIG_FILE")
+    if [ -n "$REQUIRED_FILES" ]; then
+        local file_count=$(echo "$REQUIRED_FILES" | wc -l | tr -d ' ')
+        report_success "Required files validation: ${file_count} file(s)"
+    else
+        echo -e "  ${BLUE}○ Required files: <not set>${NC}"
+    fi
+
+    # Warn if docker/registry sections are present
+    REGISTRY_CONFIG=$(parse_yaml_key "registry" "" "$CONFIG_FILE")
+    if [ -n "$REGISTRY_CONFIG" ] && [ "$REGISTRY_CONFIG" != "null" ]; then
+        report_warning "registry section ignored for static sites (type: static)"
+    fi
+
+    DOCKER_CONFIG=$(parse_yaml_key "docker" "" "$CONFIG_FILE")
+    if [ -n "$DOCKER_CONFIG" ] && [ "$DOCKER_CONFIG" != "null" ]; then
+        report_warning "docker section ignored for static sites (type: static)"
+    fi
+
+    HEALTH_CHECK_CONFIG=$(parse_yaml_key "health_check" "" "$CONFIG_FILE")
+    if [ -n "$HEALTH_CHECK_CONFIG" ] && [ "$HEALTH_CHECK_CONFIG" != "null" ]; then
+        report_warning "health_check section ignored for static sites (type: static)"
+    fi
+else
+    # Docker configuration validation
+    echo ""
+    echo -e "${BLUE}Registry Configuration${NC}"
+    echo ""
+    validate_registry_config
+
+    # Warn if static section is present
+    STATIC_CONFIG=$(parse_yaml_key "static" "" "$CONFIG_FILE")
+    if [ -n "$STATIC_CONFIG" ] && [ "$STATIC_CONFIG" != "null" ]; then
+        report_warning "static section ignored for Docker sites (type: docker)"
+    fi
+fi
 
 echo ""
 echo -e "${BLUE}System Server Configuration${NC}"
@@ -311,13 +399,24 @@ validate_required "servers.system.host" "System Server host"
 validate_optional "servers.system.user" "System Server user" "ubuntu"
 validate_file_path "servers.system.ssh_key" "System Server SSH key"
 
-echo ""
-echo -e "${BLUE}Application Server Configuration${NC}"
-echo ""
-validate_required "servers.application.host" "Application Server host"
-validate_optional "servers.application.user" "Application Server user" "ubuntu"
-validate_file_path "servers.application.ssh_key" "Application Server SSH key"
-validate_optional "servers.application.private_ip" "Application Server private IP" "(uses public host)"
+if [ "$PRODUCT_TYPE" = "docker" ]; then
+    echo ""
+    echo -e "${BLUE}Application Server Configuration${NC}"
+    echo ""
+    validate_required "servers.application.host" "Application Server host"
+    validate_optional "servers.application.user" "Application Server user" "ubuntu"
+    validate_file_path "servers.application.ssh_key" "Application Server SSH key"
+    validate_optional "servers.application.private_ip" "Application Server private IP" "(uses public host)"
+else
+    # Static type - Application Server not used
+    APP_SERVER_CONFIG=$(parse_yaml_key "servers.application" "" "$CONFIG_FILE")
+    if [ -n "$APP_SERVER_CONFIG" ] && [ "$APP_SERVER_CONFIG" != "null" ]; then
+        echo ""
+        echo -e "${BLUE}Application Server Configuration${NC}"
+        echo ""
+        report_warning "Application Server not used for static sites (type: static)"
+    fi
+fi
 
 echo ""
 echo -e "${BLUE}Environment Configurations${NC}"
@@ -496,8 +595,10 @@ validate_nginx_config() {
         fi
     done
 
-    # Validate proxy settings
-    validate_nginx_proxy_settings
+    # Validate proxy settings (only for Docker sites)
+    if [ "$PRODUCT_TYPE" = "docker" ]; then
+        validate_nginx_proxy_settings
+    fi
 
     # Check custom properties
     local custom_props=$(get_nginx_custom_properties "$CONFIG_FILE")
@@ -616,66 +717,69 @@ validate_remote_nginx() {
     fi
 }
 
-echo ""
-echo -e "${BLUE}Health Check Configuration${NC}"
-echo ""
-validate_optional "health_check.endpoint" "Health check endpoint" "/api/health"
-validate_optional "health_check.interval" "Docker health check interval" "30s"
-validate_optional "health_check.timeout" "Docker health check timeout" "10s"
-validate_optional "health_check.retries" "Docker health check retries" "3"
-validate_optional "health_check.start_period" "Docker health check start period" "40s"
-validate_optional "health_check.max_retries" "Deployment max retries" "30"
-validate_optional "health_check.retry_interval" "Deployment retry interval" "2"
+# Conditional validation based on product type
+if [ "$PRODUCT_TYPE" = "docker" ]; then
+    echo ""
+    echo -e "${BLUE}Health Check Configuration${NC}"
+    echo ""
+    validate_optional "health_check.endpoint" "Health check endpoint" "/api/health"
+    validate_optional "health_check.interval" "Docker health check interval" "30s"
+    validate_optional "health_check.timeout" "Docker health check timeout" "10s"
+    validate_optional "health_check.retries" "Docker health check retries" "3"
+    validate_optional "health_check.start_period" "Docker health check start period" "40s"
+    validate_optional "health_check.max_retries" "Deployment max retries" "30"
+    validate_optional "health_check.retry_interval" "Deployment retry interval" "2"
 
-echo ""
-echo -e "${BLUE}Deployment Configuration${NC}"
-echo ""
-validate_optional "deployment.graceful_shutdown_timeout" "Graceful shutdown timeout" "30"
-validate_optional "deployment.enable_auto_rollback" "Auto rollback" "true"
+    echo ""
+    echo -e "${BLUE}Deployment Configuration${NC}"
+    echo ""
+    validate_optional "deployment.graceful_shutdown_timeout" "Graceful shutdown timeout" "30"
+    validate_optional "deployment.enable_auto_rollback" "Auto rollback" "true"
 
-echo ""
-echo -e "${BLUE}Docker Configuration${NC}"
-echo ""
-validate_optional "docker.container_port" "Container port" "3000"
-validate_optional "docker.dockerfile" "Dockerfile path" "Dockerfile"
+    echo ""
+    echo -e "${BLUE}Docker Configuration${NC}"
+    echo ""
+    validate_optional "docker.container_port" "Container port" "3000"
+    validate_optional "docker.dockerfile" "Dockerfile path" "Dockerfile"
 
-# Validate Dockerfile exists if specified
-DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile" "$CONFIG_FILE")
-if [ -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
-    report_success "Dockerfile exists: $DOCKERFILE_PATH ✓"
-else
-    report_warning "Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH"
-fi
+    # Validate Dockerfile exists if specified
+    DOCKERFILE_PATH=$(parse_yaml_key "docker.dockerfile" "Dockerfile" "$CONFIG_FILE")
+    if [ -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
+        report_success "Dockerfile exists: $DOCKERFILE_PATH ✓"
+    else
+        report_warning "Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH"
+    fi
 
-validate_optional "docker.restart_policy" "Restart policy" "unless-stopped"
-validate_optional "docker.network_name" "Network name" "(auto)"
-validate_optional "docker.network_alias" "Network alias" "(none)"
-validate_optional "docker.logging.driver" "Logging driver" "json-file"
-validate_optional "docker.logging.max_size" "Log max size" "10m"
-validate_optional "docker.logging.max_file" "Log max files" "3"
+    validate_optional "docker.restart_policy" "Restart policy" "unless-stopped"
+    validate_optional "docker.network_name" "Network name" "(auto)"
+    validate_optional "docker.network_alias" "Network alias" "(none)"
+    validate_optional "docker.logging.driver" "Logging driver" "json-file"
+    validate_optional "docker.logging.max_size" "Log max size" "10m"
+    validate_optional "docker.logging.max_file" "Log max files" "3"
 
-# Check for docker.env_vars
-ENV_VARS=$(parse_yaml_key "docker.env_vars" "" "$CONFIG_FILE")
-if [ -n "$ENV_VARS" ] && [ "$ENV_VARS" != "null" ]; then
-    report_success "Docker environment variables: configured"
-else
-    echo -e "  ${BLUE}○ Docker environment variables: <not set>${NC}"
-fi
+    # Check for docker.env_vars
+    ENV_VARS=$(parse_yaml_key "docker.env_vars" "" "$CONFIG_FILE")
+    if [ -n "$ENV_VARS" ] && [ "$ENV_VARS" != "null" ]; then
+        report_success "Docker environment variables: configured"
+    else
+        echo -e "  ${BLUE}○ Docker environment variables: <not set>${NC}"
+    fi
 
-# Check for docker.extra_hosts
-EXTRA_HOSTS=$(parse_yaml_key "docker.extra_hosts" "" "$CONFIG_FILE")
-if [ -n "$EXTRA_HOSTS" ] && [ "$EXTRA_HOSTS" != "null" ]; then
-    report_success "Docker extra hosts: configured"
-else
-    echo -e "  ${BLUE}○ Docker extra hosts: <not set>${NC}"
-fi
+    # Check for docker.extra_hosts
+    EXTRA_HOSTS=$(parse_yaml_key "docker.extra_hosts" "" "$CONFIG_FILE")
+    if [ -n "$EXTRA_HOSTS" ] && [ "$EXTRA_HOSTS" != "null" ]; then
+        report_success "Docker extra hosts: configured"
+    else
+        echo -e "  ${BLUE}○ Docker extra hosts: <not set>${NC}"
+    fi
 
-# Check for docker.compose_override
-COMPOSE_OVERRIDE=$(parse_yaml_key "docker.compose_override" "" "$CONFIG_FILE")
-if [ -n "$COMPOSE_OVERRIDE" ] && [ "$COMPOSE_OVERRIDE" != "null" ]; then
-    report_success "Docker compose override: configured"
-else
-    echo -e "  ${BLUE}○ Docker compose override: <not set>${NC}"
+    # Check for docker.compose_override
+    COMPOSE_OVERRIDE=$(parse_yaml_key "docker.compose_override" "" "$CONFIG_FILE")
+    if [ -n "$COMPOSE_OVERRIDE" ] && [ "$COMPOSE_OVERRIDE" != "null" ]; then
+        report_success "Docker compose override: configured"
+    else
+        echo -e "  ${BLUE}○ Docker compose override: <not set>${NC}"
+    fi
 fi
 
 # Validate nginx configuration

@@ -244,3 +244,131 @@ has_ssl_config() {
         echo "false"
     fi
 }
+
+# ==============================================================================
+# Static Site Defaults and Helpers
+# ==============================================================================
+
+# Static site default values
+readonly STATIC_DEFAULT_KEEP_RELEASES="5"
+readonly STATIC_DEFAULT_DEPLOY_USER="www-data"
+readonly STATIC_DEFAULT_BUILD_DIR="dist"
+
+# Generate timestamp-based release name
+# Returns: YYYYMMDDHHMMSS format (e.g., 20250127153045)
+generate_release_name() {
+    date +"%Y%m%d%H%M%S"
+}
+
+# Get static build command
+get_static_build_command() {
+    local config_file="${1:-$CONFIG_FILE}"
+    get_config_with_default ".static.build_command" "" "$config_file"
+}
+
+# Get static build output directory
+get_static_build_output_dir() {
+    local config_file="${1:-$CONFIG_FILE}"
+    get_config_with_default ".static.build_output_dir" "$STATIC_DEFAULT_BUILD_DIR" "$config_file"
+}
+
+# Get static deployment path
+get_static_deploy_path() {
+    local config_file="${1:-$CONFIG_FILE}"
+    get_config_with_default ".static.deploy_path" "" "$config_file"
+}
+
+# Get deploy user for static sites
+get_static_deploy_user() {
+    local config_file="${1:-$CONFIG_FILE}"
+    get_config_with_default ".static.deploy_user" "$STATIC_DEFAULT_DEPLOY_USER" "$config_file"
+}
+
+# Get number of releases to keep
+get_static_keep_releases() {
+    local config_file="${1:-$CONFIG_FILE}"
+    get_config_with_default ".static.keep_releases" "$STATIC_DEFAULT_KEEP_RELEASES" "$config_file"
+}
+
+# Get list of shared directories for static sites
+# Returns newline-separated list
+get_static_shared_dirs() {
+    local config_file="${1:-$CONFIG_FILE}"
+
+    if [ -z "$config_file" ] || [ ! -f "$config_file" ]; then
+        echo ""
+        return
+    fi
+
+    # Try yq first
+    if command_exists yq; then
+        local dirs=$(yq eval '.static.shared_dirs[]' "$config_file" 2>/dev/null || echo "")
+        if [ -n "$dirs" ]; then
+            echo "$dirs"
+            return
+        fi
+    fi
+
+    echo ""
+}
+
+# Get list of required files for static sites
+# Returns newline-separated list
+get_static_required_files() {
+    local config_file="${1:-$CONFIG_FILE}"
+
+    if [ -z "$config_file" ] || [ ! -f "$config_file" ]; then
+        echo ""
+        return
+    fi
+
+    # Try yq first
+    if command_exists yq; then
+        local files=$(yq eval '.static.required_files[]' "$config_file" 2>/dev/null || echo "")
+        if [ -n "$files" ]; then
+            echo "$files"
+            return
+        fi
+    fi
+
+    echo ""
+}
+
+# Get full release directory path
+# Returns: {deploy_path}/{environment}/releases/{release_name}
+get_release_path() {
+    local deploy_path="$1"
+    local environment="$2"
+    local release_name="$3"
+    echo "${deploy_path}/${environment}/releases/${release_name}"
+}
+
+# Get full shared directory path
+# Returns: {deploy_path}/{environment}/shared
+get_shared_path() {
+    local deploy_path="$1"
+    local environment="$2"
+    echo "${deploy_path}/${environment}/shared"
+}
+
+# Get current release symlink path
+# Returns: {deploy_path}/{environment}/current
+get_current_symlink_path() {
+    local deploy_path="$1"
+    local environment="$2"
+    echo "${deploy_path}/${environment}/current"
+}
+
+# Get build archive filename
+# Returns: static-build-{release_name}.tar.gz
+get_build_archive_name() {
+    local release_name="$1"
+    echo "static-build-${release_name}.tar.gz"
+}
+
+# Get temporary build archive path (on local machine)
+# Returns: /tmp/static-build-{release_name}.tar.gz
+get_build_archive_path() {
+    local release_name="$1"
+    echo "/tmp/$(get_build_archive_name "$release_name")"
+}

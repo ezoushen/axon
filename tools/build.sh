@@ -79,8 +79,9 @@ if [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
 fi
 
-# Source the config parser (registry-auth not needed for build, only tags)
+# Source the config parser and defaults library
 source "$MODULE_DIR/lib/config-parser.sh"
+source "$MODULE_DIR/lib/defaults.sh"
 
 # Validate environment
 if [ -z "$ENVIRONMENT" ]; then
@@ -92,6 +93,14 @@ fi
 # Validate config file exists
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
+    exit 1
+fi
+
+# Detect product type
+PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+if [ "$PRODUCT_TYPE" != "docker" ] && [ "$PRODUCT_TYPE" != "static" ]; then
+    echo -e "${RED}Error: Invalid product.type: ${PRODUCT_TYPE}${NC}"
+    echo "Must be 'docker' or 'static'"
     exit 1
 fi
 
@@ -133,143 +142,268 @@ else
     GIT_SHA=""
 fi
 
-echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}Docker Build${NC}"
-echo -e "${BLUE}==================================================${NC}"
-echo ""
+# Function for building Docker images
+build_docker() {
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${BLUE}Docker Build${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    echo ""
 
-# Load configuration from config file
-# First validate environment exists
+    # Load configuration from config file
+    load_config "$ENVIRONMENT"
+
+    # Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
+    # Re-parse with explicit environment prefix to ensure correctness
+    if command -v yq &> /dev/null; then
+        if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+            IMAGE_TAG="$ENVIRONMENT"  # Default to environment name
+        fi
+    else
+        echo -e "${YELLOW}Warning: yq not found. Using fallback parser.${NC}"
+        echo -e "${YELLOW}For accurate YAML parsing, install yq: brew install yq${NC}"
+        echo ""
+        # Fallback: default to environment name
+        IMAGE_TAG="$ENVIRONMENT"
+    fi
+
+    # Validate required registry configuration
+    REGISTRY_PROVIDER=$(get_registry_provider)
+    if [ -z "$REGISTRY_PROVIDER" ]; then
+        echo -e "${RED}Error: Registry provider not configured${NC}"
+        echo "Please set 'registry.provider' in $CONFIG_FILE"
+        echo "Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
+        exit 1
+    fi
+
+    # Build image URI using registry abstraction
+    REGISTRY_URL=$(build_registry_url)
+    if [ $? -ne 0 ] || [ -z "$REGISTRY_URL" ]; then
+        echo -e "${RED}Error: Could not build registry URL${NC}"
+        echo "Check your registry configuration in $CONFIG_FILE"
+        exit 1
+    fi
+
+    REPOSITORY=$(get_repository_name)
+    if [ -z "$REPOSITORY" ]; then
+        echo -e "${RED}Error: Repository name not configured${NC}"
+        echo "Set either registry.${REGISTRY_PROVIDER}.repository or product.name in $CONFIG_FILE"
+        exit 1
+    fi
+
+    FULL_IMAGE_NAME=$(build_image_uri "$IMAGE_TAG")
+    if [ $? -ne 0 ] || [ -z "$FULL_IMAGE_NAME" ]; then
+        echo -e "${RED}Error: Could not build image URI${NC}"
+        exit 1
+    fi
+
+    # Display build info
+    echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
+    echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
+    echo -e "Registry:        ${YELLOW}${REGISTRY_PROVIDER}${NC}"
+    echo -e "Registry URL:    ${YELLOW}${REGISTRY_URL}${NC}"
+    echo -e "Repository:      ${YELLOW}${REPOSITORY}${NC}"
+    echo -e "Image Tag:       ${YELLOW}${IMAGE_TAG}${NC}"
+    [ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:     ${YELLOW}${GIT_SHA}${NC}"
+    echo -e "Full Image:      ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+    echo ""
+
+    # Check prerequisites
+    if ! docker info &> /dev/null; then
+        echo -e "${RED}Error: Docker is not running${NC}"
+        exit 1
+    fi
+
+    # Check if Dockerfile exists
+    if [ ! -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
+        echo -e "${RED}Error: Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH${NC}"
+        echo "Please check docker.dockerfile in $CONFIG_FILE"
+        exit 1
+    fi
+
+    # Build Docker image
+    echo -e "${GREEN}Building Docker image...${NC}"
+    echo -e "Using Dockerfile: ${YELLOW}${DOCKERFILE_PATH}${NC}"
+    echo -e "${YELLOW}This may take a few minutes...${NC}"
+    echo ""
+
+    cd "$PRODUCT_ROOT"
+
+    docker build \
+        --build-arg BUILD_STANDALONE=true \
+        --platform linux/amd64 \
+        -f "$DOCKERFILE_PATH" \
+        -t "$FULL_IMAGE_NAME" \
+        .
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: Docker build failed${NC}"
+        exit 1
+    fi
+
+    # Tag image with git SHA if provided
+    if [ -n "$GIT_SHA" ]; then
+        echo ""
+        echo -e "${GREEN}Tagging image with git SHA...${NC}"
+        GIT_SHA_IMAGE=$(build_image_uri "$GIT_SHA")
+        docker tag "$FULL_IMAGE_NAME" "$GIT_SHA_IMAGE"
+        echo -e "Tagged as: ${YELLOW}${GIT_SHA_IMAGE}${NC}"
+    fi
+
+    # Success
+    echo ""
+    echo -e "${GREEN}==================================================${NC}"
+    echo -e "${GREEN}Build completed successfully!${NC}"
+    echo -e "${GREEN}==================================================${NC}"
+    echo ""
+
+    echo "Image(s) built:"
+    echo -e "  ${YELLOW}${FULL_IMAGE_NAME}${NC}"
+    if [ -n "$GIT_SHA" ]; then
+        echo -e "  ${YELLOW}${GIT_SHA_IMAGE}${NC}"
+    fi
+
+    IMAGE_SIZE=$(docker images "$FULL_IMAGE_NAME" --format "{{.Size}}")
+    echo ""
+    echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "  Push to ${REGISTRY_PROVIDER}: ./tools/push.sh ${ENVIRONMENT}"
+    if [ -n "$GIT_SHA" ]; then
+        echo "                                ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
+    fi
+    echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo ""
+
+    # Output git SHA for capture by parent script (e.g., axon)
+    # Format: GIT_SHA_DETECTED=<sha>
+    if [ -n "$GIT_SHA" ]; then
+        echo "GIT_SHA_DETECTED=${GIT_SHA}"
+    fi
+}
+
+# Function for building static sites
+build_static() {
+    echo -e "${BLUE}==================================================${NC}"
+    echo -e "${BLUE}Static Site Build${NC}"
+    echo -e "${BLUE}==================================================${NC}"
+    echo ""
+
+    # Load configuration
+    load_config "$ENVIRONMENT"
+
+    # Get static-specific configuration
+    BUILD_COMMAND=$(get_static_build_command "$CONFIG_FILE")
+    BUILD_OUTPUT_DIR=$(get_static_build_output_dir "$CONFIG_FILE")
+
+    if [ -z "$BUILD_COMMAND" ]; then
+        echo -e "${RED}Error: static.build_command not configured${NC}"
+        echo "Please set 'static.build_command' in $CONFIG_FILE"
+        exit 1
+    fi
+
+    if [ -z "$BUILD_OUTPUT_DIR" ]; then
+        echo -e "${RED}Error: static.build_output_dir not configured${NC}"
+        echo "Please set 'static.build_output_dir' in $CONFIG_FILE"
+        exit 1
+    fi
+
+    # Generate release name
+    RELEASE_NAME=$(generate_release_name)
+    BUILD_ARCHIVE=$(get_build_archive_path "$RELEASE_NAME")
+
+    # Display build info
+    echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
+    echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
+    echo -e "Build Command:   ${YELLOW}${BUILD_COMMAND}${NC}"
+    echo -e "Output Dir:      ${YELLOW}${BUILD_OUTPUT_DIR}${NC}"
+    echo -e "Release Name:    ${YELLOW}${RELEASE_NAME}${NC}"
+    echo -e "Archive:         ${YELLOW}${BUILD_ARCHIVE}${NC}"
+    echo ""
+
+    # Run build command
+    echo -e "${GREEN}Running build command...${NC}"
+    echo -e "${YELLOW}Command: ${BUILD_COMMAND}${NC}"
+    echo ""
+
+    cd "$PRODUCT_ROOT"
+
+    eval "$BUILD_COMMAND"
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: Build command failed${NC}"
+        exit 1
+    fi
+
+    # Check if build output directory exists
+    if [ ! -d "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR" ]; then
+        echo -e "${RED}Error: Build output directory not found: $PRODUCT_ROOT/$BUILD_OUTPUT_DIR${NC}"
+        echo "Build command should create this directory"
+        exit 1
+    fi
+
+    # Validate required files if configured
+    REQUIRED_FILES=$(get_static_required_files "$CONFIG_FILE")
+    if [ -n "$REQUIRED_FILES" ]; then
+        echo ""
+        echo -e "${GREEN}Validating required files...${NC}"
+        while IFS= read -r required_file; do
+            if [ -f "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR/$required_file" ]; then
+                echo -e "  ${GREEN}✓${NC} ${required_file}"
+            else
+                echo -e "  ${RED}✗${NC} ${required_file}"
+                echo -e "${RED}Error: Required file missing: ${required_file}${NC}"
+                exit 1
+            fi
+        done <<< "$REQUIRED_FILES"
+    fi
+
+    # Calculate build size
+    BUILD_SIZE=$(du -sh "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR" | cut -f1)
+    echo ""
+    echo -e "${GREEN}Build completed successfully${NC}"
+    echo -e "Build size: ${YELLOW}${BUILD_SIZE}${NC}"
+
+    # Create compressed archive
+    echo ""
+    echo -e "${GREEN}Creating compressed archive...${NC}"
+
+    cd "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR"
+    tar -czf "$BUILD_ARCHIVE" .
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: Failed to create archive${NC}"
+        exit 1
+    fi
+
+    ARCHIVE_SIZE=$(du -sh "$BUILD_ARCHIVE" | cut -f1)
+
+    echo -e "Archive created: ${YELLOW}${BUILD_ARCHIVE}${NC}"
+    echo -e "Archive size:    ${YELLOW}${ARCHIVE_SIZE}${NC}"
+
+    # Success
+    echo ""
+    echo -e "${GREEN}==================================================${NC}"
+    echo -e "${GREEN}Build completed successfully!${NC}"
+    echo -e "${GREEN}==================================================${NC}"
+    echo ""
+
+    echo "Next steps:"
+    echo "  Push to System Server: ./tools/push.sh ${ENVIRONMENT}"
+    echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo ""
+
+    # Output release name for capture by parent script
+    echo "RELEASE_NAME=${RELEASE_NAME}"
+}
+
+# Validate environment exists before proceeding
 if ! validate_environment "$ENVIRONMENT" "$CONFIG_FILE"; then
     exit 1
 fi
 
-load_config "$ENVIRONMENT"
-
-# Verify IMAGE_TAG matches environment (fallback parser might pick wrong one)
-# Re-parse with explicit environment prefix to ensure correctness
-if command -v yq &> /dev/null; then
-    if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
-        IMAGE_TAG="$ENVIRONMENT"  # Default to environment name
-    fi
+# Route to appropriate build function based on product type
+if [ "$PRODUCT_TYPE" = "static" ]; then
+    build_static
 else
-    echo -e "${YELLOW}Warning: yq not found. Using fallback parser.${NC}"
-    echo -e "${YELLOW}For accurate YAML parsing, install yq: brew install yq${NC}"
-    echo ""
-    # Fallback: default to environment name
-    IMAGE_TAG="$ENVIRONMENT"
-fi
-
-# Validate required registry configuration
-REGISTRY_PROVIDER=$(get_registry_provider)
-if [ -z "$REGISTRY_PROVIDER" ]; then
-    echo -e "${RED}Error: Registry provider not configured${NC}"
-    echo "Please set 'registry.provider' in $CONFIG_FILE"
-    echo "Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr"
-    exit 1
-fi
-
-# Build image URI using registry abstraction
-REGISTRY_URL=$(build_registry_url)
-if [ $? -ne 0 ] || [ -z "$REGISTRY_URL" ]; then
-    echo -e "${RED}Error: Could not build registry URL${NC}"
-    echo "Check your registry configuration in $CONFIG_FILE"
-    exit 1
-fi
-
-REPOSITORY=$(get_repository_name)
-if [ -z "$REPOSITORY" ]; then
-    echo -e "${RED}Error: Repository name not configured${NC}"
-    echo "Set either registry.${REGISTRY_PROVIDER}.repository or product.name in $CONFIG_FILE"
-    exit 1
-fi
-
-FULL_IMAGE_NAME=$(build_image_uri "$IMAGE_TAG")
-if [ $? -ne 0 ] || [ -z "$FULL_IMAGE_NAME" ]; then
-    echo -e "${RED}Error: Could not build image URI${NC}"
-    exit 1
-fi
-
-# Display build info
-echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
-echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "Registry:        ${YELLOW}${REGISTRY_PROVIDER}${NC}"
-echo -e "Registry URL:    ${YELLOW}${REGISTRY_URL}${NC}"
-echo -e "Repository:      ${YELLOW}${REPOSITORY}${NC}"
-echo -e "Image Tag:       ${YELLOW}${IMAGE_TAG}${NC}"
-[ -n "$GIT_SHA" ] && echo -e "Git SHA Tag:     ${YELLOW}${GIT_SHA}${NC}"
-echo -e "Full Image:      ${YELLOW}${FULL_IMAGE_NAME}${NC}"
-echo ""
-
-# Check prerequisites
-if ! docker info &> /dev/null; then
-    echo -e "${RED}Error: Docker is not running${NC}"
-    exit 1
-fi
-
-# Check if Dockerfile exists
-if [ ! -f "$PRODUCT_ROOT/$DOCKERFILE_PATH" ]; then
-    echo -e "${RED}Error: Dockerfile not found: $PRODUCT_ROOT/$DOCKERFILE_PATH${NC}"
-    echo "Please check docker.dockerfile in $CONFIG_FILE"
-    exit 1
-fi
-
-# Build Docker image
-echo -e "${GREEN}Building Docker image...${NC}"
-echo -e "Using Dockerfile: ${YELLOW}${DOCKERFILE_PATH}${NC}"
-echo -e "${YELLOW}This may take a few minutes...${NC}"
-echo ""
-
-cd "$PRODUCT_ROOT"
-
-docker build \
-    --build-arg BUILD_STANDALONE=true \
-    --platform linux/amd64 \
-    -f "$DOCKERFILE_PATH" \
-    -t "$FULL_IMAGE_NAME" \
-    .
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Docker build failed${NC}"
-    exit 1
-fi
-
-# Tag image with git SHA if provided
-if [ -n "$GIT_SHA" ]; then
-    echo ""
-    echo -e "${GREEN}Tagging image with git SHA...${NC}"
-    GIT_SHA_IMAGE=$(build_image_uri "$GIT_SHA")
-    docker tag "$FULL_IMAGE_NAME" "$GIT_SHA_IMAGE"
-    echo -e "Tagged as: ${YELLOW}${GIT_SHA_IMAGE}${NC}"
-fi
-
-# Success
-echo ""
-echo -e "${GREEN}==================================================${NC}"
-echo -e "${GREEN}Build completed successfully!${NC}"
-echo -e "${GREEN}==================================================${NC}"
-echo ""
-
-echo "Image(s) built:"
-echo -e "  ${YELLOW}${FULL_IMAGE_NAME}${NC}"
-if [ -n "$GIT_SHA" ]; then
-    echo -e "  ${YELLOW}${GIT_SHA_IMAGE}${NC}"
-fi
-
-IMAGE_SIZE=$(docker images "$FULL_IMAGE_NAME" --format "{{.Size}}")
-echo ""
-echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
-echo ""
-echo "Next steps:"
-echo "  Push to ${REGISTRY_PROVIDER}: ./tools/push.sh ${ENVIRONMENT}"
-if [ -n "$GIT_SHA" ]; then
-    echo "                                ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
-fi
-echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
-echo ""
-
-# Output git SHA for capture by parent script (e.g., axon)
-# Format: GIT_SHA_DETECTED=<sha>
-if [ -n "$GIT_SHA" ]; then
-    echo "GIT_SHA_DETECTED=${GIT_SHA}"
+    build_docker
 fi

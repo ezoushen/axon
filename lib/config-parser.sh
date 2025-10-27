@@ -385,3 +385,104 @@ expand_env_vars() {
 
     echo "$value" | envsubst
 }
+
+# ==============================================================================
+# Product Type Detection Functions
+# ==============================================================================
+
+# Get product deployment type (docker or static)
+get_product_type() {
+    local config_file=${1:-$CONFIG_FILE}
+    local type=$(parse_yaml_key "product.type" "docker" "$config_file")
+
+    # Normalize to lowercase
+    type=$(echo "$type" | tr '[:upper:]' '[:lower:]')
+
+    # Validate type
+    if [ "$type" != "docker" ] && [ "$type" != "static" ]; then
+        echo "docker"  # Default to docker for backward compatibility
+    else
+        echo "$type"
+    fi
+}
+
+# Check if product is a static site
+is_static_site() {
+    local config_file=${1:-$CONFIG_FILE}
+    [ "$(get_product_type "$config_file")" = "static" ]
+}
+
+# Check if product is a Docker deployment
+is_docker_site() {
+    local config_file=${1:-$CONFIG_FILE}
+    [ "$(get_product_type "$config_file")" = "docker" ]
+}
+
+# Require System Server configuration (for static sites)
+require_system_server() {
+    local config_file=${1:-$CONFIG_FILE}
+
+    local host=$(parse_yaml_key "servers.system.host" "" "$config_file")
+    local user=$(parse_yaml_key "servers.system.user" "" "$config_file")
+    local ssh_key=$(parse_yaml_key "servers.system.ssh_key" "" "$config_file")
+
+    if [ -z "$host" ] || [ -z "$user" ] || [ -z "$ssh_key" ]; then
+        echo -e "${RED}Error: System Server configuration required for static sites${NC}" >&2
+        echo "" >&2
+        echo "Required fields in $config_file:" >&2
+        echo "  servers.system.host" >&2
+        echo "  servers.system.user" >&2
+        echo "  servers.system.ssh_key" >&2
+        echo "" >&2
+        return 1
+    fi
+
+    # Expand tilde in SSH key path
+    ssh_key="${ssh_key/#\~/$HOME}"
+
+    # Check if SSH key exists
+    if [ ! -f "$ssh_key" ]; then
+        echo -e "${RED}Error: System Server SSH key not found: $ssh_key${NC}" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# Require Application Server configuration (for Docker sites)
+require_application_server() {
+    local config_file=${1:-$CONFIG_FILE}
+
+    local host=$(parse_yaml_key "servers.application.host" "" "$config_file")
+    local user=$(parse_yaml_key "servers.application.user" "" "$config_file")
+    local ssh_key=$(parse_yaml_key "servers.application.ssh_key" "" "$config_file")
+    local private_ip=$(parse_yaml_key "servers.application.private_ip" "" "$config_file")
+
+    if [ -z "$host" ] || [ -z "$user" ] || [ -z "$ssh_key" ] || [ -z "$private_ip" ]; then
+        echo -e "${RED}Error: Application Server configuration required for Docker deployments${NC}" >&2
+        echo "" >&2
+        echo "Required fields in $config_file:" >&2
+        echo "  servers.application.host" >&2
+        echo "  servers.application.user" >&2
+        echo "  servers.application.ssh_key" >&2
+        echo "  servers.application.private_ip" >&2
+        echo "" >&2
+        return 1
+    fi
+
+    # Expand tilde in SSH key path
+    ssh_key="${ssh_key/#\~/$HOME}"
+
+    # Check if SSH key exists
+    if [ ! -f "$ssh_key" ]; then
+        echo -e "${RED}Error: Application Server SSH key not found: $ssh_key${NC}" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# Alias for consistency with other scripts (get_configured_environments is used in some tools)
+get_configured_environments() {
+    get_available_environments "$@"
+}

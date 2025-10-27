@@ -13,11 +13,48 @@
 # ==============================================================================
 product:
   name: "my-product"              # [REQUIRED] Product name (used for container/image naming)
+  type: "docker"                  # [REQUIRED] Deployment type: "docker" or "static" (default: docker)
+                                  # - docker: Container-based deployment to Application Server
+                                  # - static: File-based deployment to System Server (HTML/JS/CSS)
   description: "My Application"   # [OPTIONAL] Product description (for documentation only)
+
+# ==============================================================================
+# Static Site Configuration
+# ==============================================================================
+# ONLY used when product.type: "static"
+# Static sites are deployed directly to System Server using symlink-based atomic deployments
+# No Docker containers or registry involved
+static:
+  # Build configuration (runs on local machine)
+  build_command: "npm run build"               # [REQUIRED] Command to build static site
+                                               # Examples: "npm run build", "hugo", "jekyll build", "gatsby build"
+  build_output_dir: "dist"                     # [REQUIRED] Directory containing built static files
+                                               # Examples: "dist", "build", "public", "_site"
+
+  # Deployment configuration (on System Server)
+  deploy_path: "/var/www/my-product"           # [REQUIRED] Base deployment path on System Server
+                                               # Creates: {deploy_path}/{environment}/releases/
+  deploy_user: "www-data"                      # [OPTIONAL] File owner for deployed files (default: www-data)
+                                               # Must match nginx user for proper permissions
+
+  # Release management
+  keep_releases: 5                             # [OPTIONAL] Number of previous releases to keep (default: 5)
+                                               # Older releases are automatically cleaned up after deployment
+
+  # Shared directories (persist across deployments)
+  shared_dirs:                                 # [OPTIONAL] Directories to persist across deployments
+    - "uploads"                                # Example: User-uploaded content
+    # - "user-content"                         # Example: Additional persistent data
+
+  # Validation (optional)
+  required_files:                              # [OPTIONAL] Files that must exist in build output
+    - "index.html"                             # Deployment fails if these files are missing
+    # - "assets/main.css"                      # Useful for catching incomplete builds
 
 # ==============================================================================
 # Container Registry Configuration
 # ==============================================================================
+# ONLY used when product.type: "docker"
 # Choose ONE registry provider and configure its section below.
 # Supported providers: docker_hub, aws_ecr, google_gcr, azure_acr
 
@@ -83,23 +120,28 @@ registry:
 # ==============================================================================
 servers:
   # System Server (nginx + SSL)
+  # - For docker type: Runs nginx as reverse proxy to Application Server
+  # - For static type: Runs nginx to serve static files AND stores deployed files
   system:
     host: "system.example.com"           # [REQUIRED] System Server IP or hostname
     user: "ubuntu"                       # [REQUIRED] SSH user
     ssh_key: "~/.ssh/system_server_key"  # [REQUIRED] SSH private key path (must exist locally)
 
   # Application Server (Docker containers)
+  # - For docker type: Runs Docker containers (REQUIRED)
+  # - For static type: Not used (can be omitted)
   application:
-    host: "app.example.com"              # [REQUIRED] Application Server public IP/hostname (for SSH)
-    private_ip: "10.0.1.10"              # [REQUIRED] Private IP within VPC (for nginx upstream)
-    user: "ubuntu"                       # [REQUIRED] SSH user
-    ssh_key: "~/.ssh/app_server_key"     # [REQUIRED] SSH private key path (must exist locally)
+    host: "app.example.com"              # [REQUIRED for docker] Application Server public IP/hostname (for SSH)
+    private_ip: "10.0.1.10"              # [REQUIRED for docker] Private IP within VPC (for nginx upstream)
+    user: "ubuntu"                       # [REQUIRED for docker] SSH user
+    ssh_key: "~/.ssh/app_server_key"     # [REQUIRED for docker] SSH private key path (must exist locally)
 
 # ==============================================================================
 # nginx Configuration
 # ==============================================================================
 # AXON automatically manages nginx configuration on System Server
 # Run 'axon setup system-server' to initialize the nginx configuration
+# Works for both docker (reverse proxy) and static (file serving) deployments
 nginx:
   # Domain configuration for each environment
   # If not specified, uses catch-all server name "_" (accepts any domain)
@@ -158,17 +200,19 @@ nginx:
 # ==============================================================================
 # You can define any number of environments (production, staging, development, qa, etc.)
 # Each environment can have its own configuration
+# For docker type: env_path points to .env file on Application Server
+# For static type: env_path not used (static sites have no runtime environment)
 environments:
   # Production Environment
   production:
-    env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED] Full path to .env file on Application Server
-    image_tag: "production"                                   # [OPTIONAL] Docker image tag (default: environment name)
+    env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED for docker] Full path to .env file on Application Server
+    image_tag: "production"                                   # [OPTIONAL for docker] Docker image tag (default: environment name)
 
   # Staging Environment
   staging:
     # Port is auto-assigned by Docker (no manual configuration needed)
-    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # [REQUIRED] Full path to .env file on Application Server
-    image_tag: "staging"                                   # [OPTIONAL] Docker image tag (default: environment name)
+    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # [REQUIRED for docker] Full path to .env file on Application Server
+    image_tag: "staging"                                   # [OPTIONAL for docker] Docker image tag (default: environment name)
 
   # Custom Environment Example (optional)
   # You can define any environment name you need
@@ -179,6 +223,8 @@ environments:
 # ==============================================================================
 # Health Check Configuration
 # ==============================================================================
+# ONLY used when product.type: "docker"
+# For static type: Health checks performed via HTTP GET to domain
 health_check:
   endpoint: "/api/health"                    # [OPTIONAL] Health check endpoint (default: /api/health)
 
@@ -203,6 +249,8 @@ deployment:
 # ==============================================================================
 # Docker Configuration
 # ==============================================================================
+# ONLY used when product.type: "docker"
+# For static type: This entire section is ignored
 docker:
   # Build configuration
   dockerfile: "Dockerfile"                  # [OPTIONAL] Path to Dockerfile (default: Dockerfile)
