@@ -25,10 +25,10 @@ CONVENIENCE COMMANDS:
   build-and-push <env>     Build and push to ECR (skip deploy)
 
 UTILITY COMMANDS:
-  status <env|--all>       Show container status (specific environment or all)
+  status <env|--all>       Show container status and Docker info (use --health for Docker health checks)
   logs <env|--all>         View container logs (specific environment or all)
   restart <env|--all>      Restart container (specific environment or all)
-  health <env|--all>       Check container health status (specific environment or all)
+  health <env|--all>       Test application health endpoints (HTTP requests to /api/health, etc.)
   delete <env|--all>       Remove environment-specific configs (Docker + nginx)
 
 CONFIGURATION COMMANDS:
@@ -196,12 +196,18 @@ EOF
             cat <<EOF
 Usage: axon status <environment|--all> [options]
 
-Show container status for a specific environment or all environments.
+Show comprehensive container status and Docker-level information.
+
+This command displays container state, resource usage, configuration, and
+Docker health check status (from Dockerfile HEALTHCHECK). It provides operational
+insights into running containers without making active requests to your application.
+
+Note: To actively test application health endpoints, use 'axon health' instead.
 
 Display modes (can be combined):
   --detailed, --inspect     Show comprehensive container information
   --configuration, --env    Show configuration (env vars, volumes, ports)
-  --health                  Show health check status and history
+  --health                  Show Docker health check status and history
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)
@@ -212,9 +218,8 @@ EXAMPLES:
   axon status --all                 # Summary of all environments
   axon status production            # Summary of specific environment
   axon status production --detailed # Detailed information
-  axon status staging --health      # Health check status
+  axon status staging --health      # Docker health check status
   axon status --all --configuration # Configuration for all environments
-  axon status production --detailed --health  # Combined views
 EOF
             ;;
         logs)
@@ -311,7 +316,14 @@ EOF
             cat <<EOF
 Usage: axon health <environment|--all> [options]
 
-Check container health status for a specific environment or all environments.
+Check application health by making HTTP requests to health endpoints.
+
+This command actively tests your application's health endpoint (e.g., /api/health)
+to verify the service is responding correctly. It checks business logic, database
+connections, and external service availability through your defined health checks.
+
+Note: This is different from Docker health checks. Use 'axon status --health' to
+view Docker-level health check configuration and history.
 
 OPTIONS:
   -c, --config FILE    Config file (default: axon.config.yml)

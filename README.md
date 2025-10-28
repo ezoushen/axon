@@ -1,35 +1,49 @@
 # AXON
 
-Zero-downtime deployment orchestration for Docker + nginx. Deploy instantly, switch seamlessly.
+Zero-downtime deployment orchestration for Docker containers and static sites. Deploy instantly, switch seamlessly.
 
-A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, and any major container registry.
+A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, static site hosting, and any major container registry.
 
 ## Features
 
-- ✅ **Zero-downtime deployments** - Docker auto-port assignment with rolling updates
+- ✅ **Zero-downtime deployments** - Atomic symlink switching for static sites, Docker auto-port assignment with rolling updates
+- ✅ **Dual deployment modes** - Docker containers and static site hosting
 - ✅ **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
 - ✅ **Multi-environment support** - Production, staging, and custom environments
 - ✅ **Product-agnostic** - Reusable across multiple projects
 - ✅ **Multi-registry support** - Docker Hub, AWS ECR, Google GCR, Azure ACR
-- ✅ **Docker native health checks** - Leverages Docker's built-in health status
-- ✅ **Git SHA tagging** - Automatic commit tagging with uncommitted change detection
-- ✅ **Automatic rollback** - On health check failures
-- ✅ **SSH-based coordination** - Updates System Server nginx automatically
+- ✅ **Git SHA tagging** - Automatic commit tagging with release name tracking for static sites
+- ✅ **Health checks** - Docker native health checks and application HTTP endpoint testing
+- ✅ **Automatic rollback** - On health check failures (Docker deployments)
+- ✅ **SSH-based coordination** - Updates nginx configurations automatically
 - ✅ **Flexible workflows** - Separate or combined build/push/deploy steps
 
 ## Architecture
 
+AXON supports two deployment modes with zero-downtime guarantees:
+
+### Docker Container Deployments
 ```
 Internet → System Server (nginx + SSL)  →  Application Server (Docker)
            ├─ Port 443 (HTTPS)              ├─ Timestamp-based containers
            └─ Proxies to apps               └─ Auto-assigned ports (32768-60999)
 ```
+- **Auto-assigned Ports**: Docker assigns random ephemeral ports
+- **Timestamp-based Naming**: `{product}-{env}-{timestamp}`
+- **Rolling Updates**: New container → health check → nginx switch → old container stops
 
-**Key Concepts:**
-- **Auto-assigned Ports**: Docker assigns random ephemeral ports (no manual port management)
-- **Timestamp-based Naming**: Containers named `{product}-{env}-{timestamp}` for uniqueness
-- **Rolling Updates**: New container starts → health check passes → nginx switches → old container stops
-- **Config-driven**: Single `axon.config.yml` defines all Docker runtime settings
+### Static Site Deployments
+```
+Internet → System Server (nginx + SSL + static files)
+           ├─ Port 443 (HTTPS)
+           ├─ Serves from /path/{env}/current → /path/{env}/releases/{timestamp}-{sha}/
+           └─ Atomic symlink switching
+```
+- **Release Management**: Timestamp + git SHA naming (e.g., `20241028135535-abc1234`)
+- **Atomic Switching**: Symlink updated atomically for zero-downtime
+- **Release History**: Keeps last N releases for quick rollback
+
+**Config-driven**: Single `axon.config.yml` defines all deployment settings for both modes
 
 **Note:** The System Server and Application Server can be the same physical instance. In this configuration, nginx and Docker run on the same machine, simplifying infrastructure management. The deployment scripts still run from your local machine and SSH to the combined server - you'll just configure the same host for both server settings in `axon.config.yml`. This setup is ideal for smaller deployments while maintaining the same zero-downtime deployment process.
 
@@ -75,32 +89,15 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions, including c
 
 ### 1. Install Prerequisites
 
-**Check what's missing:**
 ```bash
+# Check what's missing
 axon install local
-```
 
-**Auto-install missing tools:**
-```bash
+# Auto-install (recommended)
 axon install local --auto-install
 ```
 
-**Manual installation:**
-```bash
-# macOS - core tools
-brew install yq gettext docker node
-brew link --force gettext  # For envsubst
-npm install -g decomposerize
-
-# Registry-specific CLI (install based on your registry choice)
-brew install awscli                      # For AWS ECR
-brew install --cask google-cloud-sdk     # For Google GCR
-brew install azure-cli                   # For Azure ACR
-# Docker Hub: no additional CLI needed
-
-# Linux
-# See setup-local-machine.sh for detailed instructions
-```
+For manual installation or troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ### 2. Add as Git Submodule
 
@@ -112,67 +109,42 @@ git submodule update --init --recursive
 
 ### 3. Create Product Configuration
 
-**Quick start (copy example):**
 ```bash
-axon config init
-# Then edit axon.config.yml with your product settings
-```
-
-**Interactive mode (recommended for first-time setup):**
-```bash
+# Interactive setup (recommended)
 axon config init --interactive
-# Follow the prompts to configure step-by-step
-```
 
-**Custom filename:**
-```bash
-axon config init --file production.yml
-axon config init --interactive --file staging.yml
-```
+# Or copy example and edit manually
+axon config init
 
-### 4. Validate Configuration
-
-```bash
+# Validate when done
 axon config validate
-axon config validate --config my-config.yml
-axon config validate --strict  # Treat warnings as errors
 ```
 
-### 5. Set Up Environment Files
+### 4. Set Up Environment Files (Docker deployments)
 
-Create environment-specific `.env` files on your Application Server:
+For Docker deployments, create `.env` files on Application Server at the path configured in `axon.config.yml`:
 
 ```bash
-# SSH to Application Server
-ssh ubuntu@your-app-server
-
-# Create .env files in deploy path
-cat > /home/ubuntu/apps/your-product/.env.production <<EOF
+# SSH to Application Server and create .env files
+ssh user@app-server
+cat > /path/to/deploy/.env.production <<EOF
 DATABASE_URL=your-production-db-url
 API_KEY=your-production-api-key
 EOF
-
-cat > /home/ubuntu/apps/your-product/.env.staging <<EOF
-DATABASE_URL=your-staging-db-url
-API_KEY=your-staging-api-key
-EOF
 ```
 
-### 6. Build, Push, and Deploy
+For static sites, environment variables are typically injected during build time.
+
+### 5. Build, Push, and Deploy
 
 ```bash
 # Full pipeline (recommended)
 axon run production
-axon run staging --config my-config.yml
 
-# Individual steps (if needed)
+# Or individual steps
 axon build production
 axon push production
 axon deploy production
-
-# Convenience commands
-axon build-and-push staging         # Build + Push (CI/CD)
-axon config validate                 # Validate config first
 ```
 
 ## Directory Structure
@@ -223,299 +195,107 @@ axon/
 
 ## Configuration
 
-All deployment settings are in `axon.config.yml` (product root). The system auto-generates docker commands from config - no docker-compose files needed.
+All settings in `axon.config.yml` - no docker-compose files needed. Config defines:
+- Product metadata and deployment mode (docker/static)
+- Server connection details (SSH keys, hosts)
+- Container/build settings (ports, health checks, registry)
+- Per-environment overrides (domains, deploy paths)
 
-**Key configurables:**
-- Dockerfile path (supports custom locations like `docker/Dockerfile.prod`)
-- Container ports, networking, health checks
-- Environment variables, logging, restart policies
-- Container registry settings (Docker Hub, AWS ECR, GCP, Azure), SSH keys, server hosts
-
-See `deploy/config.example.yml` for all available options with `[REQUIRED]` and `[OPTIONAL]` markings.
+See `deploy/config.example.yml` for complete reference with `[REQUIRED]` and `[OPTIONAL]` markings, or use `axon config init --interactive` for guided setup.
 
 ## Context Management
 
-AXON provides kubectl-like context management for seamless project switching. Instead of navigating to each project directory, save project configurations as contexts and access them globally.
+AXON provides kubectl-like context management for working with multiple projects. Save project configurations as contexts and access them from anywhere without navigating directories.
 
-### Quick Start
+**Why contexts?** Manage multiple products/environments without cd-ing between directories or specifying config files repeatedly.
 
-```bash
-# Add current project as a context
-cd ~/projects/my-app
-axon context add my-app
-
-# Switch to a context (sets it as active)
-axon context use my-app
-
-# Deploy from anywhere without cd
-axon deploy production
-
-# Or use one-off override without changing active context
-axon --context my-app deploy staging
-```
-
-### Context Commands
+**Key concepts:**
+- One context per project (stores config path and project root)
+- Switch active context globally or override per-command
+- Share contexts with team via export/import
 
 ```bash
-# Manage contexts
-axon context add <name> [config]       # Add new context
-axon context use <name>                # Switch to context
-axon context list                      # List all contexts
-axon context current                   # Show current context
-axon context show <name>               # Show detailed info
-axon context validate <name>           # Validate configuration
-axon context remove <name>             # Remove context
+# Basic workflow
+axon context add my-app                 # Save current project
+axon context use my-app                 # Set as active
+axon deploy production                  # Works from anywhere
 
-# Import/export (for team sharing or backup)
-axon context export <name>             # Export to YAML file
-axon context import <file> --name <name>  # Import from file
+# Override without switching
+axon --context other-app status         # One-off command
+
+# Priority: -c flag > --context > local axon.config.yml > active context
 ```
 
-### Context Resolution
-
-AXON resolves which configuration to use in this order:
-
-1. **Explicit `-c` flag** (highest priority)
-   ```bash
-   axon -c custom.yml deploy production
-   ```
-
-2. **One-off `--context` override**
-   ```bash
-   axon --context backend deploy staging
-   ```
-
-3. **Local `axon.config.yml`** in current directory
-   ```bash
-   cd ~/projects/my-app && axon deploy production
-   ```
-
-4. **Active context** (via `axon context use`)
-   ```bash
-   axon context use my-app
-   axon deploy production  # Uses my-app context
-   ```
-
-5. **Error** if none found
-
-### Use Cases
-
-**Multiple Projects:**
-```bash
-# Set up contexts once
-axon context add frontend ~/projects/frontend/axon.config.yml
-axon context add backend ~/projects/backend/axon.config.yml
-axon context add mobile ~/projects/mobile/axon.config.yml
-
-# Switch between projects instantly
-axon context use frontend
-axon deploy production
-
-axon context use backend
-axon deploy staging
-```
-
-**Team Sharing:**
-```bash
-# Developer A exports context
-axon context export my-app -o team-context.yml
-
-# Developer B imports on their machine
-axon context import team-context.yml --name my-app --root ~/dev/my-app
-```
-
-**Temporary Override:**
-```bash
-# Active context is frontend
-axon context use frontend
-
-# Quickly check backend status without switching
-axon --context backend status
-
-# Active context remains frontend
-axon context current  # Shows: frontend
-```
+Run `axon context --help` for complete command reference.
 
 ## Usage
 
-AXON uses a subcommand interface: `axon <command> [environment] [options]`
+AXON follows a simple pattern: `axon <command> [environment] [options]`
 
-### Core Commands
+**Command categories:**
+- **Deployment**: `build`, `push`, `deploy`, `run` (full pipeline), `build-and-push` (CI/CD)
+- **Operations**: `status`, `health`, `logs`, `restart`, `delete`
+- **Configuration**: `config init/validate`, `env edit`
+- **Context**: `context add/use/list` (multi-project management)
+- **Setup**: `install`, `uninstall` (server prerequisites)
 
+**Key patterns:**
 ```bash
-# Full deployment pipeline (build → push → deploy)
-axon run production                     # Auto-detect git SHA
-axon run staging --skip-git             # Skip git SHA tagging
-axon run production --sha abc123        # Use specific git SHA
-axon run staging --config custom.yml    # Custom config
+# Most commands work on single environment or --all
+axon status production          # Single environment
+axon status --all               # All environments
 
-# Individual steps
-axon build production                   # Build image only
-axon push staging                       # Push to registry only
-axon deploy production                  # Deploy only (pulls from registry)
+# Git SHA tracking (automatic or manual)
+axon run production             # Auto-detect from git
+axon run staging --skip-git     # Skip git tagging
+
+# Override config resolution
+axon -c custom.yml deploy       # Explicit config file
+axon --context app deploy       # Use saved context
 ```
 
-### Convenience Commands
-
+**Getting help:**
 ```bash
-# Build and push (skip deploy) - great for CI/CD
-axon build-and-push production
+axon --help                     # List all commands
+axon <command> --help           # Command-specific options
 ```
 
-### Monitoring & Utilities
-
-```bash
-# Status and health
-axon status --all                       # All environments (requires --all)
-axon status production                  # Specific environment
-axon health --all                       # Check all health (requires --all)
-axon health staging                     # Check specific health
-
-# Logs
-axon logs production                    # View logs
-axon logs --all                         # View logs from all environments
-axon logs staging --follow              # Follow logs in real-time
-axon logs production --lines 100        # Last 100 lines
-axon logs --all --lines 50              # Last 50 lines from each environment
-
-# Operations
-axon restart production                 # Restart container
-axon restart --all                      # Restart all environments (with confirmation)
-axon restart --all --force              # Restart all without confirmation
-axon delete staging                     # Delete environment (Docker + nginx)
-axon delete production --force          # Delete without confirmation
-axon delete --all                       # Delete all environments
-axon delete --all --force               # Delete all without confirmations
-
-# Configuration
-axon config init                        # Generate axon.config.yml
-axon config init --interactive          # Interactive config generation
-axon config init --file custom.yml      # Custom filename
-```
-
-### Installation & Uninstallation Commands
-
-```bash
-# Install on servers (check/install tools and setup)
-axon install                            # Install on all servers
-axon install local                      # Check what's missing on local
-axon install local --auto-install       # Auto-install missing tools
-axon install app-server                 # Install on Application Server
-axon install system-server              # Install on System Server (nginx)
-axon install app-server --config custom.yml
-
-# Uninstall from servers (cleanup)
-axon uninstall                          # Uninstall from all servers
-axon uninstall local                    # Remove from local machine
-axon uninstall app-server               # Remove from Application Server
-axon uninstall system-server            # Remove from System Server
-axon uninstall local --force            # Skip confirmations
-```
-
-### Global Options
-
-```bash
--c, --config FILE      # Config file (default: axon.config.yml)
---context NAME         # Use context for this command (one-off override)
--v, --verbose          # Verbose output
---dry-run              # Show what would be done
--h, --help             # Show help
---version              # Show AXON version
-```
-
-### Command-Specific Help
-
-```bash
-axon --help                    # Show all commands
-axon build --help              # Show build options
-axon deploy --help             # Show deploy options
-```
-
-### Examples
-
-```bash
-# Production deployment
-axon run production
-
-# Staging with custom config and no git SHA
-axon run staging --config custom.yml --skip-git
-
-# Build production image without cache
-axon build production --no-cache
-
-# Force deploy (cleanup existing containers)
-axon deploy staging --force
-
-# View verbose output during build
-axon build production --verbose
-
-# Check what would happen (dry-run)
-axon run staging --dry-run
-
-# Use context for one-off command
-axon --context backend status
-axon --context frontend deploy production
-```
+See [Quick Start](#quick-start) for complete workflow. All commands support `--help` for detailed usage.
 
 ## Requirements
 
-### System Server
-- nginx installed
-- SSH access
-- sudo permissions for nginx reload
-- `/etc/nginx/upstreams/` directory
+**System Server:** nginx, SSH access, sudo for nginx reload
+**Application Server** (Docker mode): Docker, registry CLI (aws/gcloud/az), SSH access
+**Local Machine:** yq, envsubst, Docker, SSH client, Node.js (for decomposerize)
 
-### Application Server
-- Docker and Docker Compose installed
-- Registry-specific CLI (AWS CLI, gcloud, az CLI, or none for Docker Hub)
-- SSH access to System Server
-- Network access to System Server
-
-### Local Machine
-- **yq** (YAML processor)
-- **envsubst** (environment variable substitution - from gettext package)
-- **Docker** (container runtime)
-- **Registry CLI** (AWS CLI / gcloud / Azure CLI - depending on provider, optional for Docker Hub)
-- **Node.js and npm** (for decomposerize)
-- **decomposerize** (docker-compose to docker run converter)
-- **SSH client** (for server access)
-
-**Quick install:** Run `axon install local --auto-install` to install all tools automatically.
+Use `axon install local` to check missing tools, or `axon install local --auto-install` to install automatically.
 
 ## How It Works
 
-1. Pull image from container registry → Start new container (auto-assigned port) → Wait for health check
+### Docker Container Deployments
+1. Pull image from registry → Start new container (auto-assigned port) → Wait for health check
 2. Update nginx upstream → Test config → Reload nginx (zero downtime)
 3. Gracefully shutdown old container
 
+### Static Site Deployments
+1. Build static site → Create archive with git SHA → Upload to System Server
+2. Extract to new release directory (`{timestamp}-{sha}`)
+3. Update `current` symlink atomically → Reload nginx → Cleanup old releases
+
 **Key Features:**
-- Docker auto-assigns ports (32768-60999)
-- Timestamp-based container names: `{product}-{env}-{timestamp}`
-- Docker native health checks (no manual curl)
-- Git SHA auto-tagging with uncommitted change detection
+- Git SHA tracking (Docker tags and static release names)
+- Health checks (Docker native + HTTP endpoint testing)
+- Automatic rollback on deployment failures
+- SSH multiplexing for optimized performance
 
 ## Troubleshooting
 
-### Common Issues
+**Missing tools:** Run `axon install local` to check prerequisites
+**Uncommitted changes:** Commit first or use `--skip-git` flag
+**Health check fails:** Check `axon logs <env>` and verify health endpoint configuration
+**Container not found:** Verify config environment name matches deployment
 
-**1. "yq is not installed" error**
-- Install `yq` for YAML parsing: `brew install yq` (macOS)
-- Linux: See https://github.com/mikefarah/yq#install
-
-**2. "Container not found on Application Server"**
-- Check if container exists: `ssh app-server "docker ps -a | grep {product}"`
-- Verify env_path in config points to the correct .env file location
-
-**3. "Uncommitted changes" error**
-```bash
-git add . && git commit -m "Your changes"      # Commit first
-axon build staging --skip-git          # Or skip git SHA
-```
-
-**4. Health check fails**
-- Check logs: `axon logs production`
-- Verify health endpoint is exposed at configured path
-- Test locally: `curl http://localhost:3000/api/health`
+Use `axon <command> --help` for command-specific troubleshooting. Enable verbose mode with `--verbose` or `-v` for detailed execution logs.
 
 ## Contributing
 
