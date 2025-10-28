@@ -307,13 +307,16 @@ build_static() {
         exit 1
     fi
 
-    # Generate release name
-    RELEASE_NAME=$(generate_release_name)
+    # Generate release name (with git SHA if available)
+    RELEASE_NAME=$(generate_release_name "$GIT_SHA")
     BUILD_ARCHIVE=$(get_build_archive_path "$RELEASE_NAME")
 
     # Display build info
     echo -e "Product:         ${YELLOW}${PRODUCT_NAME}${NC}"
     echo -e "Environment:     ${YELLOW}${ENVIRONMENT}${NC}"
+    if [ -n "$GIT_SHA" ]; then
+        echo -e "Git SHA:         ${YELLOW}${GIT_SHA}${NC}"
+    fi
     echo -e "Build Command:   ${YELLOW}${BUILD_COMMAND}${NC}"
     echo -e "Output Dir:      ${YELLOW}${BUILD_OUTPUT_DIR}${NC}"
     echo -e "Release Name:    ${YELLOW}${RELEASE_NAME}${NC}"

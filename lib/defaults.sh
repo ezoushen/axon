@@ -260,10 +260,19 @@ readonly STATIC_DEFAULT_KEEP_RELEASES="5"
 readonly STATIC_DEFAULT_DEPLOY_USER="www-data"
 readonly STATIC_DEFAULT_BUILD_DIR="dist"
 
-# Generate timestamp-based release name
-# Returns: YYYYMMDDHHMMSS format (e.g., 20250127153045)
+# Generate timestamp-based release name with optional git SHA
+# Args: $1 - Optional git short SHA
+# Returns: YYYYMMDDHHMMSS-{sha} or YYYYMMDDHHMMSS (e.g., 20250127153045-abc1234 or 20250127153045)
 generate_release_name() {
-    date +"%Y%m%d%H%M%S"
+    local git_sha="$1"
+    local timestamp=$(date +"%Y%m%d%H%M%S")
+
+    # Include short git SHA if provided
+    if [ -n "$git_sha" ]; then
+        echo "${timestamp}-${git_sha}"
+    else
+        echo "${timestamp}"
+    fi
 }
 
 # NOTE: Static site configuration getters have been moved to lib/config-parser.sh

@@ -36,6 +36,9 @@ source "$SCRIPT_DIR/lib/command-parser.sh"
 # Source context manager library
 source "$SCRIPT_DIR/lib/context-manager.sh"
 
+# Source config parser library (for get_product_type)
+source "$SCRIPT_DIR/lib/config-parser.sh"
+
 # Global variables
 COMMAND=""
 ENVIRONMENT=""
@@ -185,16 +188,28 @@ cmd_run() {
     verbose "Executing full pipeline for environment: $ENVIRONMENT"
     validate_config_file
 
+    # Detect product type for appropriate step labels
+    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        BUILD_LABEL="Build Static Site"
+        PUSH_LABEL="Push to System Server"
+        PIPELINE_DESC="Build → Push to System Server → Deploy"
+    else
+        BUILD_LABEL="Build Docker Image"
+        PUSH_LABEL="Push to Registry"
+        PIPELINE_DESC="Build → Push to Registry → Deploy"
+    fi
+
     echo -e "${CYAN}===========================================================${NC}"
     echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
-    echo -e "${CYAN}Build → Push to Registry → Deploy${NC}"
+    echo -e "${CYAN}${PIPELINE_DESC}${NC}"
     echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
     echo -e "${CYAN}===========================================================${NC}"
     echo ""
 
     # Step 1: Build
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 1/3: Build Docker Image${NC}"
+    echo -e "${BLUE}Step 1/3: ${BUILD_LABEL}${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -232,7 +247,7 @@ cmd_run() {
 
     # Step 2: Push
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 2/3: Push to Registry${NC}"
+    echo -e "${BLUE}Step 2/3: ${PUSH_LABEL}${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -299,16 +314,28 @@ cmd_build_and_push() {
     verbose "Executing build-and-push for environment: $ENVIRONMENT"
     validate_config_file
 
+    # Detect product type for appropriate step labels
+    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        BUILD_LABEL="Build Static Site"
+        PUSH_LABEL="Push to System Server"
+        PIPELINE_DESC="Build → Push to System Server"
+    else
+        BUILD_LABEL="Build Docker Image"
+        PUSH_LABEL="Push to Registry"
+        PIPELINE_DESC="Build → Push to Registry"
+    fi
+
     echo -e "${CYAN}===========================================================${NC}"
     echo -e "${CYAN}AXON - Build and Push: ${ENVIRONMENT}${NC}"
-    echo -e "${CYAN}Build → Push to Registry${NC}"
+    echo -e "${CYAN}${PIPELINE_DESC}${NC}"
     echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
     echo -e "${CYAN}===========================================================${NC}"
     echo ""
 
     # Build
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 1/2: Build Docker Image${NC}"
+    echo -e "${BLUE}Step 1/2: ${BUILD_LABEL}${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -320,7 +347,7 @@ cmd_build_and_push() {
 
     # Push
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 2/2: Push to Registry${NC}"
+    echo -e "${BLUE}Step 2/2: ${PUSH_LABEL}${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
