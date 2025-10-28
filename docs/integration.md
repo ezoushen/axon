@@ -287,7 +287,7 @@ your-product/
 │   ├── README.md                  # Module documentation
 │   ├── axon                       # Main CLI entry point
 │   ├── config.example.yml         # Example configuration
-│   ├── tools/
+│   ├── cmd/
 │   │   ├── build.sh              # Build Docker image
 │   │   ├── push.sh               # Push to registry
 │   │   ├── deploy.sh             # Deploy (zero-downtime)

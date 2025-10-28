@@ -145,7 +145,7 @@ cmd_build() {
     fi
 
     verbose "Calling build.sh with args: ${build_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/build.sh\" ${build_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/build.sh\" ${build_args[*]}"
 }
 
 # Push command
@@ -160,7 +160,7 @@ cmd_push() {
     fi
 
     verbose "Calling push.sh with args: ${push_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/push.sh\" ${push_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/push.sh\" ${push_args[*]}"
 }
 
 # Deploy command
@@ -177,7 +177,7 @@ cmd_deploy() {
     deploy_args+=("$ENVIRONMENT")
 
     verbose "Calling deploy.sh with args: ${deploy_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/deploy.sh\" ${deploy_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/deploy.sh\" ${deploy_args[*]}"
 }
 
 # Run command (full pipeline)
@@ -206,7 +206,7 @@ cmd_run() {
     fi
 
     # Capture build output to extract auto-detected git SHA
-    BUILD_OUTPUT=$("$SCRIPT_DIR/tools/build.sh" "${build_args[@]}" 2>&1)
+    BUILD_OUTPUT=$("$SCRIPT_DIR/cmd/build.sh" "${build_args[@]}" 2>&1)
     BUILD_EXIT_CODE=$?
 
     # Display build output
@@ -241,7 +241,7 @@ cmd_run() {
         push_args+=("$GIT_SHA")
     fi
 
-    "$SCRIPT_DIR/tools/push.sh" "${push_args[@]}"
+    "$SCRIPT_DIR/cmd/push.sh" "${push_args[@]}"
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Push failed!${NC}"
@@ -264,7 +264,7 @@ cmd_run() {
     fi
     deploy_args+=("$ENVIRONMENT")
 
-    "$SCRIPT_DIR/tools/deploy.sh" "${deploy_args[@]}"
+    "$SCRIPT_DIR/cmd/deploy.sh" "${deploy_args[@]}"
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}✗ Deployment failed!${NC}"
@@ -567,7 +567,7 @@ cmd_status() {
     fi
 
     verbose "Calling status.sh with args: ${status_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/status.sh\" ${status_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/status.sh\" ${status_args[*]}"
 }
 
 # Logs command
@@ -600,7 +600,7 @@ cmd_logs() {
     fi
 
     verbose "Calling logs.sh with args: ${logs_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/logs.sh\" ${logs_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/logs.sh\" ${logs_args[*]}"
 }
 
 # Restart command
@@ -624,7 +624,7 @@ cmd_restart() {
     fi
 
     verbose "Calling restart.sh with args: ${restart_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/restart.sh\" ${restart_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/restart.sh\" ${restart_args[*]}"
 }
 
 # Delete command
@@ -647,7 +647,7 @@ cmd_delete() {
     fi
 
     verbose "Calling delete.sh with args: ${delete_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/delete.sh\" ${delete_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/delete.sh\" ${delete_args[*]}"
 }
 
 # Health command
@@ -668,7 +668,7 @@ cmd_health() {
     fi
 
     verbose "Calling health-check.sh with args: ${health_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/health-check.sh\" ${health_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/health-check.sh\" ${health_args[*]}"
 }
 
 #==============================================================================
@@ -741,21 +741,21 @@ fi
 
 # Special handling for context command - pass all args directly to handler
 if [ "$COMMAND" = "context" ]; then
-    source "$SCRIPT_DIR/tools/context.sh"
+    source "$SCRIPT_DIR/cmd/context.sh"
     handle_context_command "$@"
     exit $?
 fi
 
 # Special handling for config command - pass all args directly to handler
 if [ "$COMMAND" = "config" ]; then
-    source "$SCRIPT_DIR/tools/config.sh"
+    source "$SCRIPT_DIR/cmd/config.sh"
     handle_config_command "$@"
     exit $?
 fi
 
 # Special handling for env command - pass all args directly to handler
 if [ "$COMMAND" = "env" ]; then
-    source "$SCRIPT_DIR/tools/env.sh"
+    source "$SCRIPT_DIR/cmd/env.sh"
     handle_env_command "$@"
     exit $?
 fi

@@ -188,7 +188,7 @@ axon/
 │       └── release.yml          # Automated release workflow
 ├── setup/
 │   └── setup-local-machine.sh  # Install required tools on local machine
-├── tools/
+├── cmd/
 │   ├── build.sh                # Build Docker image locally
 │   ├── push.sh                 # Push Docker image to ECR
 │   ├── deploy.sh               # Deploy with zero-downtime
