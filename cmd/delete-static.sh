@@ -1,6 +1,6 @@
 #!/bin/bash
-# AXON - Delete Environment Configuration Script
-# Removes environment-specific Docker containers and nginx configs
+# AXON - Delete Static Site Environment Script
+# Removes environment-specific static site deployments and nginx configs
 # Runs from LOCAL MACHINE
 
 set -e
@@ -20,7 +20,7 @@ PRODUCT_ROOT="$(cd "$AXON_DIR/.." && pwd)"
 
 # Source libraries
 source "$AXON_DIR/lib/defaults.sh"
-source "$AXON_DIR/lib/ssh-batch.sh"
+source "$AXON_DIR/lib/ssh-connection.sh"
 
 # Initialize SSH connection multiplexing for performance
 if type ssh_init_multiplexing >/dev/null 2>&1; then
@@ -32,35 +32,6 @@ CONFIG_FILE="axon.config.yml"
 ENVIRONMENT=""
 FORCE=false
 DELETE_ALL=false
-
-# Early product type detection - scan for -c/--config before full parsing
-next_is_config=""
-for arg in "$@"; do
-    if [ "$next_is_config" = "1" ]; then
-        CONFIG_FILE="$arg"
-        next_is_config=""
-        break
-    fi
-    if [ "$arg" = "-c" ] || [ "$arg" = "--config" ]; then
-        next_is_config="1"
-    fi
-done
-
-# Make CONFIG_FILE absolute if relative
-if [[ "$CONFIG_FILE" != /* ]]; then
-    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
-fi
-
-# Check product type and delegate to static handler if needed
-if [ -f "$CONFIG_FILE" ]; then
-    source "$AXON_DIR/lib/config-parser.sh"
-    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE" 2>/dev/null || echo "docker")
-
-    if [ "$PRODUCT_TYPE" = "static" ]; then
-        # Delegate to static site deletion handler with intact $@
-        exec "$AXON_DIR/cmd/delete-static.sh" "$@"
-    fi
-fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -133,16 +104,14 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Source config parser (if not already loaded)
-if ! type get_product_type >/dev/null 2>&1; then
-    source "$AXON_DIR/lib/config-parser.sh"
-fi
+# Source config parser
+source "$AXON_DIR/lib/config-parser.sh"
 
 # Handle --all flag
 if [ "$DELETE_ALL" = true ]; then
     echo -e "${CYAN}===========================================================${NC}"
-    echo -e "${CYAN}AXON - Delete All Environments${NC}"
-    echo -e "${CYAN}Removing Docker containers and nginx configurations${NC}"
+    echo -e "${CYAN}AXON - Delete All Static Site Environments${NC}"
+    echo -e "${CYAN}Removing deployment files and nginx configurations${NC}"
     echo -e "${CYAN}===========================================================${NC}"
     echo ""
 
@@ -214,25 +183,21 @@ fi
 
 # Single environment deletion
 echo -e "${CYAN}===========================================================${NC}"
-echo -e "${CYAN}AXON - Delete Environment: ${ENVIRONMENT}${NC}"
-echo -e "${CYAN}Removing Docker containers and nginx configurations${NC}"
+echo -e "${CYAN}AXON - Delete Static Site Environment: ${ENVIRONMENT}${NC}"
+echo -e "${CYAN}Removing deployment files and nginx configurations${NC}"
 echo -e "${CYAN}===========================================================${NC}"
 echo ""
 
 # Load configuration
 PRODUCT_NAME=$(get_config_with_default ".product.name" "" "$CONFIG_FILE")
-APP_SERVER=$(get_config_with_default ".servers.application.host" "" "$CONFIG_FILE")
-APP_USER=$(get_config_with_default ".servers.application.user" "" "$CONFIG_FILE")
-APP_SSH_KEY=$(get_config_with_default ".servers.application.ssh_key" "" "$CONFIG_FILE")
-SYSTEM_SERVER=$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")
-SYSTEM_USER=$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")
-SYSTEM_SSH_KEY=$(get_config_with_default ".servers.system.ssh_key" "" "$CONFIG_FILE")
+DEPLOY_PATH=$(get_deploy_path "$ENVIRONMENT" "$CONFIG_FILE")
+SYSTEM_SERVER_HOST=$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")
+SYSTEM_SERVER_USER=$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")
+SYSTEM_SERVER_SSH_KEY=$(get_config_with_default ".servers.system.ssh_key" "" "$CONFIG_FILE")
 NGINX_AXON_DIR=$(get_nginx_axon_dir "$CONFIG_FILE")
-SHUTDOWN_TIMEOUT=$(get_config_with_default ".docker.shutdown_timeout" "30" "$CONFIG_FILE")
 
-# Expand tilde in SSH key paths
-APP_SSH_KEY="${APP_SSH_KEY/#\~/$HOME}"
-SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"
+# Expand tilde in SSH key path
+SYSTEM_SERVER_SSH_KEY="${SYSTEM_SERVER_SSH_KEY/#\~/$HOME}"
 
 # Determine if we need sudo
 USE_SUDO=$(get_config_with_default ".servers.system.use_sudo" "true" "$CONFIG_FILE")
@@ -243,45 +208,41 @@ else
 fi
 
 # Get filenames for this environment
-NORMALIZED_ENV=$(normalize_env_name "$ENVIRONMENT")
 SITE_FILENAME=$(get_site_filename "$PRODUCT_NAME" "$ENVIRONMENT")
-UPSTREAM_FILENAME=$(get_upstream_filename "$PRODUCT_NAME" "$ENVIRONMENT")
 NGINX_SITE_FILE="${NGINX_AXON_DIR}/sites/${SITE_FILENAME}"
-NGINX_UPSTREAM_FILE="${NGINX_AXON_DIR}/upstreams/${UPSTREAM_FILENAME}"
-CONTAINER_PATTERN="${PRODUCT_NAME}-${NORMALIZED_ENV}"
+
+# Deployment paths
+ENV_DEPLOY_PATH="${DEPLOY_PATH}/${ENVIRONMENT}"
+RELEASES_DIR="${ENV_DEPLOY_PATH}/releases"
+SHARED_DIR="${ENV_DEPLOY_PATH}/shared"
+CURRENT_SYMLINK="${ENV_DEPLOY_PATH}/current"
 
 echo -e "${YELLOW}Configuration:${NC}"
 echo -e "  Product: ${CYAN}${PRODUCT_NAME}${NC}"
 echo -e "  Environment: ${CYAN}${ENVIRONMENT}${NC}"
-echo -e "  Container Pattern: ${CYAN}${CONTAINER_PATTERN}-*${NC}"
+echo -e "  Deploy Path: ${CYAN}${ENV_DEPLOY_PATH}${NC}"
 echo -e "  Site Config: ${CYAN}${NGINX_SITE_FILE}${NC}"
-echo -e "  Upstream Config: ${CYAN}${NGINX_UPSTREAM_FILE}${NC}"
-echo -e "  Shutdown Timeout: ${CYAN}${SHUTDOWN_TIMEOUT}s${NC}"
 echo ""
 
-# Warning
 # Step 0: Check if environment exists
 echo -e "${BLUE}Checking if environment '${ENVIRONMENT}' exists...${NC}"
 echo ""
 
-# Check for containers on Application Server
-CONTAINERS_EXIST=$(ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" \
-    "docker ps -a --filter 'name=${CONTAINER_PATTERN}-' --format '{{.Names}}' 2>/dev/null || true")
+# Check for deployment directory on System Server
+DEPLOY_EXISTS=$(axon_ssh "system" -i "$SYSTEM_SERVER_SSH_KEY" "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}" \
+    "[ -d '${ENV_DEPLOY_PATH}' ] && echo 'yes' || echo 'no'")
 
-# Check for nginx configs on System Server
-SITE_EXISTS=$(ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" \
+# Check for nginx config on System Server
+SITE_EXISTS=$(axon_ssh "system" -i "$SYSTEM_SERVER_SSH_KEY" "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}" \
     "[ -f '${NGINX_SITE_FILE}' ] && echo 'yes' || echo 'no'")
-UPSTREAM_EXISTS=$(ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" \
-    "[ -f '${NGINX_UPSTREAM_FILE}' ] && echo 'yes' || echo 'no'")
 
 # Check if anything exists
-if [ -z "$CONTAINERS_EXIST" ] && [ "$SITE_EXISTS" = "no" ] && [ "$UPSTREAM_EXISTS" = "no" ]; then
+if [ "$DEPLOY_EXISTS" = "no" ] && [ "$SITE_EXISTS" = "no" ]; then
     echo -e "${YELLOW}Warning: Environment '${ENVIRONMENT}' not found.${NC}"
     echo ""
     echo -e "No resources found:"
-    echo -e "  - No Docker containers matching: ${CONTAINER_PATTERN}-*"
+    echo -e "  - Deploy directory not found: ${ENV_DEPLOY_PATH}"
     echo -e "  - nginx site config not found: ${NGINX_SITE_FILE}"
-    echo -e "  - nginx upstream config not found: ${NGINX_UPSTREAM_FILE}"
     echo ""
 
     # Get available environments
@@ -307,23 +268,23 @@ fi
 
 # Show what exists
 echo -e "${GREEN}Environment found:${NC}"
-if [ -n "$CONTAINERS_EXIST" ]; then
-    CONTAINER_COUNT=$(echo "$CONTAINERS_EXIST" | wc -l | tr -d ' ')
-    echo -e "  ✓ ${CONTAINER_COUNT} container(s) on Application Server"
+if [ "$DEPLOY_EXISTS" = "yes" ]; then
+    # Count releases
+    RELEASE_COUNT=$(axon_ssh "system" -i "$SYSTEM_SERVER_SSH_KEY" "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}" \
+        "[ -d '${RELEASES_DIR}' ] && ls -1 '${RELEASES_DIR}' 2>/dev/null | wc -l | tr -d ' ' || echo '0'")
+    echo -e "  ✓ Deployment directory with ${RELEASE_COUNT} release(s)"
 fi
 if [ "$SITE_EXISTS" = "yes" ]; then
     echo -e "  ✓ nginx site configuration"
 fi
-if [ "$UPSTREAM_EXISTS" = "yes" ]; then
-    echo -e "  ✓ nginx upstream configuration"
-fi
 echo ""
 
 echo -e "${YELLOW}WARNING: This will remove:${NC}"
-echo -e "  - All Docker containers matching: ${CONTAINER_PATTERN}-*"
-echo -e "  - Docker images for this environment"
+echo -e "  - All releases in: ${RELEASES_DIR}"
+echo -e "  - Shared directory: ${SHARED_DIR}"
+echo -e "  - Current symlink: ${CURRENT_SYMLINK}"
+echo -e "  - Entire deployment directory: ${ENV_DEPLOY_PATH}"
 echo -e "  - nginx site configuration: ${SITE_FILENAME}"
-echo -e "  - nginx upstream configuration: ${UPSTREAM_FILENAME}"
 echo ""
 echo -e "${YELLOW}Other environments will NOT be affected.${NC}"
 echo ""
@@ -339,69 +300,28 @@ if [ "$FORCE" = false ]; then
     echo ""
 fi
 
-# Step 1: Remove Docker containers from Application Server
-echo -e "${BLUE}Step 1/4: Removing Docker containers from Application Server...${NC}"
+# Step 1: Remove deployment directory from System Server
+echo -e "${BLUE}Step 1/2: Removing deployment directory from System Server...${NC}"
 
-ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" "bash -s" <<EOF
+axon_ssh "system" -i "$SYSTEM_SERVER_SSH_KEY" "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}" bash <<EOF
 set -e
 
-# Find all containers for this environment
-CONTAINERS=\$(docker ps -a --filter "name=${CONTAINER_PATTERN}-" --format "{{.Names}}" 2>/dev/null || true)
-
-if [ -z "\$CONTAINERS" ]; then
-    echo "  No containers found for environment: ${ENVIRONMENT}"
+if [ -d "${ENV_DEPLOY_PATH}" ]; then
+    echo "  Removing: ${ENV_DEPLOY_PATH}"
+    ${USE_SUDO} rm -rf "${ENV_DEPLOY_PATH}"
+    echo "  ✓ Deployment directory removed"
 else
-    echo "  Found containers:"
-    echo "\$CONTAINERS" | sed 's/^/    - /'
-    echo ""
-    echo "  Stopping containers gracefully (timeout: ${SHUTDOWN_TIMEOUT}s)..."
-
-    # Stop each container with timeout for graceful shutdown
-    for container in \$CONTAINERS; do
-        echo "    Stopping \$container..."
-        docker stop -t ${SHUTDOWN_TIMEOUT} "\$container" > /dev/null 2>&1 || true
-    done
-
-    echo "  ✓ Containers stopped gracefully"
-    echo ""
-    echo "  Removing containers..."
-    echo "\$CONTAINERS" | xargs -r docker rm > /dev/null 2>&1
-    echo "  ✓ Containers removed"
+    echo "  Deployment directory not found (already removed or never created)"
 fi
 EOF
 
-echo -e "  ${GREEN}✓ Containers cleaned up${NC}"
+echo -e "  ${GREEN}✓ Deployment files cleaned up${NC}"
 echo ""
 
-# Step 2: Remove Docker images from Application Server
-echo -e "${BLUE}Step 2/4: Removing Docker images from Application Server...${NC}"
+# Step 2: Remove nginx site configuration and reload nginx
+echo -e "${BLUE}Step 2/2: Removing nginx site configuration...${NC}"
 
-ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" "bash -s" <<EOF
-set -e
-
-# Find images matching the environment pattern
-# Images are typically tagged as: {product}:{env} or {registry}/{product}:{env}
-IMAGES=\$(docker images --filter "reference=*${PRODUCT_NAME}*:*${NORMALIZED_ENV}*" --format "{{.Repository}}:{{.Tag}}" 2>/dev/null || true)
-
-if [ -z "\$IMAGES" ]; then
-    echo "  No images found for environment: ${ENVIRONMENT}"
-else
-    echo "  Found images:"
-    echo "\$IMAGES" | sed 's/^/    - /'
-    echo ""
-    echo "  Removing images..."
-    echo "\$IMAGES" | xargs -r docker rmi -f > /dev/null 2>&1
-    echo "  ✓ Images removed"
-fi
-EOF
-
-echo -e "  ${GREEN}✓ Images cleaned up${NC}"
-echo ""
-
-# Step 3: Remove nginx site configuration from System Server
-echo -e "${BLUE}Step 3/4: Removing nginx site configuration...${NC}"
-
-ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" "bash -s" <<EOF
+axon_ssh "system" -i "$SYSTEM_SERVER_SSH_KEY" "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}" bash <<EOF
 set -e
 
 if [ -f "${NGINX_SITE_FILE}" ]; then
@@ -410,24 +330,6 @@ if [ -f "${NGINX_SITE_FILE}" ]; then
     echo "  ✓ Site config removed"
 else
     echo "  Site config not found (already removed or never created)"
-fi
-EOF
-
-echo -e "  ${GREEN}✓ Site configuration cleaned up${NC}"
-echo ""
-
-# Step 4: Remove nginx upstream configuration and reload nginx
-echo -e "${BLUE}Step 4/4: Removing nginx upstream configuration...${NC}"
-
-ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" "bash -s" <<EOF
-set -e
-
-if [ -f "${NGINX_UPSTREAM_FILE}" ]; then
-    echo "  Removing: ${NGINX_UPSTREAM_FILE}"
-    ${USE_SUDO} rm -f "${NGINX_UPSTREAM_FILE}"
-    echo "  ✓ Upstream config removed"
-else
-    echo "  Upstream config not found (already removed or never created)"
 fi
 
 echo ""
@@ -445,7 +347,7 @@ else
 fi
 EOF
 
-echo -e "  ${GREEN}✓ Upstream configuration cleaned up${NC}"
+echo -e "  ${GREEN}✓ nginx configuration cleaned up${NC}"
 echo ""
 
 # Success
@@ -456,5 +358,5 @@ echo ""
 echo -e "${BLUE}Summary:${NC}"
 echo -e "  Product: ${YELLOW}${PRODUCT_NAME}${NC}"
 echo -e "  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
-echo -e "  Status: ${GREEN}✓ All configs and containers removed${NC}"
+echo -e "  Status: ${GREEN}✓ All deployment files and configs removed${NC}"
 echo ""
