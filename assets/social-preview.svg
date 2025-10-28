@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- GitHub Social Preview - 1280x640 -->
+  <rect width="1280" height="640" fill="#0A0A0A"/>
+
+  <!-- Icon scaled to 400x400, centered -->
+  <g transform="translate(440, 120)">
+    <!-- Background -->
+    <rect width="400" height="400" rx="75" fill="#0F0D08"/>
+
+    <!-- Core -->
+    <circle cx="200" cy="200" r="27" fill="url(#core-social)" opacity="0.8"/>
+
+    <!-- Outer ring -->
+    <circle cx="200" cy="200" r="150" stroke="#8C7A52" stroke-width="5.5" fill="none" opacity="0.3"/>
+
+    <!-- Inner ring -->
+    <circle cx="200" cy="200" r="111" stroke="#B89D6B" stroke-width="6.3" fill="none" opacity="0.45"/>
+
+    <!-- Signal -->
+    <circle cx="200" cy="52" r="11" fill="#E8D4A8"/>
+
+    <!-- Signal glow -->
+    <circle cx="200" cy="52" r="25" fill="#E8D4A8" opacity="0.25"/>
+  </g>
+
+  <!-- Project name -->
+  <text x="640" y="565" font-family="system-ui, -apple-system, sans-serif"
+        font-size="64" font-weight="700" fill="#FFFFFF" text-anchor="middle">
+    AXON
+  </text>
+
+  <!-- Tagline -->
+  <text x="640" y="610" font-family="system-ui, -apple-system, sans-serif"
+        font-size="24" font-weight="400" fill="#B89D6B" text-anchor="middle">
+    Zero-downtime deployment orchestration
+  </text>
+
+  <!-- Gradients -->
+  <defs>
+    <radialGradient id="core-social" cx="0.4" cy="0.4">
+      <stop offset="0%" stop-color="#D4BE8E"/>
+      <stop offset="100%" stop-color="#8C7A52"/>
+    </radialGradient>
+  </defs>
+</svg>

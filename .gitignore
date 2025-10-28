@@ -1,2 +1,8 @@
 *.local.json
 *_PLAN.md
+
+# Generated icon files (source is SVG)
+assets/icon-*.png
+assets/favicon.ico
+# Keep social-preview.png for GitHub
+!assets/social-preview.png

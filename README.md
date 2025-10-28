@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/icon-animated.svg" alt="AXON Logo" width="200" height="200">
+</div>
+
 # AXON
 
 Zero-downtime deployment orchestration for Docker containers and static sites. Deploy instantly, switch seamlessly.

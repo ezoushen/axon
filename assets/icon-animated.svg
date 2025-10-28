@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- AXON - Amber Luxe (Animated) - Reduced padding for better visibility -->
+  <rect width="256" height="256" rx="48" fill="#0F0D08"/>
+
+  <!-- Core - amber gold -->
+  <circle cx="128" cy="128" r="17" fill="url(#amber-core)" opacity="0.8"/>
+
+  <!-- Outer ring - bold deep amber -->
+  <circle cx="128" cy="128" r="95" stroke="#8C7A52" stroke-width="3.5" fill="none" opacity="0.25">
+    <animate attributeName="r" values="95; 97; 95" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.25; 0.35; 0.25" dur="3s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Inner ring - bold medium amber -->
+  <circle cx="128" cy="128" r="70" stroke="#B89D6B" stroke-width="4" fill="none" opacity="0.4">
+    <animate attributeName="r" values="70; 72; 70" dur="3s" begin="0.4s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.4; 0.5; 0.4" dur="3s" begin="0.4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Active signal -->
+  <circle cx="128" cy="33" r="7" fill="#E8D4A8">
+    <animateTransform
+      attributeName="transform"
+      type="rotate"
+      from="0 128 128"
+      to="360 128 128"
+      dur="4s"
+      repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Signal glow -->
+  <circle cx="128" cy="33" r="14" fill="#E8D4A8" opacity="0.25">
+    <animateTransform
+      attributeName="transform"
+      type="rotate"
+      from="0 128 128"
+      to="360 128 128"
+      dur="4s"
+      repeatCount="indefinite"/>
+    <animate attributeName="r" values="14; 18; 14" dur="2s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Gradients -->
+  <defs>
+    <radialGradient id="amber-core" cx="0.4" cy="0.4">
+      <stop offset="0%" stop-color="#D4BE8E"/>
+      <stop offset="100%" stop-color="#8C7A52"/>
+    </radialGradient>
+  </defs>
+</svg>

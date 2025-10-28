@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- AXON - Amber Luxe (Static) - Reduced padding for better visibility -->
+  <rect width="256" height="256" rx="48" fill="#0F0D08"/>
+
+  <!-- Core - amber gold -->
+  <circle cx="128" cy="128" r="17" fill="url(#amber-core)" opacity="0.8"/>
+
+  <!-- Outer ring - bold deep amber -->
+  <circle cx="128" cy="128" r="96" stroke="#8C7A52" stroke-width="3.5" fill="none" opacity="0.3"/>
+
+  <!-- Inner ring - bold medium amber -->
+  <circle cx="128" cy="128" r="71" stroke="#B89D6B" stroke-width="4" fill="none" opacity="0.45"/>
+
+  <!-- Active signal at top position -->
+  <circle cx="128" cy="33" r="7" fill="#E8D4A8"/>
+
+  <!-- Signal glow -->
+  <circle cx="128" cy="33" r="16" fill="#E8D4A8" opacity="0.25"/>
+
+  <!-- Gradients -->
+  <defs>
+    <radialGradient id="amber-core" cx="0.4" cy="0.4">
+      <stop offset="0%" stop-color="#D4BE8E"/>
+      <stop offset="100%" stop-color="#8C7A52"/>
+    </radialGradient>
+  </defs>
+</svg>
