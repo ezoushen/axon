@@ -19,6 +19,37 @@ PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 
 # Default configuration file
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
+
+# Early product type detection - check config file location from args
+# This allows us to delegate to status-static.sh before parsing all arguments
+for arg in "$@"; do
+    if [ "$next_is_config" = "1" ]; then
+        CONFIG_FILE="$arg"
+        next_is_config=""
+        break
+    fi
+    if [ "$arg" = "-c" ] || [ "$arg" = "--config" ]; then
+        next_is_config="1"
+    fi
+done
+
+# Make CONFIG_FILE absolute path if it's relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+fi
+
+# Check if config exists and get product type early
+if [ -f "$CONFIG_FILE" ]; then
+    source "$MODULE_DIR/lib/config-parser.sh"
+    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE" 2>/dev/null || echo "docker")
+
+    # For static sites, delegate to status-static.sh immediately (before parsing args)
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        exec "$MODULE_DIR/cmd/status-static.sh" "$@"
+    fi
+fi
+
+# Docker deployment continues below
 ENVIRONMENT=""
 STATUS_ALL=false
 # Status display flags
@@ -136,17 +167,9 @@ source "$MODULE_DIR/lib/ssh-connection.sh"
 # Initialize SSH connection multiplexing for performance
 ssh_init_multiplexing
 
-# Load product name and type
+# Load product name (type already checked above)
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
-PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
 
-# For static sites, use different logic
-if [ "$PRODUCT_TYPE" = "static" ]; then
-    # Source static-specific status command
-    exec "$MODULE_DIR/cmd/status-static.sh" "$@"
-fi
-
-# For Docker deployments, continue with original logic
 # Get Application Server SSH details
 # We load these early since they're needed for all environments
 APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
