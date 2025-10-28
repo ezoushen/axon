@@ -136,9 +136,17 @@ source "$MODULE_DIR/lib/ssh-connection.sh"
 # Initialize SSH connection multiplexing for performance
 ssh_init_multiplexing
 
-# Load product name only for initial setup (don't need full config yet)
+# Load product name and type
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
+PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
 
+# For static sites, use different logic
+if [ "$PRODUCT_TYPE" = "static" ]; then
+    # Source static-specific status command
+    exec "$MODULE_DIR/cmd/status-static.sh" "$@"
+fi
+
+# For Docker deployments, continue with original logic
 # Get Application Server SSH details
 # We load these early since they're needed for all environments
 APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")

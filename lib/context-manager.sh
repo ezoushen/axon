@@ -230,13 +230,14 @@ list_contexts() {
             local project_root=$(yq eval '.project_root' "$context_file" 2>/dev/null || echo "")
             local last_used=$(yq eval '.last_used' "$context_file" 2>/dev/null || echo "")
 
-            # Mark current context
-            local marker=""
+            # Mark current context (use space instead of empty to avoid IFS read issues)
+            local marker=" "
             if [ "$name" = "$current" ]; then
                 marker="*"
             fi
 
-            echo -e "${marker}\t${name}\t${product}\t${project_root}\t${last_used}"
+            # Use printf with consistent field output
+            printf '%s\t%s\t%s\t%s\t%s\n' "$marker" "$name" "$product" "$project_root" "$last_used"
         fi
     done
 }

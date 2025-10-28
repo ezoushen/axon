@@ -146,6 +146,43 @@ if [ "$ENVIRONMENT" != "all" ]; then
     fi
 fi
 
+# Check static site health via HTTP
+check_static_site() {
+    local env=$1
+
+    # Get domain for this environment
+    DOMAIN=$(get_nginx_domain "$env" "$CONFIG_FILE")
+
+    if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "null" ]; then
+        echo -e "  ${YELLOW}⚠ Domain not configured for environment${NC}"
+        return 1
+    fi
+
+    # Get health endpoint (default to / for static sites)
+    HEALTH_ENDPOINT=$(get_health_endpoint "$CONFIG_FILE")
+    if [ -z "$HEALTH_ENDPOINT" ] || [ "$HEALTH_ENDPOINT" = "null" ]; then
+        HEALTH_ENDPOINT="/"
+    fi
+
+    # Build URL
+    URL="https://${DOMAIN}${HEALTH_ENDPOINT}"
+
+    echo -e "  Type:           ${CYAN}Static Site${NC}"
+    echo -e "  Domain:         ${CYAN}${DOMAIN}${NC}"
+    echo -e "  Health URL:     ${CYAN}${URL}${NC}"
+
+    # Perform health check via curl
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" 2>/dev/null)
+
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+        echo -e "  Status:         ${GREEN}✓ Healthy (HTTP $HTTP_CODE)${NC}"
+        return 0
+    else
+        echo -e "  Status:         ${RED}✗ Unhealthy (HTTP $HTTP_CODE)${NC}"
+        return 1
+    fi
+}
+
 check_environment() {
     local env=$1
 
@@ -154,7 +191,16 @@ check_environment() {
 
     echo -e "${BLUE}Checking ${PRODUCT_NAME} - ${env}:${NC}"
 
-    # Check via Application Server (container directly via localhost)
+    # Get product type
+    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        # For static sites, check via domain HTTP request
+        check_static_site "$env"
+        return $?
+    fi
+
+    # Docker deployment: Check via Application Server (container directly via localhost)
     if [ -z "$APPLICATION_SERVER_HOST" ]; then
         echo -e "  ${YELLOW}⚠ Application Server not configured${NC}"
         return 1
