@@ -360,7 +360,7 @@ if [ "$PRODUCT_TYPE" = "static" ]; then
     # Check for shared_dirs
     SHARED_DIRS=$(parse_yaml_array "static.shared_dirs" "$CONFIG_FILE")
     if [ -n "$SHARED_DIRS" ]; then
-        local dir_count=$(echo "$SHARED_DIRS" | wc -l | tr -d ' ')
+        dir_count=$(echo "$SHARED_DIRS" | wc -l | tr -d ' ')
         report_success "Shared directories: ${dir_count} configured"
     else
         echo -e "  ${BLUE}○ Shared directories: <not set>${NC}"
@@ -369,7 +369,7 @@ if [ "$PRODUCT_TYPE" = "static" ]; then
     # Check for required_files
     REQUIRED_FILES=$(parse_yaml_array "static.required_files" "$CONFIG_FILE")
     if [ -n "$REQUIRED_FILES" ]; then
-        local file_count=$(echo "$REQUIRED_FILES" | wc -l | tr -d ' ')
+        file_count=$(echo "$REQUIRED_FILES" | wc -l | tr -d ' ')
         report_success "Required files validation: ${file_count} file(s)"
     else
         echo -e "  ${BLUE}○ Required files: <not set> (defaults to index.html)${NC}"

@@ -265,8 +265,8 @@ axon health staging              # Specific environment
 axon restart production
 
 # Validate configuration
-axon validate
-axon validate --strict
+axon config validate
+axon config validate --strict
 ```
 
 ### Global Options
@@ -427,7 +427,7 @@ Check SSH key path in `axon.config.yml` and ensure you have access to Applicatio
 4. **Monitor deployments** - Watch logs during deployment: `axon logs production --follow`
 5. **Health checks** - Ensure your app has the configured health endpoint that returns HTTP 200
 6. **Use full pipeline** - `axon run <env>` handles everything (build → push → deploy)
-7. **Validate configuration** - Run `axon validate` before deploying to catch config issues early
+7. **Validate configuration** - Run `axon config validate` before deploying to catch config issues early
 
 ## Example Deployment Workflow
 
@@ -437,7 +437,7 @@ git add .
 git commit -m "Add new feature"
 
 # 2. Validate configuration (optional but recommended)
-axon validate
+axon config validate
 
 # 3. Full pipeline: build, push, and deploy to staging
 axon run staging

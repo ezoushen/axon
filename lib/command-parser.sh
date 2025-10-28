@@ -3,7 +3,7 @@
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands
-AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health validate install uninstall delete init-config context"
+AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health install uninstall delete config context"
 
 # Commands that require environment argument (delete is optional with --all)
 AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart"
@@ -30,8 +30,10 @@ UTILITY COMMANDS:
   restart <env|--all>      Restart container (specific environment or all)
   health <env|--all>       Check container health status (specific environment or all)
   delete <env|--all>       Remove environment-specific configs (Docker + nginx)
-  validate                 Validate configuration file
-  init-config              Generate axon.config.yml file
+
+CONFIGURATION COMMANDS:
+  config init              Generate axon.config.yml file
+  config validate          Validate configuration file
 
 CONTEXT COMMANDS:
   context add <name>       Add a new global context
@@ -65,9 +67,9 @@ EXAMPLES:
   axon build-and-push production
   axon logs production --follow
   axon status
-  axon validate --strict
-  axon init-config
-  axon init-config --interactive
+  axon config init
+  axon config init --interactive
+  axon config validate --strict
   axon context add my-app
   axon context use my-app
   axon context list
@@ -318,63 +320,39 @@ EXAMPLES:
   axon health production         # Specific environment
 EOF
             ;;
-        validate)
+        config)
             cat <<EOF
-Usage: axon validate [options]
+Usage: axon config <subcommand> [options]
 
-Validate AXON configuration file for correctness and completeness.
+Manage AXON configuration files.
 
-OPTIONS:
-  -c, --config FILE    Config file to validate (default: axon.config.yml)
-  --strict             Treat warnings as errors
-  -h, --help           Show this help
+SUBCOMMANDS:
+  init                 Generate axon.config.yml file
+  validate             Validate configuration file
+
+GLOBAL OPTIONS:
+  -c, --config FILE    Config file (default: axon.config.yml)
+  -h, --help           Show help
+  -v, --verbose        Verbose output
 
 EXAMPLES:
-  axon validate
-  axon validate --config custom.yml
-  axon validate --strict
-EOF
-            ;;
-        init-config)
-            cat <<EOF
-Usage: axon init-config [options]
+  # Generate config from example
+  axon config init
 
-Generate axon.config.yml configuration file for your product.
-
-OPTIONS:
-  -f, --file FILE      Output file name (default: axon.config.yml)
-  -i, --interactive    Interactive mode - configure field by field
-  -h, --help           Show this help
-
-EXAMPLES:
-  # Generate config from example (quick start)
-  axon init-config
-
-  # Interactive configuration (step-by-step)
-  axon init-config --interactive
+  # Interactive configuration
+  axon config init --interactive
 
   # Generate with custom filename
-  axon init-config --file my-config.yml
+  axon config init --file my-config.yml
 
-  # Interactive with custom filename
-  axon init-config --interactive --file production.yml
+  # Validate config
+  axon config validate
 
-MODES:
-  Default Mode:
-    - Copies config.example.yml to axon.config.yml
-    - Quick setup with placeholder values
-    - You edit the file manually afterward
+  # Validate with strict mode
+  axon config validate --strict
 
-  Interactive Mode (--interactive):
-    - Walks through each configuration field
-    - Prompts for values with descriptions
-    - Validates input as you go
-    - Generates ready-to-use configuration
-
-NOTES:
-  - Generated file is automatically added to .gitignore
-  - Contains server IPs and secrets - keep it private
-  - Use 'axon validate' after editing to check correctness
+For subcommand-specific help:
+  axon config <subcommand> --help
 EOF
             ;;
         context)

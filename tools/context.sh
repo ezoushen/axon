@@ -98,7 +98,7 @@ cmd_context_add() {
             echo -e "${RED}Error: No config file found in current directory${NC}"
             echo ""
             echo "Options:"
-            echo "  - Create config: axon init-config"
+            echo "  - Create config: axon config init"
             echo "  - Specify path: axon context add $name <config-file-path>"
             exit 1
         fi

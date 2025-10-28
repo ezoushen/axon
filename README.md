@@ -114,28 +114,28 @@ git submodule update --init --recursive
 
 **Quick start (copy example):**
 ```bash
-axon init-config
+axon config init
 # Then edit axon.config.yml with your product settings
 ```
 
 **Interactive mode (recommended for first-time setup):**
 ```bash
-axon init-config --interactive
+axon config init --interactive
 # Follow the prompts to configure step-by-step
 ```
 
 **Custom filename:**
 ```bash
-axon init-config --file production.yml
-axon init-config --interactive --file staging.yml
+axon config init --file production.yml
+axon config init --interactive --file staging.yml
 ```
 
 ### 4. Validate Configuration
 
 ```bash
-axon validate
-axon validate --config my-config.yml
-axon validate --strict  # Treat warnings as errors
+axon config validate
+axon config validate --config my-config.yml
+axon config validate --strict  # Treat warnings as errors
 ```
 
 ### 5. Set Up Environment Files
@@ -172,7 +172,7 @@ axon deploy production
 
 # Convenience commands
 axon build-and-push staging         # Build + Push (CI/CD)
-axon validate                        # Validate config first
+axon config validate                 # Validate config first
 ```
 
 ## Directory Structure
@@ -379,13 +379,11 @@ axon delete staging                     # Delete environment (Docker + nginx)
 axon delete production --force          # Delete without confirmation
 axon delete --all                       # Delete all environments
 axon delete --all --force               # Delete all without confirmations
-axon validate                           # Validate config file
-axon validate --strict                  # Strict validation
 
 # Configuration
-axon init-config                        # Generate axon.config.yml
-axon init-config --interactive          # Interactive config generation
-axon init-config --file custom.yml      # Custom filename
+axon config init                        # Generate axon.config.yml
+axon config init --interactive          # Interactive config generation
+axon config init --file custom.yml      # Custom filename
 ```
 
 ### Installation & Uninstallation Commands

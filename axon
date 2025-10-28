@@ -51,6 +51,7 @@ DRY_RUN=false
 export VERBOSE
 export DRY_RUN
 export PROJECT_ROOT
+export CONFIG_FILE
 
 # Command-specific variables
 SKIP_GIT=false
@@ -670,39 +671,6 @@ cmd_health() {
     execute "\"$SCRIPT_DIR/tools/health-check.sh\" ${health_args[*]}"
 }
 
-# Validate command
-cmd_validate() {
-    verbose "Executing validate command"
-    make_config_absolute
-
-    local validate_args=("--config" "$CONFIG_FILE")
-
-    if [ "$STRICT" = true ]; then
-        validate_args+=("--strict")
-    fi
-
-    verbose "Calling validate-config.sh with args: ${validate_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/validate-config.sh\" ${validate_args[*]}"
-}
-
-# Init-config command
-cmd_init_config() {
-    verbose "Executing init-config command"
-
-    local init_args=()
-
-    if [ -n "$OUTPUT_FILE" ]; then
-        init_args+=("--file" "$OUTPUT_FILE")
-    fi
-
-    if [ "$INTERACTIVE" = true ]; then
-        init_args+=("--interactive")
-    fi
-
-    verbose "Calling init-config.sh with args: ${init_args[*]}"
-    execute "\"$SCRIPT_DIR/tools/init-config.sh\" ${init_args[*]}"
-}
-
 #==============================================================================
 # Argument Parsing
 #==============================================================================
@@ -775,6 +743,13 @@ fi
 if [ "$COMMAND" = "context" ]; then
     source "$SCRIPT_DIR/tools/context.sh"
     handle_context_command "$@"
+    exit $?
+fi
+
+# Special handling for config command - pass all args directly to handler
+if [ "$COMMAND" = "config" ]; then
+    source "$SCRIPT_DIR/tools/config.sh"
+    handle_config_command "$@"
     exit $?
 fi
 
@@ -960,13 +935,13 @@ esac
 #==============================================================================
 
 # Resolve config and project root using context system
-# Skip for commands that don't need config (context, init-config, setup local, --version, --help)
+# Skip for commands that don't need config (context, config, setup local, --version, --help)
 SKIP_CONTEXT_RESOLUTION=false
 case "$COMMAND" in
     context)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
-    init-config)
+    config)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
     install|uninstall)
@@ -999,7 +974,7 @@ if [ "$SKIP_CONTEXT_RESOLUTION" = false ]; then
         echo "Options:" >&2
         echo "  - Work with an existing context: axon context list" >&2
         echo "  - Create a new context: axon context add <name>" >&2
-        echo "  - Create config in this directory: axon init-config" >&2
+        echo "  - Create config in this directory: axon config init" >&2
         exit 1
     fi
 
@@ -1070,17 +1045,11 @@ case "$COMMAND" in
     health)
         cmd_health
         ;;
-    validate)
-        cmd_validate
-        ;;
     install)
         cmd_install
         ;;
     uninstall)
         cmd_uninstall
-        ;;
-    init-config)
-        cmd_init_config
         ;;
     *)
         echo -e "${RED}Error: Command not implemented: ${COMMAND}${NC}"
