@@ -78,12 +78,9 @@ ssh_batch_execute() {
     if type ssh_get_multiplex_opts >/dev/null 2>&1; then
         ssh_multiplex_opts=$(ssh_get_multiplex_opts "$server_role")
 
-        # Verbose output (only once per role, consistent with axon_ssh)
-        if [ "$AXON_SSH_VERBOSE" = "1" ]; then
-            if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
-                echo "[SSH] Creating master connection (role: ${server_role})" >&2
-                _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
-            fi
+        # Announce master connection (only once per role)
+        if type ssh_announce_master_connection >/dev/null 2>&1; then
+            ssh_announce_master_connection "$server_role"
         fi
     fi
 
@@ -113,13 +110,32 @@ $cmd
         i=$((i + 1))
     done
 
-    # Execute via SSH with multiplexing options
+    # Execute via SSH with multiplexing options (with error recovery)
+    local error_file="/tmp/axon_ssh_batch_error_$$_${RANDOM}"
     _SSH_BATCH_OUTPUT=$(ssh $ssh_multiplex_opts -i "$ssh_key" "$server" bash <<EOF
 $script
 EOF
-)
+2>"$error_file")
 
-    return $?
+    local exit_code=$?
+
+    # Check for stale control socket errors
+    if [ $exit_code -ne 0 ] && type ssh_handle_stale_socket >/dev/null 2>&1; then
+        if grep -q -i "control socket" "$error_file" 2>/dev/null || \
+           grep -q -i "mux_client_request_session" "$error_file" 2>/dev/null; then
+
+            # Retry with stale socket handler
+            rm -f "$error_file"
+            _SSH_BATCH_OUTPUT=$(ssh_handle_stale_socket "$server_role" -i "$ssh_key" "$server" bash <<EOF
+$script
+EOF
+)
+            exit_code=$?
+        fi
+    fi
+
+    rm -f "$error_file" 2>/dev/null
+    return $exit_code
 }
 
 # Get result of a specific command by label
@@ -272,12 +288,9 @@ ssh_batch_execute_async() {
     if type ssh_get_multiplex_opts >/dev/null 2>&1; then
         ssh_multiplex_opts=$(ssh_get_multiplex_opts "$server_role")
 
-        # Verbose output (only once per role, consistent with axon_ssh)
-        if [ "$AXON_SSH_VERBOSE" = "1" ]; then
-            if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
-                echo "[SSH] Creating master connection (role: ${server_role})" >&2
-                _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
-            fi
+        # Announce master connection (only once per role)
+        if type ssh_announce_master_connection >/dev/null 2>&1; then
+            ssh_announce_master_connection "$server_role"
         fi
     fi
 
@@ -321,15 +334,40 @@ $cmd
 
     # Execute via SSH in background with multiplexing options, capture output to temp file
     local temp_output="/tmp/axon_batch_${batch_id}_$$.out"
+    local temp_error="/tmp/axon_batch_${batch_id}_$$.err"
+
     {
         ssh $ssh_multiplex_opts -i "$ssh_key" "$server" bash <<EOF
 $script
 EOF
-    } > "$temp_output" 2>&1 &
+    } > "$temp_output" 2>"$temp_error" &
+
+    local pid=$!
 
     # Store PID and output file
-    _async_set "_SSH_BATCH_ASYNC_PIDS" "$batch_id" "$!"
+    _async_set "_SSH_BATCH_ASYNC_PIDS" "$batch_id" "$pid"
     _async_set "_SSH_BATCH_ASYNC_OUTPUTS" "$batch_id" "$temp_output"
+
+    # Background cleanup of error file after process completes
+    {
+        wait "$pid"
+        local exit_code=$?
+
+        # Check for stale socket errors and retry if needed
+        if [ $exit_code -ne 0 ] && type ssh_handle_stale_socket >/dev/null 2>&1; then
+            if grep -q -i "control socket" "$temp_error" 2>/dev/null || \
+               grep -q -i "mux_client_request_session" "$temp_error" 2>/dev/null; then
+
+                # Retry with stale socket handler
+                ssh_handle_stale_socket "$server_role" -i "$ssh_key" "$server" bash <<EOF
+$script
+EOF
+ > "$temp_output" 2>&1
+            fi
+        fi
+
+        rm -f "$temp_error" 2>/dev/null
+    } >/dev/null 2>&1 &
 }
 
 # Wait for one or more async batches to complete

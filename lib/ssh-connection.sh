@@ -65,6 +65,49 @@ ssh_get_multiplex_opts() {
     echo "-o ControlMaster=auto -o ControlPath=${control_path} -o ControlPersist=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3"
 }
 
+# Announce master connection creation (only once per role)
+# Args: $1 - server_role
+# Usage: ssh_announce_master_connection "system"
+ssh_announce_master_connection() {
+    local server_role="$1"
+
+    if [ "$AXON_SSH_VERBOSE" = "1" ]; then
+        # Check if we've already announced this role
+        if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
+            echo "[SSH] Creating master connection (role: ${server_role})" >&2
+            # Mark this role as announced (with spaces for exact matching)
+            _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
+        fi
+    fi
+}
+
+# Handle stale SSH control socket errors
+# Args: $1 - server_role
+#       $@ - remaining SSH command arguments
+# Returns: 0 if retry succeeded, non-zero otherwise
+# Usage: ssh_handle_stale_socket "app" -i key.pem user@host "command"
+ssh_handle_stale_socket() {
+    local server_role="$1"
+    shift
+
+    if [ "$AXON_SSH_VERBOSE" = "1" ]; then
+        echo "[SSH] Stale control socket detected, cleaning and retrying..." >&2
+    fi
+
+    # Clean stale socket and retry
+    local control_path="${AXON_SSH_SOCKET_DIR}/${server_role}-%C"
+    ssh -O exit -o ControlPath="${control_path}" 2>/dev/null || true
+    rm -f "${control_path}" 2>/dev/null || true
+
+    # Get multiplexing options for retry
+    local ssh_opts
+    ssh_opts=$(ssh_get_multiplex_opts "$server_role")
+
+    # Retry without error capture (avoid infinite loop)
+    ssh $ssh_opts "$@"
+    return $?
+}
+
 # Wrapper for SSH commands with automatic multiplexing and error recovery
 # Args: $1 - server_role ("system" or "app")
 #       $@ - remaining arguments passed to ssh command
@@ -77,15 +120,8 @@ axon_ssh() {
     local ssh_opts
     ssh_opts=$(ssh_get_multiplex_opts "$server_role")
 
-    # Only show verbose message for FIRST connection per role
-    if [ "$AXON_SSH_VERBOSE" = "1" ]; then
-        # Check if we've already announced this role
-        if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
-            echo "[SSH] Creating master connection (role: ${server_role})" >&2
-            # Mark this role as announced (with spaces for exact matching)
-            _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
-        fi
-    fi
+    # Announce master connection (only once per role)
+    ssh_announce_master_connection "$server_role"
 
     # Try SSH with multiplexing
     local error_file="/tmp/axon_ssh_error_$$_${RANDOM}"
@@ -100,18 +136,9 @@ axon_ssh() {
         if grep -q -i "control socket" "$error_file" 2>/dev/null || \
            grep -q -i "mux_client_request_session" "$error_file" 2>/dev/null; then
 
-            if [ "$AXON_SSH_VERBOSE" = "1" ]; then
-                echo "[SSH] Stale control socket detected, cleaning and retrying..." >&2
-            fi
-
-            # Clean stale socket and retry
-            local control_path="${AXON_SSH_SOCKET_DIR}/${server_role}-%C"
-            ssh -O exit -o ControlPath="${control_path}" 2>/dev/null || true
-            rm -f "${control_path}" 2>/dev/null || true
-
-            # Retry without error capture (avoid infinite loop)
+            # Handle stale socket and retry
             rm -f "$error_file"
-            ssh $ssh_opts "$@"
+            ssh_handle_stale_socket "$server_role" "$@"
             return $?
         else
             # Other error - propagate to stderr and return error code
