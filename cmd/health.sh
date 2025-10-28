@@ -159,7 +159,7 @@ check_static_site() {
     fi
 
     # Get health endpoint (default to / for static sites)
-    HEALTH_ENDPOINT=$(get_health_endpoint "$CONFIG_FILE")
+    HEALTH_ENDPOINT=$(parse_yaml_key "health_check.endpoint" "/" "$CONFIG_FILE")
     if [ -z "$HEALTH_ENDPOINT" ] || [ "$HEALTH_ENDPOINT" = "null" ]; then
         HEALTH_ENDPOINT="/"
     fi
