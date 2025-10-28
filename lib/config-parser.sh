@@ -595,3 +595,27 @@ get_domain() {
 
     parse_yaml_key "environments.${environment}.domain" "" "$config_file"
 }
+
+# Get build args for an environment (for Docker build --build-arg flags)
+# Returns: Multi-line output with KEY=VALUE pairs (one per line)
+# Usage: BUILD_ARGS=$(get_build_args "production" "$CONFIG_FILE")
+get_build_args() {
+    local environment="$1"
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ -z "$environment" ]; then
+        echo -e "${RED}Error: Environment parameter required for get_build_args${NC}" >&2
+        return 1
+    fi
+
+    # Check if build_args exists for this environment
+    local has_build_args=$(yq eval ".environments.${environment} | has(\"build_args\")" "$config_file" 2>/dev/null)
+
+    if [ "$has_build_args" != "true" ]; then
+        # No build_args configured, return empty
+        return 0
+    fi
+
+    # Extract build_args as KEY=VALUE pairs (one per line)
+    yq eval ".environments.${environment}.build_args | to_entries | .[] | .key + \"=\" + .value" "$config_file" 2>/dev/null
+}

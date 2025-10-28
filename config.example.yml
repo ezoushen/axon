@@ -216,6 +216,16 @@ environments:
     env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED for docker] Path to .env file on Application Server
     image_tag: "production"                                   # [OPTIONAL for docker] Docker image tag (default: environment name)
 
+    # Docker build arguments (ONLY for product.type: "docker")
+    # Build args are passed to 'docker build' via --build-arg flags
+    # These are embedded at BUILD TIME (different from runtime env vars in .env files)
+    # Common use cases: Next.js NEXT_PUBLIC_* vars, React REACT_APP_* vars, build configs
+    # build_args:                                             # [OPTIONAL for docker] Build-time environment variables
+    #   NEXT_PUBLIC_API_URL: "https://api.example.com"        # Example: Next.js public variable
+    #   NEXT_PUBLIC_ENVIRONMENT: "production"                 # Example: Environment identifier
+    #   BUILD_VERSION: "1.2.3"                                # Example: Version info
+    #   NODE_ENV: "production"                                # Example: Node environment (usually set automatically)
+
     # Static site settings (ONLY for product.type: "static")
     build_command: "npm run build:production"                 # [REQUIRED for static] Command to build static site
                                                               # Examples: "npm run build:prod", "hugo --environment production", "gatsby build"
@@ -232,6 +242,11 @@ environments:
     # Docker-specific settings (ONLY for product.type: "docker")
     env_path: "/home/ubuntu/apps/my-product/.env.staging"    # [REQUIRED for docker] Path to .env file on Application Server
     image_tag: "staging"                                      # [OPTIONAL for docker] Docker image tag (default: environment name)
+
+    # Docker build arguments (ONLY for product.type: "docker")
+    # build_args:                                             # [OPTIONAL for docker] Build-time environment variables
+    #   NEXT_PUBLIC_API_URL: "https://api-staging.example.com"
+    #   NEXT_PUBLIC_ENVIRONMENT: "staging"
 
     # Static site settings (ONLY for product.type: "static")
     build_command: "npm run build:staging"                    # [REQUIRED for static] Command to build static site

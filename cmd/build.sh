@@ -223,17 +223,45 @@ build_docker() {
     # Build Docker image
     echo -e "${GREEN}Building Docker image...${NC}"
     echo -e "Using Dockerfile: ${YELLOW}${DOCKERFILE_PATH}${NC}"
+
+    # Get build args from config
+    BUILD_ARGS_FROM_CONFIG=$(get_build_args "$ENVIRONMENT" "$CONFIG_FILE")
+
+    # Display build args if any configured
+    if [ -n "$BUILD_ARGS_FROM_CONFIG" ]; then
+        echo -e "Build Args:"
+        while IFS= read -r arg; do
+            if [ -n "$arg" ]; then
+                echo -e "  ${YELLOW}${arg}${NC}"
+            fi
+        done <<< "$BUILD_ARGS_FROM_CONFIG"
+    fi
+
     echo -e "${YELLOW}This may take a few minutes...${NC}"
     echo ""
 
     cd "$PRODUCT_ROOT"
 
-    docker build \
-        --build-arg BUILD_STANDALONE=true \
-        --platform linux/amd64 \
-        -f "$DOCKERFILE_PATH" \
-        -t "$FULL_IMAGE_NAME" \
-        .
+    # Construct docker build command with build args
+    BUILD_CMD="docker build"
+    BUILD_CMD="$BUILD_CMD --build-arg BUILD_STANDALONE=true"
+
+    # Add build args from config
+    if [ -n "$BUILD_ARGS_FROM_CONFIG" ]; then
+        while IFS= read -r arg; do
+            if [ -n "$arg" ]; then
+                BUILD_CMD="$BUILD_CMD --build-arg \"$arg\""
+            fi
+        done <<< "$BUILD_ARGS_FROM_CONFIG"
+    fi
+
+    BUILD_CMD="$BUILD_CMD --platform linux/amd64"
+    BUILD_CMD="$BUILD_CMD -f \"$DOCKERFILE_PATH\""
+    BUILD_CMD="$BUILD_CMD -t \"$FULL_IMAGE_NAME\""
+    BUILD_CMD="$BUILD_CMD ."
+
+    # Execute build command
+    eval "$BUILD_CMD"
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: Docker build failed${NC}"
