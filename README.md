@@ -4,6 +4,8 @@
 
 # AXON
 
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ezoushen/axon?sort=semver&style=flat-square&color=8C7A52)](https://github.com/ezoushen/axon/releases) [![Release Workflow](https://img.shields.io/github/actions/workflow/status/ezoushen/axon/release.yml?style=flat-square&label=release&color=B89D6B)](https://github.com/ezoushen/axon/actions/workflows/release.yml) [![License](https://img.shields.io/badge/license-GPL--3.0-D4BE8E?style=flat-square)](https://github.com/ezoushen/axon/blob/main/LICENSE) ![Bash 3.2+](https://img.shields.io/badge/bash-3.2+-8C7A52?style=flat-square&logo=gnu-bash&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-B89D6B?style=flat-square)
+
 Zero-downtime deployment orchestration for Docker containers and static sites. Deploy instantly, switch seamlessly.
 
 A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, static site hosting, and any major container registry.
