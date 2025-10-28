@@ -671,6 +671,17 @@ cmd_health() {
     execute "\"$SCRIPT_DIR/cmd/health.sh\" ${health_args[*]}"
 }
 
+# Env command
+cmd_env() {
+    verbose "Executing env command"
+    validate_config_file
+
+    # Source env.sh and pass through all arguments
+    # CONFIG_FILE is already exported and will be inherited
+    source "$SCRIPT_DIR/cmd/env.sh"
+    handle_env_command "$@"
+}
+
 #==============================================================================
 # Argument Parsing
 #==============================================================================
@@ -750,13 +761,6 @@ fi
 if [ "$COMMAND" = "config" ]; then
     source "$SCRIPT_DIR/cmd/config.sh"
     handle_config_command "$@"
-    exit $?
-fi
-
-# Special handling for env command - pass all args directly to handler
-if [ "$COMMAND" = "env" ]; then
-    source "$SCRIPT_DIR/cmd/env.sh"
-    handle_env_command "$@"
     exit $?
 fi
 
@@ -942,16 +946,13 @@ esac
 #==============================================================================
 
 # Resolve config and project root using context system
-# Skip for commands that don't need config (context, config, env, setup local, --version, --help)
+# Skip for commands that don't need config (context, config, setup local, --version, --help)
 SKIP_CONTEXT_RESOLUTION=false
 case "$COMMAND" in
     context)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
     config)
-        SKIP_CONTEXT_RESOLUTION=true
-        ;;
-    env)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
     install|uninstall)
@@ -1054,6 +1055,9 @@ case "$COMMAND" in
         ;;
     health)
         cmd_health
+        ;;
+    env)
+        cmd_env
         ;;
     install)
         cmd_install
