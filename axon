@@ -78,6 +78,7 @@ NO_CACHE=false
 FOLLOW=false
 LINES=""
 SINCE=""
+LOG_TYPE=""
 TIMEOUT=""
 STRICT=false
 INSTALL_TARGET=""
@@ -640,6 +641,10 @@ cmd_logs() {
         logs_args+=("--since" "$SINCE")
     fi
 
+    if [ -n "$LOG_TYPE" ]; then
+        logs_args+=("--type" "$LOG_TYPE")
+    fi
+
     verbose "Calling logs.sh with args: ${logs_args[*]}"
     execute "\"$SCRIPT_DIR/cmd/logs.sh\" ${logs_args[*]}"
 }
@@ -840,6 +845,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --since)
             SINCE="$2"
+            shift 2
+            ;;
+        --type)
+            LOG_TYPE="$2"
             shift 2
             ;;
         --timeout)

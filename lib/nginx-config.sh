@@ -186,6 +186,7 @@ server {
 
     # Access logging
     access_log /var/log/nginx/${product_name}-${environment}.log combined;
+    error_log /var/log/nginx/${product_name}-${environment}-error.log warn;
 
     # Document root
     root ${document_root};
@@ -220,6 +221,7 @@ server {
 
     # Access logging
     access_log /var/log/nginx/${product_name}-${environment}.log combined;
+    error_log /var/log/nginx/${product_name}-${environment}-error.log warn;
 
     # SSL certificates
     ssl_certificate ${ssl_cert};

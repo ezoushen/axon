@@ -19,13 +19,43 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Use current working directory for PRODUCT_ROOT (where config/Dockerfile live)
 PRODUCT_ROOT="${PROJECT_ROOT:-$PWD}"
 
-# Default configuration file
-CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
+# Default configuration file (use exported CONFIG_FILE if set, otherwise default)
+CONFIG_FILE="${CONFIG_FILE:-${PRODUCT_ROOT}/axon.config.yml}"
 ENVIRONMENT=""
 LOGS_ALL=false
 FOLLOW=false
 LINES="50"
 SINCE=""
+
+# Early product type detection - scan for -c/--config before full parsing
+# This preserves $@ for delegation to static handler if needed
+next_is_config=""
+for arg in "$@"; do
+    if [ "$next_is_config" = "1" ]; then
+        CONFIG_FILE="$arg"
+        next_is_config=""
+        break
+    fi
+    if [ "$arg" = "-c" ] || [ "$arg" = "--config" ]; then
+        next_is_config="1"
+    fi
+done
+
+# Make CONFIG_FILE absolute if relative
+if [[ "$CONFIG_FILE" != /* ]]; then
+    CONFIG_FILE="${PRODUCT_ROOT}/${CONFIG_FILE}"
+fi
+
+# Check product type and delegate to static handler if needed
+if [ -f "$CONFIG_FILE" ]; then
+    source "$MODULE_DIR/lib/config-parser.sh"
+    PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE" 2>/dev/null || echo "docker")
+
+    if [ "$PRODUCT_TYPE" = "static" ]; then
+        # Delegate to static site logs handler with intact $@
+        exec "$MODULE_DIR/cmd/logs-static.sh" "$@"
+    fi
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
