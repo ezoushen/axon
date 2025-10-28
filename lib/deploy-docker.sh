@@ -1,5 +1,8 @@
 #!/bin/bash
 # AXON - Docker Deployment Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Function for deploying Docker-based applications with zero-downtime
 
 # ==============================================================================

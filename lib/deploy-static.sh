@@ -1,5 +1,8 @@
 #!/bin/bash
 # AXON - Static Site Deployment Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Function for deploying static sites with zero-downtime
 
 # ==============================================================================

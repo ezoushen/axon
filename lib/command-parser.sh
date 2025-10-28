@@ -1,5 +1,8 @@
 #!/bin/bash
-# AXON Command Parser Library
+# AXON - Command Parser Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands

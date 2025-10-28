@@ -1,5 +1,8 @@
 #!/bin/bash
-# Configuration Parser Library
+# AXON - Configuration Parser Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Provides functions to parse axon.config.yml
 # Requires: yq (YAML processor) - Install with: brew install yq
 

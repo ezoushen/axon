@@ -324,7 +324,9 @@ See [docs/RELEASE.md](docs/RELEASE.md) for detailed release documentation.
 
 ## License
 
-ISC
+GPL-3.0 - See [LICENSE](LICENSE) for details.
+
+AXON is free and open source software. You are free to use, modify, and distribute it under the terms of the GNU General Public License v3.0.
 
 ## Support
 

@@ -1,7 +1,9 @@
 #!/bin/bash
-# AXON Context Manager Library
+# AXON - Context Manager Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Handles global context storage and operations
-# Part of AXON - reusable across products
 
 # Colors for output
 RED='\033[0;31m'

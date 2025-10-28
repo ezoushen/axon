@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# SSH Connection Multiplexing Library for AXON
+# AXON - SSH Connection Multiplexing Library
+# Copyright (C) 2024-2025 ezoushen
+# Licensed under GPL-3.0 - See LICENSE file for details
+#
 # Provides persistent SSH connections to reduce connection overhead
 # Compatible with Bash 3.2+
 
