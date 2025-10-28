@@ -187,7 +187,7 @@ cmd_run() {
 
     echo -e "${CYAN}===========================================================${NC}"
     echo -e "${CYAN}AXON - Full Deployment Pipeline: ${ENVIRONMENT}${NC}"
-    echo -e "${CYAN}Build → Push to ECR → Zero-Downtime Deploy${NC}"
+    echo -e "${CYAN}Build → Push to Registry → Deploy${NC}"
     echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
     echo -e "${CYAN}===========================================================${NC}"
     echo ""
@@ -232,7 +232,7 @@ cmd_run() {
 
     # Step 2: Push
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 2/3: Push to AWS ECR${NC}"
+    echo -e "${BLUE}Step 2/3: Push to Registry${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -254,7 +254,7 @@ cmd_run() {
 
     # Step 3: Deploy
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 3/3: Zero-Downtime Deployment${NC}"
+    echo -e "${BLUE}Step 3/3: Deploy${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -301,7 +301,7 @@ cmd_build_and_push() {
 
     echo -e "${CYAN}===========================================================${NC}"
     echo -e "${CYAN}AXON - Build and Push: ${ENVIRONMENT}${NC}"
-    echo -e "${CYAN}Build → Push to ECR${NC}"
+    echo -e "${CYAN}Build → Push to Registry${NC}"
     echo -e "${CYAN}Config: ${CONFIG_FILE}${NC}"
     echo -e "${CYAN}===========================================================${NC}"
     echo ""
@@ -320,7 +320,7 @@ cmd_build_and_push() {
 
     # Push
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Step 2/2: Push to AWS ECR${NC}"
+    echo -e "${BLUE}Step 2/2: Push to Registry${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
