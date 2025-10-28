@@ -147,21 +147,9 @@ if [ "$INTERACTIVE" = true ]; then
         ECR_REPO=${ECR_REPO:-$PRODUCT_NAME}
         echo ""
     else
-        # Static site configuration
-        echo -e "${GREEN}Static Site Build Configuration${NC}"
+        # Static site global configuration
+        echo -e "${GREEN}Static Site Global Configuration${NC}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Build command [npm run build]: " BUILD_COMMAND
-        BUILD_COMMAND=${BUILD_COMMAND:-npm run build}
-
-        read -p "Build output directory [dist]: " BUILD_OUTPUT_DIR
-        BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR:-dist}
-        echo ""
-
-        echo -e "${GREEN}Static Site Deployment Configuration${NC}"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME]: " DEPLOY_PATH
-        DEPLOY_PATH=${DEPLOY_PATH:-/var/www/$PRODUCT_NAME}
-
         read -p "Deploy user (file owner) [www-data]: " DEPLOY_USER
         DEPLOY_USER=${DEPLOY_USER:-www-data}
 
@@ -169,18 +157,41 @@ if [ "$INTERACTIVE" = true ]; then
         KEEP_RELEASES=${KEEP_RELEASES:-5}
         echo ""
 
-        echo -e "${GREEN}Domain Configuration${NC}"
+        # Production environment configuration
+        echo -e "${GREEN}Production Environment Configuration${NC}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Production domain (e.g., example.com): " PROD_DOMAIN
+        read -p "Build command [npm run build:production]: " PROD_BUILD_COMMAND
+        PROD_BUILD_COMMAND=${PROD_BUILD_COMMAND:-npm run build:production}
+
+        read -p "Build output directory [dist]: " PROD_BUILD_OUTPUT_DIR
+        PROD_BUILD_OUTPUT_DIR=${PROD_BUILD_OUTPUT_DIR:-dist}
+
+        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME-prod]: " PROD_DEPLOY_PATH
+        PROD_DEPLOY_PATH=${PROD_DEPLOY_PATH:-/var/www/$PRODUCT_NAME-prod}
+
+        read -p "Domain (e.g., example.com): " PROD_DOMAIN
         while [ -z "$PROD_DOMAIN" ]; do
             echo -e "${YELLOW}Production domain is required${NC}"
-            read -p "Production domain: " PROD_DOMAIN
+            read -p "Domain: " PROD_DOMAIN
         done
+        echo ""
 
-        read -p "Staging domain (e.g., staging.example.com): " STAGING_DOMAIN
+        # Staging environment configuration
+        echo -e "${GREEN}Staging Environment Configuration${NC}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        read -p "Build command [npm run build:staging]: " STAGING_BUILD_COMMAND
+        STAGING_BUILD_COMMAND=${STAGING_BUILD_COMMAND:-npm run build:staging}
+
+        read -p "Build output directory [dist]: " STAGING_BUILD_OUTPUT_DIR
+        STAGING_BUILD_OUTPUT_DIR=${STAGING_BUILD_OUTPUT_DIR:-dist}
+
+        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME-staging]: " STAGING_DEPLOY_PATH
+        STAGING_DEPLOY_PATH=${STAGING_DEPLOY_PATH:-/var/www/$PRODUCT_NAME-staging}
+
+        read -p "Domain (e.g., staging.example.com): " STAGING_DOMAIN
         while [ -z "$STAGING_DOMAIN" ]; do
             echo -e "${YELLOW}Staging domain is required${NC}"
-            read -p "Staging domain: " STAGING_DOMAIN
+            read -p "Domain: " STAGING_DOMAIN
         done
         echo ""
     fi
@@ -247,11 +258,8 @@ product:
   type: "static"
   description: "${PRODUCT_DESC}"
 
-# Static Site Configuration
+# Static Site Global Configuration
 static:
-  build_command: "${BUILD_COMMAND}"
-  build_output_dir: "${BUILD_OUTPUT_DIR}"
-  deploy_path: "${DEPLOY_PATH}"
   deploy_user: "${DEPLOY_USER}"
   keep_releases: ${KEEP_RELEASES}
   shared_dirs: []
@@ -269,9 +277,15 @@ servers:
 # Environment Configurations
 environments:
   production:
+    build_command: "${PROD_BUILD_COMMAND}"
+    build_output_dir: "${PROD_BUILD_OUTPUT_DIR}"
+    deploy_path: "${PROD_DEPLOY_PATH}"
     domain: "${PROD_DOMAIN}"
 
   staging:
+    build_command: "${STAGING_BUILD_COMMAND}"
+    build_output_dir: "${STAGING_BUILD_OUTPUT_DIR}"
+    deploy_path: "${STAGING_DEPLOY_PATH}"
     domain: "${STAGING_DOMAIN}"
 EOF
     else

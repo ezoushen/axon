@@ -486,3 +486,82 @@ require_application_server() {
 get_configured_environments() {
     get_available_environments "$@"
 }
+
+# ==============================================================================
+# Static Site Configuration Functions
+# ==============================================================================
+
+# Global static site settings (apply to all environments)
+get_static_deploy_user() {
+    local config_file=${1:-$CONFIG_FILE}
+    parse_yaml_key "static.deploy_user" "www-data" "$config_file"
+}
+
+get_static_keep_releases() {
+    local config_file=${1:-$CONFIG_FILE}
+    parse_yaml_key "static.keep_releases" "5" "$config_file"
+}
+
+get_static_shared_dirs() {
+    local config_file=${1:-$CONFIG_FILE}
+    parse_yaml_array "static.shared_dirs" "$config_file"
+}
+
+get_static_required_files() {
+    local config_file=${1:-$CONFIG_FILE}
+    local files=$(parse_yaml_array "static.required_files" "$config_file")
+    if [ -z "$files" ]; then
+        echo "index.html"  # Default
+    else
+        echo "$files"
+    fi
+}
+
+# Per-environment static site settings (require environment parameter)
+get_build_command() {
+    local environment="$1"
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ -z "$environment" ]; then
+        echo -e "${RED}Error: Environment parameter required for get_build_command${NC}" >&2
+        return 1
+    fi
+
+    parse_yaml_key "environments.${environment}.build_command" "" "$config_file"
+}
+
+get_build_output_dir() {
+    local environment="$1"
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ -z "$environment" ]; then
+        echo -e "${RED}Error: Environment parameter required for get_build_output_dir${NC}" >&2
+        return 1
+    fi
+
+    parse_yaml_key "environments.${environment}.build_output_dir" "" "$config_file"
+}
+
+get_deploy_path() {
+    local environment="$1"
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ -z "$environment" ]; then
+        echo -e "${RED}Error: Environment parameter required for get_deploy_path${NC}" >&2
+        return 1
+    fi
+
+    parse_yaml_key "environments.${environment}.deploy_path" "" "$config_file"
+}
+
+get_domain() {
+    local environment="$1"
+    local config_file=${2:-$CONFIG_FILE}
+
+    if [ -z "$environment" ]; then
+        echo -e "${RED}Error: Environment parameter required for get_domain${NC}" >&2
+        return 1
+    fi
+
+    parse_yaml_key "environments.${environment}.domain" "" "$config_file"
+}

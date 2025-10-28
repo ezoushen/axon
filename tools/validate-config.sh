@@ -295,7 +295,29 @@ validate_environment() {
             fi
         fi
     else
-        # Static type - env_path not used
+        # Static type - require per-environment build and deployment settings
+        validate_required "environments.${env}.build_command" "Build command"
+        validate_required "environments.${env}.build_output_dir" "Build output directory"
+        validate_required "environments.${env}.deploy_path" "Deployment path"
+        validate_required "environments.${env}.domain" "Domain"
+
+        # Check deploy_path is absolute
+        local deploy_path=$(parse_yaml_key "environments.${env}.deploy_path" "" "$CONFIG_FILE")
+        if [ -n "$deploy_path" ] && [ "$deploy_path" != "null" ]; then
+            if [[ ! "$deploy_path" =~ ^/ ]]; then
+                report_warning "deploy_path should be an absolute path: ${deploy_path}"
+            fi
+        fi
+
+        # Check build_output_dir doesn't start with /
+        local build_output_dir=$(parse_yaml_key "environments.${env}.build_output_dir" "" "$CONFIG_FILE")
+        if [ -n "$build_output_dir" ] && [ "$build_output_dir" != "null" ]; then
+            if [[ "$build_output_dir" =~ ^/ ]]; then
+                report_warning "build_output_dir should be relative to project root: ${build_output_dir}"
+            fi
+        fi
+
+        # Warn if Docker-specific fields are present
         local env_path=$(parse_yaml_key "environments.${env}.env_path" "" "$CONFIG_FILE")
         if [ -n "$env_path" ] && [ "$env_path" != "null" ]; then
             report_warning "env_path ignored for static sites (environment: ${env})"
@@ -305,8 +327,6 @@ validate_environment() {
         if [ -n "$image_tag" ] && [ "$image_tag" != "null" ]; then
             report_warning "image_tag ignored for static sites (environment: ${env})"
         fi
-
-        report_success "Environment configured: ${env}"
     fi
 }
 
@@ -327,26 +347,18 @@ validate_optional "product.description" "Product description" "(none)"
 
 # Validate static-specific or docker-specific configurations based on type
 if [ "$PRODUCT_TYPE" = "static" ]; then
-    # Static site configuration validation
+    # Static site global configuration validation
     echo ""
-    echo -e "${BLUE}Static Site Configuration${NC}"
+    echo -e "${BLUE}Static Site Global Configuration${NC}"
     echo ""
-    validate_required "static.build_command" "Build command"
-    validate_required "static.build_output_dir" "Build output directory"
-    validate_required "static.deploy_path" "Deploy path"
+    echo -e "  ${BLUE}NOTE: Build and deployment settings are per-environment (validated below)${NC}"
+    echo ""
+
     validate_optional "static.deploy_user" "Deploy user" "www-data"
     validate_optional "static.keep_releases" "Keep releases" "5"
 
-    # Check if build output dir exists (local validation)
-    BUILD_OUTPUT_DIR=$(parse_yaml_key "static.build_output_dir" "" "$CONFIG_FILE")
-    if [ -n "$BUILD_OUTPUT_DIR" ] && [ -d "$PRODUCT_ROOT/$BUILD_OUTPUT_DIR" ]; then
-        report_success "Build output directory exists: $BUILD_OUTPUT_DIR ✓"
-    else
-        report_warning "Build output directory not found: $PRODUCT_ROOT/$BUILD_OUTPUT_DIR (will be created during build)"
-    fi
-
     # Check for shared_dirs
-    SHARED_DIRS=$(get_static_shared_dirs "$CONFIG_FILE")
+    SHARED_DIRS=$(parse_yaml_array "static.shared_dirs" "$CONFIG_FILE")
     if [ -n "$SHARED_DIRS" ]; then
         local dir_count=$(echo "$SHARED_DIRS" | wc -l | tr -d ' ')
         report_success "Shared directories: ${dir_count} configured"
@@ -355,12 +367,28 @@ if [ "$PRODUCT_TYPE" = "static" ]; then
     fi
 
     # Check for required_files
-    REQUIRED_FILES=$(get_static_required_files "$CONFIG_FILE")
+    REQUIRED_FILES=$(parse_yaml_array "static.required_files" "$CONFIG_FILE")
     if [ -n "$REQUIRED_FILES" ]; then
         local file_count=$(echo "$REQUIRED_FILES" | wc -l | tr -d ' ')
         report_success "Required files validation: ${file_count} file(s)"
     else
-        echo -e "  ${BLUE}○ Required files: <not set>${NC}"
+        echo -e "  ${BLUE}○ Required files: <not set> (defaults to index.html)${NC}"
+    fi
+
+    # Warn if deprecated global build/deploy fields are present
+    OLD_BUILD_CMD=$(parse_yaml_key "static.build_command" "" "$CONFIG_FILE")
+    if [ -n "$OLD_BUILD_CMD" ] && [ "$OLD_BUILD_CMD" != "null" ]; then
+        report_error "static.build_command is deprecated - move to environments.{env}.build_command"
+    fi
+
+    OLD_BUILD_DIR=$(parse_yaml_key "static.build_output_dir" "" "$CONFIG_FILE")
+    if [ -n "$OLD_BUILD_DIR" ] && [ "$OLD_BUILD_DIR" != "null" ]; then
+        report_error "static.build_output_dir is deprecated - move to environments.{env}.build_output_dir"
+    fi
+
+    OLD_DEPLOY_PATH=$(parse_yaml_key "static.deploy_path" "" "$CONFIG_FILE")
+    if [ -n "$OLD_DEPLOY_PATH" ] && [ "$OLD_DEPLOY_PATH" != "null" ]; then
+        report_error "static.deploy_path is deprecated - move to environments.{env}.deploy_path"
     fi
 
     # Warn if docker/registry sections are present

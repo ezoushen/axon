@@ -24,20 +24,13 @@ product:
 # ONLY used when product.type: "static"
 # Static sites are deployed directly to System Server using symlink-based atomic deployments
 # No Docker containers or registry involved
+#
+# IMPORTANT: Build and deployment settings are per-environment (see environments section below)
+# This section contains only GLOBAL operational settings that apply to all environments
 static:
-  # Build configuration (runs on local machine)
-  build_command: "npm run build"               # [REQUIRED] Command to build static site
-                                               # Examples: "npm run build", "hugo", "jekyll build", "gatsby build"
-  build_output_dir: "dist"                     # [REQUIRED] Directory containing built static files
-                                               # Examples: "dist", "build", "public", "_site"
-
-  # Deployment configuration (on System Server)
-  deploy_path: "/var/www/my-product"           # [REQUIRED] Base deployment path on System Server
-                                               # Creates: {deploy_path}/{environment}/releases/
+  # Global operational settings
   deploy_user: "www-data"                      # [OPTIONAL] File owner for deployed files (default: www-data)
                                                # Must match nginx user for proper permissions
-
-  # Release management
   keep_releases: 5                             # [OPTIONAL] Number of previous releases to keep (default: 5)
                                                # Older releases are automatically cleaned up after deployment
 
@@ -46,10 +39,13 @@ static:
     - "uploads"                                # Example: User-uploaded content
     # - "user-content"                         # Example: Additional persistent data
 
-  # Validation (optional)
+  # Build validation (optional)
   required_files:                              # [OPTIONAL] Files that must exist in build output
     - "index.html"                             # Deployment fails if these files are missing
     # - "assets/main.css"                      # Useful for catching incomplete builds
+
+# NOTE: Per-environment settings (build_command, build_output_dir, deploy_path, domain)
+# are configured in the "environments" section below
 
 # ==============================================================================
 # Container Registry Configuration
@@ -199,26 +195,63 @@ nginx:
 # Environment Configurations
 # ==============================================================================
 # You can define any number of environments (production, staging, development, qa, etc.)
-# Each environment can have its own configuration
-# For docker type: env_path points to .env file on Application Server
-# For static type: env_path not used (static sites have no runtime environment)
+# Each environment has its own configuration based on product.type
+#
+# For product.type: "docker" - Each environment needs:
+#   - env_path: Path to .env file on Application Server
+#   - image_tag: Docker image tag (optional)
+#
+# For product.type: "static" - Each environment needs:
+#   - build_command: Command to build the static site
+#   - build_output_dir: Directory containing built files
+#   - deploy_path: Deployment path on System Server
+#   - domain: Domain name for nginx configuration
+#
 environments:
+  # --------------------------------------------------------------------------
   # Production Environment
+  # --------------------------------------------------------------------------
   production:
-    env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED for docker] Full path to .env file on Application Server
+    # Docker-specific settings (ONLY for product.type: "docker")
+    env_path: "/home/ubuntu/apps/my-product/.env.production"  # [REQUIRED for docker] Path to .env file on Application Server
     image_tag: "production"                                   # [OPTIONAL for docker] Docker image tag (default: environment name)
 
-  # Staging Environment
-  staging:
-    # Port is auto-assigned by Docker (no manual configuration needed)
-    env_path: "/home/ubuntu/apps/my-product/.env.staging"  # [REQUIRED for docker] Full path to .env file on Application Server
-    image_tag: "staging"                                   # [OPTIONAL for docker] Docker image tag (default: environment name)
+    # Static site settings (ONLY for product.type: "static")
+    build_command: "npm run build:production"                 # [REQUIRED for static] Command to build static site
+                                                              # Examples: "npm run build:prod", "hugo --environment production", "gatsby build"
+    build_output_dir: "dist"                                  # [REQUIRED for static] Directory with built files (relative to project root)
+                                                              # Examples: "dist", "build", "public", ".next", "_site"
+    deploy_path: "/var/www/my-product-prod"                   # [REQUIRED for static] Deploy path on System Server
+                                                              # Creates: {deploy_path}/releases/{timestamp}/
+    domain: "example.com"                                     # [REQUIRED for static] Domain for nginx configuration
 
+  # --------------------------------------------------------------------------
+  # Staging Environment
+  # --------------------------------------------------------------------------
+  staging:
+    # Docker-specific settings (ONLY for product.type: "docker")
+    env_path: "/home/ubuntu/apps/my-product/.env.staging"    # [REQUIRED for docker] Path to .env file on Application Server
+    image_tag: "staging"                                      # [OPTIONAL for docker] Docker image tag (default: environment name)
+
+    # Static site settings (ONLY for product.type: "static")
+    build_command: "npm run build:staging"                    # [REQUIRED for static] Command to build static site
+    build_output_dir: "dist"                                  # [REQUIRED for static] Directory with built files
+    deploy_path: "/var/www/my-product-staging"                # [REQUIRED for static] Deploy path on System Server
+    domain: "staging.example.com"                             # [REQUIRED for static] Domain for nginx configuration
+
+  # --------------------------------------------------------------------------
   # Custom Environment Example (optional)
+  # --------------------------------------------------------------------------
   # You can define any environment name you need
   # development:
-  #   env_path: "/home/ubuntu/apps/my-product/.env.development"  # [REQUIRED]
-  #   image_tag: "dev"                                           # [OPTIONAL]
+  #   # For docker:
+  #   env_path: "/home/ubuntu/apps/my-product/.env.development"
+  #   image_tag: "dev"
+  #   # For static:
+  #   build_command: "npm run build:dev"
+  #   build_output_dir: "dist"
+  #   deploy_path: "/var/www/my-product-dev"
+  #   domain: "dev.example.com"
 
 # ==============================================================================
 # Health Check Configuration

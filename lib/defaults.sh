@@ -100,9 +100,15 @@ get_nginx_domain() {
         return
     fi
 
-    local domain=$(get_config_with_default ".nginx.domain.${env}" "" "$config_file")
+    # Try new location first: environments.{env}.domain (for both docker and static)
+    local domain=$(get_config_with_default ".environments.${env}.domain" "" "$config_file")
 
-    if [ -z "$domain" ]; then
+    # Fall back to old location: nginx.domain.{env} (for backward compatibility)
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
+        domain=$(get_config_with_default ".nginx.domain.${env}" "" "$config_file")
+    fi
+
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
         echo "$NGINX_DEFAULT_DOMAIN"
     else
         echo "$domain"
@@ -260,79 +266,19 @@ generate_release_name() {
     date +"%Y%m%d%H%M%S"
 }
 
-# Get static build command
-get_static_build_command() {
-    local config_file="${1:-$CONFIG_FILE}"
-    get_config_with_default ".static.build_command" "" "$config_file"
-}
+# NOTE: Static site configuration getters have been moved to lib/config-parser.sh
+# - get_static_deploy_user() -> now in config-parser.sh
+# - get_static_keep_releases() -> now in config-parser.sh
+# - get_static_shared_dirs() -> now in config-parser.sh
+# - get_static_required_files() -> now in config-parser.sh
+# - get_build_command(environment) -> now in config-parser.sh (per-environment)
+# - get_build_output_dir(environment) -> now in config-parser.sh (per-environment)
+# - get_deploy_path(environment) -> now in config-parser.sh (per-environment)
+# - get_domain(environment) -> now in config-parser.sh (per-environment)
 
-# Get static build output directory
-get_static_build_output_dir() {
-    local config_file="${1:-$CONFIG_FILE}"
-    get_config_with_default ".static.build_output_dir" "$STATIC_DEFAULT_BUILD_DIR" "$config_file"
-}
-
-# Get static deployment path
-get_static_deploy_path() {
-    local config_file="${1:-$CONFIG_FILE}"
-    get_config_with_default ".static.deploy_path" "" "$config_file"
-}
-
-# Get deploy user for static sites
-get_static_deploy_user() {
-    local config_file="${1:-$CONFIG_FILE}"
-    get_config_with_default ".static.deploy_user" "$STATIC_DEFAULT_DEPLOY_USER" "$config_file"
-}
-
-# Get number of releases to keep
-get_static_keep_releases() {
-    local config_file="${1:-$CONFIG_FILE}"
-    get_config_with_default ".static.keep_releases" "$STATIC_DEFAULT_KEEP_RELEASES" "$config_file"
-}
-
-# Get list of shared directories for static sites
-# Returns newline-separated list
-get_static_shared_dirs() {
-    local config_file="${1:-$CONFIG_FILE}"
-
-    if [ -z "$config_file" ] || [ ! -f "$config_file" ]; then
-        echo ""
-        return
-    fi
-
-    # Try yq first
-    if command_exists yq; then
-        local dirs=$(yq eval '.static.shared_dirs[]' "$config_file" 2>/dev/null || echo "")
-        if [ -n "$dirs" ]; then
-            echo "$dirs"
-            return
-        fi
-    fi
-
-    echo ""
-}
-
-# Get list of required files for static sites
-# Returns newline-separated list
-get_static_required_files() {
-    local config_file="${1:-$CONFIG_FILE}"
-
-    if [ -z "$config_file" ] || [ ! -f "$config_file" ]; then
-        echo ""
-        return
-    fi
-
-    # Try yq first
-    if command_exists yq; then
-        local files=$(yq eval '.static.required_files[]' "$config_file" 2>/dev/null || echo "")
-        if [ -n "$files" ]; then
-            echo "$files"
-            return
-        fi
-    fi
-
-    echo ""
-}
+# ==============================================================================
+# Static Site Helper Functions (path construction, not config parsing)
+# ==============================================================================
 
 # Get full release directory path
 # Returns: {deploy_path}/{environment}/releases/{release_name}

@@ -291,19 +291,19 @@ build_static() {
     # Load configuration
     load_config "$ENVIRONMENT"
 
-    # Get static-specific configuration
-    BUILD_COMMAND=$(get_static_build_command "$CONFIG_FILE")
-    BUILD_OUTPUT_DIR=$(get_static_build_output_dir "$CONFIG_FILE")
+    # Get per-environment static site configuration
+    BUILD_COMMAND=$(get_build_command "$ENVIRONMENT" "$CONFIG_FILE")
+    BUILD_OUTPUT_DIR=$(get_build_output_dir "$ENVIRONMENT" "$CONFIG_FILE")
 
     if [ -z "$BUILD_COMMAND" ]; then
-        echo -e "${RED}Error: static.build_command not configured${NC}"
-        echo "Please set 'static.build_command' in $CONFIG_FILE"
+        echo -e "${RED}Error: environments.${ENVIRONMENT}.build_command not configured${NC}"
+        echo "Please set 'environments.${ENVIRONMENT}.build_command' in $CONFIG_FILE"
         exit 1
     fi
 
     if [ -z "$BUILD_OUTPUT_DIR" ]; then
-        echo -e "${RED}Error: static.build_output_dir not configured${NC}"
-        echo "Please set 'static.build_output_dir' in $CONFIG_FILE"
+        echo -e "${RED}Error: environments.${ENVIRONMENT}.build_output_dir not configured${NC}"
+        echo "Please set 'environments.${ENVIRONMENT}.build_output_dir' in $CONFIG_FILE"
         exit 1
     fi
 

@@ -621,7 +621,7 @@ deploy_docker() {
     set -e
     echo "$REGISTRY_TOKEN" | docker login -u "$REGISTRY_USERNAME" --password-stdin
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             ;;
     
         aws_ecr)
@@ -634,7 +634,7 @@ deploy_docker() {
     aws ecr get-login-password --region "$AWS_REGION" --profile "$AWS_PROFILE" | \
         docker login --username AWS --password-stdin "$REGISTRY_URL" 2>/dev/null
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             ;;
     
         google_gcr)
@@ -649,13 +649,13 @@ deploy_docker() {
     cat "$REMOTE_KEY" | docker login -u _json_key --password-stdin https://gcr.io
     rm -f "$REMOTE_KEY"
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             else
                 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     gcloud auth configure-docker --quiet
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             fi
             ;;
     
@@ -673,20 +673,20 @@ deploy_docker() {
     set -e
     echo "$SP_PASSWORD" | docker login "$REGISTRY_URL" --username "$SP_ID" --password-stdin
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             elif [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASSWORD" ]; then
                 ADMIN_PASSWORD=$(expand_env_vars "$ADMIN_PASSWORD")
                 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     echo "$ADMIN_PASSWORD" | docker login "$REGISTRY_URL" --username "$ADMIN_USER" --password-stdin
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             else
                 ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     az acr login --name "$REGISTRY_NAME"
     docker pull "$FULL_IMAGE"
-    EOF
+EOF
             fi
             ;;
     
@@ -723,7 +723,7 @@ deploy_docker() {
     else
         echo "  No containers blocking port ${APP_PORT}"
     fi
-    EOF
+EOF
     
         echo ""
     fi
@@ -785,7 +785,7 @@ deploy_docker() {
         echo "Error: Failed to start container"
         exit 1
     fi
-    EOF
+EOF
     
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: Failed to start container${NC}"
@@ -851,7 +851,7 @@ deploy_docker() {
         docker stop "${CONTAINER_NAME}" 2>/dev/null || true
         docker rm "${CONTAINER_NAME}" 2>/dev/null || true
     fi
-    EOF
+EOF
     
             echo -e "${YELLOW}Old container still running. No impact to production.${NC}"
         fi
@@ -920,7 +920,7 @@ deploy_docker() {
             proxy_buffer_size ${PROXY_BUFFER_SIZE};
             proxy_buffers ${PROXY_BUFFERS};
             proxy_busy_buffers_size ${PROXY_BUSY_BUFFERS};
-    EOFSITE
+EOFSITE
     
     # Add custom properties if present
     if [ -n "$CUSTOM_PROPS" ]; then
@@ -939,7 +939,7 @@ deploy_docker() {
             proxy_pass http://UPSTREAM_NAME_PLACEHOLDER/health;
         }
     }
-    EOFSITE2
+EOFSITE2
     
     # Generate HTTPS server block if SSL is configured
     if [ "$HAS_SSL" = "true" ]; then
@@ -985,7 +985,7 @@ deploy_docker() {
             proxy_buffer_size ${PROXY_BUFFER_SIZE};
             proxy_buffers ${PROXY_BUFFERS};
             proxy_busy_buffers_size ${PROXY_BUSY_BUFFERS};
-    EOFHTTPS
+EOFHTTPS
     
         # Add custom properties to HTTPS block if present
         if [ -n "$CUSTOM_PROPS" ]; then
@@ -1004,7 +1004,7 @@ deploy_docker() {
             proxy_pass http://UPSTREAM_NAME_PLACEHOLDER/health;
         }
     }
-    EOFHTTPS2
+EOFHTTPS2
     fi
     
     # Replace placeholders
@@ -1024,7 +1024,7 @@ deploy_docker() {
     upstream ${NGINX_UPSTREAM_NAME} {
         server ${APP_UPSTREAM_IP}:${APP_PORT};
     }
-    EOFUPSTREAM
+EOFUPSTREAM
     
     echo -e "  ✓ Upstream config generated: ${NGINX_UPSTREAM_FILENAME}"
     
@@ -1098,7 +1098,7 @@ deploy_docker() {
         docker stop "\${FAILED_CONTAINER}" 2>/dev/null || true
         docker rm "\${FAILED_CONTAINER}" 2>/dev/null || true
     fi
-    EOF
+EOF
     
         exit 1
     fi
@@ -1136,7 +1136,7 @@ deploy_docker() {
             docker rm "\$container" 2>/dev/null || true
         done
     fi
-    EOF
+EOF
     } &
     
     # Store cleanup PID for reference
@@ -1192,8 +1192,11 @@ deploy_docker() {
 # Static Site Deployment Function
 # ==============================================================================
 deploy_static() {
-    # Get static deployment configuration
-    DEPLOY_PATH=$(get_static_deploy_path "$CONFIG_FILE")
+    # Get per-environment deployment configuration
+    DEPLOY_PATH=$(get_deploy_path "$ENVIRONMENT" "$CONFIG_FILE")
+    DOMAIN=$(get_domain "$ENVIRONMENT" "$CONFIG_FILE")
+
+    # Get global static configuration
     DEPLOY_USER=$(get_static_deploy_user "$CONFIG_FILE")
     KEEP_RELEASES=$(get_static_keep_releases "$CONFIG_FILE")
 
@@ -1202,10 +1205,16 @@ deploy_static() {
     NGINX_SITE_FILENAME=$(get_site_filename "$PRODUCT_NAME" "$ENVIRONMENT")
     NGINX_SITE_FILE="${NGINX_AXON_DIR}/sites/${NGINX_SITE_FILENAME}"
 
-    # Validate required static configuration
+    # Validate required per-environment configuration
     if [ -z "$DEPLOY_PATH" ]; then
-        echo -e "${RED}Error: static.deploy_path not configured${NC}"
-        echo "Please set 'static.deploy_path' in $CONFIG_FILE"
+        echo -e "${RED}Error: environments.${ENVIRONMENT}.deploy_path not configured${NC}"
+        echo "Please set 'environments.${ENVIRONMENT}.deploy_path' in $CONFIG_FILE"
+        exit 1
+    fi
+
+    if [ -z "$DOMAIN" ]; then
+        echo -e "${RED}Error: environments.${ENVIRONMENT}.domain not configured${NC}"
+        echo "Please set 'environments.${ENVIRONMENT}.domain' in $CONFIG_FILE"
         exit 1
     fi
 
