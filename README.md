@@ -6,17 +6,17 @@ A reusable, config-driven deployment system for achieving zero-downtime deployme
 
 ## Features
 
-- ✅ **Zero-downtime deployments** - Atomic symlink switching for static sites, Docker auto-port assignment with rolling updates
-- ✅ **Dual deployment modes** - Docker containers and static site hosting
-- ✅ **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
-- ✅ **Multi-environment support** - Production, staging, and custom environments
-- ✅ **Product-agnostic** - Reusable across multiple projects
-- ✅ **Multi-registry support** - Docker Hub, AWS ECR, Google GCR, Azure ACR
-- ✅ **Git SHA tagging** - Automatic commit tagging with release name tracking for static sites
-- ✅ **Health checks** - Docker native health checks and application HTTP endpoint testing
-- ✅ **Automatic rollback** - On health check failures (Docker deployments)
-- ✅ **SSH-based coordination** - Updates nginx configurations automatically
-- ✅ **Flexible workflows** - Separate or combined build/push/deploy steps
+- **Zero-downtime deployments** - Atomic symlink switching for static sites, Docker auto-port assignment with rolling updates
+- **Dual deployment modes** - Docker containers and static site hosting
+- **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
+- **Multi-environment support** - Production, staging, and custom environments
+- **Product-agnostic** - Reusable across multiple projects
+- **Multi-registry support** - Docker Hub, AWS ECR, Google GCR, Azure ACR
+- **Git SHA tagging** - Automatic commit tagging with release name tracking for static sites
+- **Health checks** - Docker native health checks and application HTTP endpoint testing
+- **Automatic rollback** - On health check failures (Docker deployments)
+- **SSH-based coordination** - Updates nginx configurations automatically
+- **Flexible workflows** - Separate or combined build/push/deploy steps
 
 ## Architecture
 
