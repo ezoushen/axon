@@ -104,6 +104,10 @@ fi
 # Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
+source "$MODULE_DIR/lib/ssh-connection.sh"
+
+# Initialize SSH connection multiplexing for performance
+ssh_init_multiplexing
 
 # Validate environment exists if specific environment requested
 if [ "$ENVIRONMENT" != "all" ]; then
@@ -158,7 +162,7 @@ check_environment() {
 
     # Find the most recent container for this environment (timestamp-based naming)
     # Container name format: ${PRODUCT_NAME}-${env}-${timestamp}
-    CONTAINER_NAME=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    CONTAINER_NAME=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps -a --filter 'name=${PRODUCT_NAME}-${env}-' --format '{{.Names}}' | sort -r | head -n 1" 2>/dev/null)
 
     if [ -z "$CONTAINER_NAME" ]; then
@@ -169,7 +173,7 @@ check_environment() {
     echo -e "  Container:      ${CYAN}${CONTAINER_NAME}${NC}"
 
     # Get port from the container
-    PORT=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    PORT=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker port '${CONTAINER_NAME}' 3000 2>/dev/null | cut -d: -f2" 2>/dev/null)
 
     if [ -z "$PORT" ]; then
@@ -182,7 +186,7 @@ check_environment() {
     echo -e "  Health URL:     ${CYAN}${URL}${NC} (on Application Server)"
 
     # Perform health check via SSH
-    HTTP_CODE=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    HTTP_CODE=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "curl -s -o /dev/null -w '%{http_code}' --max-time 5 '$URL' 2>/dev/null")
 
     if [ "$HTTP_CODE" == "200" ]; then

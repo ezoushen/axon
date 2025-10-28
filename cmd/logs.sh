@@ -128,6 +128,10 @@ fi
 # Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
+source "$MODULE_DIR/lib/ssh-connection.sh"
+
+# Initialize SSH connection multiplexing for performance
+ssh_init_multiplexing
 
 # Load product name
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
@@ -203,7 +207,7 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Find the most recent container for this environment
-CONTAINER=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+CONTAINER=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
 
 # Check if container exists
@@ -212,7 +216,7 @@ if [ -z "$CONTAINER" ]; then
     echo -e "${YELLOW}Looking for containers matching: ${CONTAINER_FILTER}-${NC}"
     echo ""
     echo "Available containers:"
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | grep ${PRODUCT_NAME} || echo '  None found'"
     exit 1
 fi
@@ -236,4 +240,4 @@ fi
 LOGS_CMD="$LOGS_CMD --tail $LINES \"$CONTAINER\""
 
 # Execute docker logs command on Application Server
-ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "$LOGS_CMD"
+axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "$LOGS_CMD"

@@ -113,6 +113,10 @@ fi
 # Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
+source "$MODULE_DIR/lib/ssh-connection.sh"
+
+# Initialize SSH connection multiplexing for performance
+ssh_init_multiplexing
 
 # Handle --all flag (restart all environments)
 if [ "$ENVIRONMENT" == "all" ]; then
@@ -249,7 +253,7 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Find the most recent container for this environment
-CONTAINER=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+CONTAINER=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
 
 # Check if container exists
@@ -258,7 +262,7 @@ if [ -z "$CONTAINER" ]; then
     echo -e "${YELLOW}Looking for containers matching: ${CONTAINER_FILTER}-${NC}"
     echo ""
     echo "Available containers:"
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | grep ${PRODUCT_NAME} || echo '  None found'"
     exit 1
 fi
@@ -269,7 +273,7 @@ echo ""
 # Restart the container
 echo -e "${BLUE}Restarting container...${NC}"
 
-ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "docker restart \"$CONTAINER\"" > /dev/null
+axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" "docker restart \"$CONTAINER\"" > /dev/null
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Container restarted successfully${NC}"
@@ -282,7 +286,7 @@ if [ $? -eq 0 ]; then
 
     # Show status
     echo -e "${BLUE}Container status:${NC}"
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps --filter 'name=$CONTAINER' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
     echo ""
 else

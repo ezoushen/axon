@@ -22,6 +22,11 @@ PRODUCT_ROOT="$(cd "$AXON_DIR/.." && pwd)"
 source "$AXON_DIR/lib/defaults.sh"
 source "$AXON_DIR/lib/ssh-batch.sh"
 
+# Initialize SSH connection multiplexing for performance
+if type ssh_init_multiplexing >/dev/null 2>&1; then
+    ssh_init_multiplexing
+fi
+
 # Default values
 CONFIG_FILE="axon.config.yml"
 ENVIRONMENT=""

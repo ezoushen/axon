@@ -77,6 +77,10 @@ fi
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
 source "$MODULE_DIR/lib/registry-auth.sh"
+source "$MODULE_DIR/lib/ssh-connection.sh"
+
+# Initialize SSH connection multiplexing for performance
+ssh_init_multiplexing
 
 # Validate environment
 if [ -z "$ENVIRONMENT" ]; then

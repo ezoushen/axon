@@ -118,7 +118,7 @@ deploy_docker() {
     ssh_batch_add "${USE_SUDO} nginx -t 2>&1 | grep -q 'successful' && echo 'VALID' || echo 'INVALID'" "nginx_config_valid"
     ssh_batch_add "grep -qF 'include ${NGINX_AXON_DIR}/upstreams/*.conf' /etc/nginx/nginx.conf && echo 'INCLUDED' || echo 'MISSING'" "upstreams_included"
     ssh_batch_add "grep -qF 'include ${NGINX_AXON_DIR}/sites/*.conf' /etc/nginx/nginx.conf && echo 'INCLUDED' || echo 'MISSING'" "sites_included"
-    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
+    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER" "system"
 
     # Check nginx installation
     NGINX_INSTALLED=$(ssh_batch_result "nginx_installed" | tr -d '[:space:]')
@@ -185,14 +185,14 @@ deploy_docker() {
     # Batch 1: Get current port from System Server
     ssh_batch_start
     ssh_batch_add "grep -oP 'server.*:\K\d+' $NGINX_UPSTREAM_FILE 2>/dev/null || echo ''" "current_port"
-    ssh_batch_execute_async "$SSH_KEY" "$SYSTEM_SERVER" "system_check"
+    ssh_batch_execute_async "$SSH_KEY" "$SYSTEM_SERVER" "system_check" "system"
 
     # Batch 2: App Server pre-checks
     ssh_batch_start
     ssh_batch_add "docker ps --format '{{.Names}}\t{{.Ports}}' | grep '${PRODUCT_NAME}-${ENVIRONMENT}' || true" "list_containers"
     ssh_batch_add "mkdir -p $APP_DEPLOY_PATH" "create_dir"
     ssh_batch_add "[ -f '$ENV_PATH' ] && echo 'YES' || echo 'NO'" "check_env"
-    ssh_batch_execute_async "$APP_SSH_KEY" "$APP_SERVER" "app_check"
+    ssh_batch_execute_async "$APP_SSH_KEY" "$APP_SERVER" "app_check" "app"
 
     # Wait for both to complete
     ssh_batch_wait "system_check" "app_check"
@@ -249,6 +249,12 @@ deploy_docker() {
     echo -e "  Registry: ${YELLOW}${REGISTRY_PROVIDER}${NC}"
     echo -e "  Image:    ${YELLOW}${FULL_IMAGE}${NC}"
 
+    # Get SSH multiplexing options for app server
+    local ssh_multiplex_opts=""
+    if type ssh_get_multiplex_opts >/dev/null 2>&1; then
+        ssh_multiplex_opts=$(ssh_get_multiplex_opts "app")
+    fi
+
     # Generate registry-specific authentication commands for remote execution
     case $REGISTRY_PROVIDER in
         docker_hub)
@@ -256,7 +262,7 @@ deploy_docker() {
             REGISTRY_TOKEN=$(get_registry_config "access_token")
             REGISTRY_TOKEN=$(expand_env_vars "$REGISTRY_TOKEN")
 
-            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+            ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     echo "$REGISTRY_TOKEN" | docker login -u "$REGISTRY_USERNAME" --password-stdin
     docker pull "$FULL_IMAGE"
@@ -268,12 +274,22 @@ EOF
             AWS_REGION=$(get_registry_config "region")
             REGISTRY_URL=$(build_registry_url)
 
-            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+            # Build AWS CLI command with conditional profile flag
+            if [ -n "$AWS_PROFILE" ]; then
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
-    aws ecr get-login-password --region "$AWS_REGION" --profile "$AWS_PROFILE" | \
-        docker login --username AWS --password-stdin "$REGISTRY_URL" 2>/dev/null
-    docker pull "$FULL_IMAGE"
+    aws ecr get-login-password --region '$AWS_REGION' --profile '$AWS_PROFILE' | \
+        docker login --username AWS --password-stdin '$REGISTRY_URL'
+    docker pull '$FULL_IMAGE'
 EOF
+            else
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+    set -e
+    aws ecr get-login-password --region '$AWS_REGION' | \
+        docker login --username AWS --password-stdin '$REGISTRY_URL'
+    docker pull '$FULL_IMAGE'
+EOF
+            fi
             ;;
 
         google_gcr)
@@ -283,14 +299,14 @@ EOF
                 REMOTE_KEY="/tmp/gcp-key-$$.json"
                 scp -i "$APP_SSH_KEY" "$SERVICE_ACCOUNT_KEY" "$APP_SERVER:$REMOTE_KEY"
 
-                ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     cat "$REMOTE_KEY" | docker login -u _json_key --password-stdin https://gcr.io
     rm -f "$REMOTE_KEY"
     docker pull "$FULL_IMAGE"
 EOF
             else
-                ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     gcloud auth configure-docker --quiet
     docker pull "$FULL_IMAGE"
@@ -308,20 +324,20 @@ EOF
 
             if [ -n "$SP_ID" ] && [ -n "$SP_PASSWORD" ]; then
                 SP_PASSWORD=$(expand_env_vars "$SP_PASSWORD")
-                ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     echo "$SP_PASSWORD" | docker login "$REGISTRY_URL" --username "$SP_ID" --password-stdin
     docker pull "$FULL_IMAGE"
 EOF
             elif [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASSWORD" ]; then
                 ADMIN_PASSWORD=$(expand_env_vars "$ADMIN_PASSWORD")
-                ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     echo "$ADMIN_PASSWORD" | docker login "$REGISTRY_URL" --username "$ADMIN_USER" --password-stdin
     docker pull "$FULL_IMAGE"
 EOF
             else
-                ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+                ssh $ssh_multiplex_opts -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
     set -e
     az acr login --name "$REGISTRY_NAME"
     docker pull "$FULL_IMAGE"
@@ -441,7 +457,7 @@ EOF
     if [ -z "$APP_PORT" ]; then
         echo -e "${RED}Error: Could not determine assigned port${NC}"
         echo -e "${YELLOW}Stopping new container...${NC}"
-        ssh -i "$APP_SSH_KEY" "$APP_SERVER" "docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}"
+        axon_ssh "app" -i "$APP_SSH_KEY" "$APP_SERVER" "docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}"
         exit 1
     fi
 
@@ -455,7 +471,7 @@ EOF
 
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         # Query Docker's health status for the container
-        HEALTH_STATUS=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        HEALTH_STATUS=$(axon_ssh "app" -i "$APP_SSH_KEY" "$APP_SERVER" \
             "docker inspect --format='{{.State.Health.Status}}' ${CONTAINER_NAME} 2>/dev/null || echo 'none'")
 
         if [ "$HEALTH_STATUS" = "healthy" ]; then
@@ -552,7 +568,7 @@ EOF
     # Batch: Ensure directories, upload configs, test, and reload nginx
     ssh_batch_start
     ssh_batch_add "${USE_SUDO} mkdir -p ${NGINX_AXON_DIR}/upstreams ${NGINX_AXON_DIR}/sites" "ensure_dirs"
-    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
+    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER" "system"
 
     # Upload both configs (using distinct temp names on both local and remote)
     REMOTE_TEMP_SITE="/tmp/${NGINX_SITE_FILENAME%.conf}-site.conf"
@@ -569,7 +585,7 @@ EOF
     ssh_batch_add "${USE_SUDO} mv ${REMOTE_TEMP_UPSTREAM} ${NGINX_UPSTREAM_FILE}" "move_upstream"
     ssh_batch_add "${USE_SUDO} nginx -t 2>&1" "test_nginx"
     ssh_batch_add "${USE_SUDO} nginx -s reload" "reload_nginx"
-    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER"
+    ssh_batch_execute "$SSH_KEY" "$SYSTEM_SERVER" "system"
 
     # Check if upload succeeded
     if [ $(ssh_batch_exitcode "move_site") -ne 0 ] || [ $(ssh_batch_exitcode "move_upstream") -ne 0 ]; then
@@ -650,12 +666,12 @@ EOF
     if [ -n "\$OLD_CONTAINERS" ]; then
         # Silently cleanup old containers in background
         for container in \$OLD_CONTAINERS; do
-            docker stop --time "\${TIMEOUT}" "\$container" 2>/dev/null || true
+            docker stop --timeout "\${TIMEOUT}" "\$container" 2>/dev/null || true
             docker rm "\$container" 2>/dev/null || true
         done
     fi
 EOF
-    } &
+    } >/dev/null 2>&1 &
 
     # Store cleanup PID for reference
     CLEANUP_PID=$!
@@ -688,7 +704,7 @@ EOF
     ssh_batch_start
     ssh_batch_add "docker ps --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" "container_status"
     ssh_batch_add "if docker ps --filter 'name=${CONTAINER_NAME}' --format '{{.Names}}' | grep -q .; then docker logs --tail=20 '${CONTAINER_NAME}' 2>&1 | head -20; else echo 'Container not found'; fi" "container_logs"
-    ssh_batch_execute "$APP_SSH_KEY" "$APP_SERVER"
+    ssh_batch_execute "$APP_SSH_KEY" "$APP_SERVER" "app"
 
     # Display container status on Application Server
     echo -e "${CYAN}Container Status on Application Server:${NC}"

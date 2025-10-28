@@ -115,6 +115,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+# Initialize SSH connection multiplexing for performance
+if type ssh_init_multiplexing >/dev/null 2>&1; then
+    ssh_init_multiplexing
+fi
+
 # Source the shared config parser library
 source "$MODULE_DIR/lib/config-parser.sh"
 

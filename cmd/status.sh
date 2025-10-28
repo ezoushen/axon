@@ -125,6 +125,10 @@ fi
 # Source libraries
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
+source "$MODULE_DIR/lib/ssh-connection.sh"
+
+# Initialize SSH connection multiplexing for performance
+ssh_init_multiplexing
 
 # Load product name only for initial setup (don't need full config yet)
 PRODUCT_NAME=$(parse_yaml_key "product.name" "")
@@ -197,7 +201,7 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Get containers for this product/environment from Application Server
-CONTAINERS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+CONTAINERS=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}' | sort")
 
 if [ -z "$CONTAINERS" ]; then
@@ -497,7 +501,7 @@ fi
 # Summary
 echo -e "${CYAN}Container Summary:${NC}"
 echo ""
-ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps -a --filter 'name=${CONTAINER_FILTER}' \
      --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
 echo ""
@@ -597,11 +601,11 @@ echo ""
 # Get container names and pass them directly to docker stats
 # (--filter not supported in older Docker versions)
 # Convert newlines to spaces so they're passed as separate arguments, not separate commands
-CONTAINER_NAMES=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+CONTAINER_NAMES=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
     "docker ps --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
 
 if [ -n "$CONTAINER_NAMES" ]; then
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' ${CONTAINER_NAMES}"
 else
     echo -e "${YELLOW}No running containers to show stats${NC}"

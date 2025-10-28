@@ -3,12 +3,18 @@
 # Reduces SSH connection overhead by batching commands into a single execution
 # Part of AXON - reusable across products
 
+# Load SSH connection multiplexing library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/ssh-connection.sh" ]; then
+    source "$SCRIPT_DIR/ssh-connection.sh"
+fi
+
 # Usage:
 #   source lib/ssh-batch.sh
 #   ssh_batch_start
 #   ssh_batch_add "echo 'command1'"
 #   ssh_batch_add "echo 'command2'"
-#   ssh_batch_execute "$SSH_KEY" "$SERVER"
+#   ssh_batch_execute "$SSH_KEY" "$SERVER" ["server_role"]
 #   ssh_batch_result "command1"  # Get result of specific command
 
 # Internal variables
@@ -38,14 +44,23 @@ ssh_batch_add() {
 }
 
 # Execute the batch on remote server
-# Args: ssh_key server_address [options]
+# Args: ssh_key server_address [server_role] [options]
+# server_role: "system" or "app" (default: "app") - used for SSH multiplexing
 # Options: --fail-fast (exit on first error)
 ssh_batch_execute() {
     local ssh_key=$1
     local server=$2
+    local server_role="app"
     local fail_fast=false
 
     shift 2
+
+    # Check if third argument is a server role (not a flag)
+    if [[ $# -gt 0 && "$1" != --* ]]; then
+        server_role="$1"
+        shift
+    fi
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --fail-fast)
@@ -57,6 +72,20 @@ ssh_batch_execute() {
                 ;;
         esac
     done
+
+    # Get SSH multiplexing options (if available)
+    local ssh_multiplex_opts=""
+    if type ssh_get_multiplex_opts >/dev/null 2>&1; then
+        ssh_multiplex_opts=$(ssh_get_multiplex_opts "$server_role")
+
+        # Verbose output (only once per role, consistent with axon_ssh)
+        if [ "$AXON_SSH_VERBOSE" = "1" ]; then
+            if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
+                echo "[SSH] Creating master connection (role: ${server_role})" >&2
+                _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
+            fi
+        fi
+    fi
 
     # Build remote script
     local script="#!/bin/bash
@@ -84,8 +113,8 @@ $cmd
         i=$((i + 1))
     done
 
-    # Execute via SSH
-    _SSH_BATCH_OUTPUT=$(ssh -i "$ssh_key" "$server" bash <<EOF
+    # Execute via SSH with multiplexing options
+    _SSH_BATCH_OUTPUT=$(ssh $ssh_multiplex_opts -i "$ssh_key" "$server" bash <<EOF
 $script
 EOF
 )
@@ -208,15 +237,24 @@ _async_unset() {
 }
 
 # Execute batch asynchronously in background
-# Args: ssh_key server batch_id [options]
+# Args: ssh_key server batch_id [server_role] [options]
+# server_role: "system" or "app" (default: "app") - used for SSH multiplexing
 # Returns: immediately, job runs in background
 ssh_batch_execute_async() {
     local ssh_key=$1
     local server=$2
     local batch_id=$3
+    local server_role="app"
     local fail_fast=false
 
     shift 3
+
+    # Check if fourth argument is a server role (not a flag)
+    if [[ $# -gt 0 && "$1" != --* ]]; then
+        server_role="$1"
+        shift
+    fi
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --fail-fast)
@@ -228,6 +266,20 @@ ssh_batch_execute_async() {
                 ;;
         esac
     done
+
+    # Get SSH multiplexing options (if available)
+    local ssh_multiplex_opts=""
+    if type ssh_get_multiplex_opts >/dev/null 2>&1; then
+        ssh_multiplex_opts=$(ssh_get_multiplex_opts "$server_role")
+
+        # Verbose output (only once per role, consistent with axon_ssh)
+        if [ "$AXON_SSH_VERBOSE" = "1" ]; then
+            if ! echo "$_AXON_SSH_MASTERS_ANNOUNCED" | grep -q " ${server_role} "; then
+                echo "[SSH] Creating master connection (role: ${server_role})" >&2
+                _AXON_SSH_MASTERS_ANNOUNCED="$_AXON_SSH_MASTERS_ANNOUNCED ${server_role} "
+            fi
+        fi
+    fi
 
     # Store commands and markers for this batch
     local commands_str=""
@@ -267,10 +319,10 @@ $cmd
         i=$((i + 1))
     done
 
-    # Execute via SSH in background, capture output to temp file
+    # Execute via SSH in background with multiplexing options, capture output to temp file
     local temp_output="/tmp/axon_batch_${batch_id}_$$.out"
     {
-        ssh -i "$ssh_key" "$server" bash <<EOF
+        ssh $ssh_multiplex_opts -i "$ssh_key" "$server" bash <<EOF
 $script
 EOF
     } > "$temp_output" 2>&1 &
