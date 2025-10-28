@@ -1,7 +1,17 @@
-Read @README.md
+# IMPORTANT
+
+Read @README.md for details
+
+## Working principles
+
+- You should work step-by-step and phase-by-phase without any breaks
+- Only stop if there's a critical decision to make (moving to the next phase isn't a critical decision)
+- Remember to review your work twice before moving to the next phase
+
+## Check list
 
 - Ensure all scripts are Bash 3.2 compatible
-- You should work step-by-step and phase-by-phase without any break, you can only stop while there's any critical decision to make (move to next phase is not a critical decision). But remember to review your works twice before move to the next phase.
+- Ensure documents are up-to-date
 
 ## Documentation principles
 
