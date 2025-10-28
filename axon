@@ -667,8 +667,8 @@ cmd_health() {
         health_args+=("$ENVIRONMENT")
     fi
 
-    verbose "Calling health-check.sh with args: ${health_args[*]}"
-    execute "\"$SCRIPT_DIR/cmd/health-check.sh\" ${health_args[*]}"
+    verbose "Calling health.sh with args: ${health_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/health.sh\" ${health_args[*]}"
 }
 
 #==============================================================================

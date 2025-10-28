@@ -190,19 +190,32 @@ axon/
 │   └── setup-local-machine.sh  # Install required tools on local machine
 ├── cmd/
 │   ├── build.sh                # Build Docker image locally
-│   ├── push.sh                 # Push Docker image to ECR
+│   ├── push.sh                 # Push Docker image to registry
 │   ├── deploy.sh               # Deploy with zero-downtime
-│   ├── validate-config.sh      # Validate configuration file
-│   ├── init-config.sh          # Generate axon.config.yml
-│   ├── health-check.sh         # Health check verification (via SSH)
+│   ├── config.sh               # Config command handler
+│   ├── context.sh              # Context command handler
+│   ├── env.sh                  # Environment command handler
+│   ├── health.sh               # Health check verification (via SSH)
 │   ├── logs.sh                 # View container logs (via SSH)
 │   ├── restart.sh              # Restart containers (via SSH)
+│   ├── delete.sh               # Delete environment (via SSH)
 │   └── status.sh               # Check container status (via SSH)
 ├── release/
 │   ├── create-release.sh       # Create new version release
 │   └── update-homebrew-sha.sh  # Manual Homebrew formula update
 ├── lib/
-│   └── command-parser.sh       # Command parsing and help system
+│   ├── command-parser.sh       # Command parsing and help system
+│   ├── config-parser.sh        # YAML configuration parser
+│   ├── context-manager.sh      # Context management system
+│   ├── defaults.sh             # Default configuration values
+│   ├── deploy-docker.sh        # Docker deployment logic
+│   ├── deploy-static.sh        # Static site deployment logic
+│   ├── docker-runtime.sh       # Docker runtime utilities
+│   ├── init-config.sh          # Configuration file initialization
+│   ├── nginx-config.sh         # Nginx configuration generator
+│   ├── registry-auth.sh        # Container registry authentication
+│   ├── ssh-batch.sh            # SSH batch operations
+│   └── validate-config.sh      # Configuration validation
 ├── homebrew-tap/               # Homebrew tap repository (submodule)
 │   └── Formula/
 │       └── axon.rb             # Homebrew formula (single source of truth)

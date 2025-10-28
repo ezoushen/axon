@@ -174,7 +174,7 @@ handle_config_command() {
                 init_args+=("--interactive")
             fi
 
-            "$SCRIPT_DIR/cmd/init-config.sh" "${init_args[@]}"
+            "$SCRIPT_DIR/lib/init-config.sh" "${init_args[@]}"
             ;;
 
         validate)
@@ -220,7 +220,7 @@ handle_config_command() {
                 validate_args+=("--strict")
             fi
 
-            "$SCRIPT_DIR/cmd/validate-config.sh" "${validate_args[@]}"
+            "$SCRIPT_DIR/lib/validate-config.sh" "${validate_args[@]}"
             ;;
 
         *)

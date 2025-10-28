@@ -291,14 +291,27 @@ your-product/
 │   │   ├── build.sh              # Build Docker image
 │   │   ├── push.sh               # Push to registry
 │   │   ├── deploy.sh             # Deploy (zero-downtime)
+│   │   ├── config.sh             # Config command handler
+│   │   ├── context.sh            # Context command handler
+│   │   ├── env.sh                # Environment command handler
 │   │   ├── logs.sh               # View logs
 │   │   ├── status.sh             # Check status
 │   │   ├── restart.sh            # Restart containers
-│   │   ├── health-check.sh       # Health check
-│   │   └── validate-config.sh    # Config validation
+│   │   ├── delete.sh             # Delete environment
+│   │   └── health.sh             # Health check
 │   ├── lib/
 │   │   ├── config-parser.sh      # YAML parser
-│   │   └── command-parser.sh     # CLI command parser
+│   │   ├── command-parser.sh     # CLI command parser
+│   │   ├── context-manager.sh    # Context management
+│   │   ├── defaults.sh           # Default values
+│   │   ├── deploy-docker.sh      # Docker deployment logic
+│   │   ├── deploy-static.sh      # Static site deployment logic
+│   │   ├── docker-runtime.sh     # Docker runtime utilities
+│   │   ├── init-config.sh        # Config initialization
+│   │   ├── nginx-config.sh       # Nginx configuration
+│   │   ├── registry-auth.sh      # Registry authentication
+│   │   ├── ssh-batch.sh          # SSH batch operations
+│   │   └── validate-config.sh    # Config validation
 │   └── docs/
 │       ├── integration.md        # This file
 │       ├── setup.md              # Server setup guide
