@@ -115,6 +115,18 @@ source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
 source "$MODULE_DIR/lib/ssh-connection.sh"
 
+# Check product type - restart only works for Docker deployments
+PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
+if [ "$PRODUCT_TYPE" = "static" ]; then
+    echo -e "${RED}Error: restart command is only available for Docker deployments${NC}"
+    echo ""
+    echo "Static sites don't have containers to restart."
+    echo "To reload nginx configuration, use:"
+    echo "  ssh <system-server> 'sudo nginx -s reload'"
+    echo ""
+    exit 1
+fi
+
 # Initialize SSH connection multiplexing for performance
 ssh_init_multiplexing
 
