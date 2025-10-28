@@ -179,51 +179,45 @@ axon config validate                 # Validate config first
 
 ```
 axon/
-├── README.md                    # This file
-├── axon                         # Main CLI entry point
-├── VERSION                      # Current version number
-├── config.example.yml           # Example configuration (copy to axon.config.yml)
-├── .github/
-│   └── workflows/
-│       └── release.yml          # Automated release workflow
-├── setup/
-│   └── setup-local-machine.sh  # Install required tools on local machine
-├── cmd/
-│   ├── build.sh                # Build Docker image locally
-│   ├── push.sh                 # Push Docker image to registry
-│   ├── deploy.sh               # Deploy with zero-downtime
-│   ├── config.sh               # Config command handler
-│   ├── context.sh              # Context command handler
-│   ├── env.sh                  # Environment command handler
-│   ├── health.sh               # Health check verification (via SSH)
-│   ├── logs.sh                 # View container logs (via SSH)
-│   ├── restart.sh              # Restart containers (via SSH)
-│   ├── delete.sh               # Delete environment (via SSH)
-│   └── status.sh               # Check container status (via SSH)
-├── release/
-│   ├── create-release.sh       # Create new version release
-│   └── update-homebrew-sha.sh  # Manual Homebrew formula update
-├── lib/
-│   ├── command-parser.sh       # Command parsing and help system
-│   ├── config-parser.sh        # YAML configuration parser
-│   ├── context-manager.sh      # Context management system
-│   ├── defaults.sh             # Default configuration values
-│   ├── deploy-docker.sh        # Docker deployment logic
-│   ├── deploy-static.sh        # Static site deployment logic
-│   ├── docker-runtime.sh       # Docker runtime utilities
-│   ├── init-config.sh          # Configuration file initialization
-│   ├── nginx-config.sh         # Nginx configuration generator
-│   ├── registry-auth.sh        # Container registry authentication
-│   ├── ssh-batch.sh            # SSH batch operations
-│   └── validate-config.sh      # Configuration validation
-├── homebrew-tap/               # Homebrew tap repository (submodule)
-│   └── Formula/
-│       └── axon.rb             # Homebrew formula (single source of truth)
-└── docs/
-    ├── integration.md          # Integration guide
-    ├── setup.md                # Server setup guide
-    └── RELEASE.md              # Release process documentation
+├── axon                    # Main CLI entry point
+├── VERSION                 # Current version number
+├── config.example.yml      # Example configuration template
+├── cmd/                    # Subcommand implementations (one script per subcommand)
+├── lib/                    # Shared libraries and utilities
+├── setup/                  # Installation and setup scripts
+├── release/                # Release management tools
+├── docs/                   # Documentation
+└── homebrew-tap/           # Homebrew formula (submodule)
 ```
+
+### Organization Logic
+
+**`cmd/` - Subcommand Scripts**
+- Contains executable scripts for top-level CLI subcommands
+- Script naming: matches subcommand name exactly (e.g., `health.sh` for `axon health`)
+- Examples: `build.sh`, `deploy.sh`, `status.sh`, `config.sh`, `context.sh`
+- Rule: If users can run `axon <name>`, it belongs here
+
+**`lib/` - Shared Libraries & Utilities**
+- Reusable functions, parsers, and support code
+- Scripts called by multiple subcommands
+- Deployment logic, configuration utilities, SSH helpers
+- Examples: config-parser.sh, deploy-docker.sh, nginx-config.sh, init-config.sh
+- Rule: If it's called BY other scripts (not directly by users), it belongs here
+
+**`setup/` - Installation & Setup**
+- Scripts for setting up AXON on local and remote machines
+- Server configuration and prerequisite installation
+- Run once during initial setup
+
+**`release/` - Release Management**
+- Version tagging, changelog generation
+- Homebrew formula updates
+- Used by maintainers for creating releases
+
+**`docs/` - Documentation**
+- Integration guides, setup instructions, release notes
+- Detailed explanations beyond the README
 
 **Note**: All scripts run from your **local machine** and use SSH to manage remote servers.
 

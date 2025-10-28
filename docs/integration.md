@@ -283,46 +283,25 @@ All commands support these global options:
 
 ```
 your-product/
-├── deploy/                        # AXON (git submodule)
-│   ├── README.md                  # Module documentation
-│   ├── axon                       # Main CLI entry point
-│   ├── config.example.yml         # Example configuration
-│   ├── cmd/
-│   │   ├── build.sh              # Build Docker image
-│   │   ├── push.sh               # Push to registry
-│   │   ├── deploy.sh             # Deploy (zero-downtime)
-│   │   ├── config.sh             # Config command handler
-│   │   ├── context.sh            # Context command handler
-│   │   ├── env.sh                # Environment command handler
-│   │   ├── logs.sh               # View logs
-│   │   ├── status.sh             # Check status
-│   │   ├── restart.sh            # Restart containers
-│   │   ├── delete.sh             # Delete environment
-│   │   └── health.sh             # Health check
-│   ├── lib/
-│   │   ├── config-parser.sh      # YAML parser
-│   │   ├── command-parser.sh     # CLI command parser
-│   │   ├── context-manager.sh    # Context management
-│   │   ├── defaults.sh           # Default values
-│   │   ├── deploy-docker.sh      # Docker deployment logic
-│   │   ├── deploy-static.sh      # Static site deployment logic
-│   │   ├── docker-runtime.sh     # Docker runtime utilities
-│   │   ├── init-config.sh        # Config initialization
-│   │   ├── nginx-config.sh       # Nginx configuration
-│   │   ├── registry-auth.sh      # Registry authentication
-│   │   ├── ssh-batch.sh          # SSH batch operations
-│   │   └── validate-config.sh    # Config validation
-│   └── docs/
-│       ├── integration.md        # This file
-│       ├── setup.md              # Server setup guide
-│       ├── graceful-shutdown.md  # Graceful shutdown details
-│       └── network-aliases.md    # Network alias guide
+├── deploy/                   # AXON deployment system (git submodule)
+│   ├── axon                  # Main CLI entry point
+│   ├── cmd/                  # Subcommand scripts (build, deploy, status, etc.)
+│   ├── lib/                  # Shared libraries and utilities
+│   ├── setup/                # Installation scripts
+│   ├── docs/                 # Detailed documentation
+│   └── ...
 │
-├── axon.config.yml              # Your product configuration (gitignored)
-├── .env.production                # On Application Server (gitignored)
-├── .env.staging                   # On Application Server (gitignored)
+├── axon.config.yml           # Your product configuration (gitignored)
+├── .env.production           # Runtime secrets on Application Server (gitignored)
+├── .env.staging              # Runtime secrets on Application Server (gitignored)
 └── ... (rest of your product files)
 ```
+
+**Organization:**
+- **`deploy/cmd/`**: One script per subcommand (e.g., `build.sh` for `axon build`)
+- **`deploy/lib/`**: Reusable utilities called by subcommands (parsers, deployment logic, SSH helpers)
+- **`deploy/setup/`**: One-time installation scripts for servers
+- **`deploy/docs/`**: Integration guides, setup instructions, architecture details
 
 **Note:** No docker-compose files needed! All Docker configuration is in `axon.config.yml`.
 
