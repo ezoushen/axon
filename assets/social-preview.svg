@@ -4,7 +4,7 @@
   <rect width="1280" height="640" fill="#0A0A0A"/>
 
   <!-- Icon scaled to 400x400, centered -->
-  <g transform="translate(440, 120)">
+  <g transform="translate(440, 70)">
     <!-- Background -->
     <rect width="400" height="400" rx="75" fill="#0F0D08"/>
 
@@ -25,13 +25,13 @@
   </g>
 
   <!-- Project name -->
-  <text x="640" y="565" font-family="system-ui, -apple-system, sans-serif"
+  <text x="640" y="520" font-family="system-ui, -apple-system, sans-serif"
         font-size="64" font-weight="700" fill="#FFFFFF" text-anchor="middle">
     AXON
   </text>
 
   <!-- Tagline -->
-  <text x="640" y="610" font-family="system-ui, -apple-system, sans-serif"
+  <text x="640" y="570" font-family="system-ui, -apple-system, sans-serif"
         font-size="24" font-weight="400" fill="#B89D6B" text-anchor="middle">
     Zero-downtime deployment orchestration
   </text>
