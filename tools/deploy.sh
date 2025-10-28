@@ -1285,9 +1285,9 @@ deploy_static() {
     ssh -i "$SSH_KEY" "$SYSTEM_SERVER" bash <<EOF
 set -e
 # Create directories
-mkdir -p "$RELEASE_PATH"
-mkdir -p "$SHARED_PATH"
-mkdir -p "$(dirname "$CURRENT_SYMLINK")"
+$USE_SUDO mkdir -p "$RELEASE_PATH"
+$USE_SUDO mkdir -p "$SHARED_PATH"
+$USE_SUDO mkdir -p "$(dirname "$CURRENT_SYMLINK")"
 echo "✓ Directories created"
 EOF
 
@@ -1307,7 +1307,7 @@ EOF
     ssh -i "$SSH_KEY" "$SYSTEM_SERVER" bash <<EOF
 set -e
 cd "$RELEASE_PATH"
-tar -xzf "$LATEST_ARCHIVE"
+$USE_SUDO tar -xzf "$LATEST_ARCHIVE"
 if [ \$? -eq 0 ]; then
     echo "✓ Archive extracted successfully"
 else
@@ -1332,13 +1332,13 @@ EOF
                 ssh -i "$SSH_KEY" "$SYSTEM_SERVER" bash <<EOF
 set -e
 # Create shared directory if it doesn't exist
-mkdir -p "${SHARED_PATH}/${shared_dir}"
+$USE_SUDO mkdir -p "${SHARED_PATH}/${shared_dir}"
 
 # Remove directory from release if it exists
-rm -rf "${RELEASE_PATH}/${shared_dir}"
+$USE_SUDO rm -rf "${RELEASE_PATH}/${shared_dir}"
 
 # Create symlink
-ln -s "${SHARED_PATH}/${shared_dir}" "${RELEASE_PATH}/${shared_dir}"
+$USE_SUDO ln -s "${SHARED_PATH}/${shared_dir}" "${RELEASE_PATH}/${shared_dir}"
 
 echo "✓ Linked: ${shared_dir} -> ${SHARED_PATH}/${shared_dir}"
 EOF
@@ -1410,16 +1410,16 @@ EOF
 set -e
 # Create temporary symlink
 TEMP_SYMLINK="${CURRENT_SYMLINK}.tmp.\$\$"
-ln -s "$RELEASE_PATH" "\$TEMP_SYMLINK"
+$USE_SUDO ln -s "$RELEASE_PATH" "\$TEMP_SYMLINK"
 
 # Atomic move
-mv -Tf "\$TEMP_SYMLINK" "$CURRENT_SYMLINK"
+$USE_SUDO mv -Tf "\$TEMP_SYMLINK" "$CURRENT_SYMLINK"
 
 if [ \$? -eq 0 ]; then
     echo "✓ Symlink switched atomically"
 else
     echo "Error: Failed to switch symlink"
-    rm -f "\$TEMP_SYMLINK"
+    $USE_SUDO rm -f "\$TEMP_SYMLINK"
     exit 1
 fi
 EOF
@@ -1600,7 +1600,7 @@ if [ -d "\$RELEASES_DIR" ]; then
         echo "Removing old releases:"
         for release in \$RELEASES; do
             echo "  - \$release"
-            rm -rf "\$release"
+            $USE_SUDO rm -rf "\$release"
         done
     else
         echo "No old releases to remove"

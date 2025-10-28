@@ -67,6 +67,33 @@ parse_yaml_key() {
     fi
 }
 
+# Function to parse YAML arrays
+# Returns array items one per line, empty string for empty arrays
+parse_yaml_array() {
+    local key=$1
+    local config_file=${2:-$CONFIG_FILE}
+
+    # Ensure yq is available
+    if ! check_yq; then
+        exit 1
+    fi
+
+    # Ensure key has leading dot
+    local yq_key="$key"
+    if [[ "$yq_key" != .* ]]; then
+        yq_key=".$yq_key"
+    fi
+
+    # Parse array using yq
+    # Returns items one per line, empty if array is empty or doesn't exist
+    local value=$(yq eval "${yq_key}[]" "$config_file" 2>/dev/null)
+
+    # Return empty if null or empty
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
+        echo "$value"
+    fi
+}
+
 # Get list of all environments defined in config
 get_available_environments() {
     local config_file=${1:-$CONFIG_FILE}

@@ -267,11 +267,11 @@ build_docker() {
     echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
     echo ""
     echo "Next steps:"
-    echo "  Push to ${REGISTRY_PROVIDER}: ./tools/push.sh ${ENVIRONMENT}"
+    echo "  Push to ${REGISTRY_PROVIDER}: axon push ${ENVIRONMENT}"
     if [ -n "$GIT_SHA" ]; then
-        echo "                                ./tools/push.sh ${ENVIRONMENT} ${GIT_SHA}"
+        echo "                                axon push ${ENVIRONMENT} --sha ${GIT_SHA}"
     fi
-    echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo "  Deploy: axon deploy ${ENVIRONMENT}"
     echo ""
 
     # Output git SHA for capture by parent script (e.g., axon)
@@ -388,8 +388,8 @@ build_static() {
     echo ""
 
     echo "Next steps:"
-    echo "  Push to System Server: ./tools/push.sh ${ENVIRONMENT}"
-    echo "  Deploy: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo "  Push to System Server: axon push ${ENVIRONMENT}"
+    echo "  Deploy: axon deploy ${ENVIRONMENT}"
     echo ""
 
     # Output release name for capture by parent script

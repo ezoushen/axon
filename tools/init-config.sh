@@ -157,43 +157,96 @@ if [ "$INTERACTIVE" = true ]; then
         KEEP_RELEASES=${KEEP_RELEASES:-5}
         echo ""
 
-        # Production environment configuration
-        echo -e "${GREEN}Production Environment Configuration${NC}"
+        # Initialize arrays for environments
+        ENV_NAMES=()
+        BUILD_COMMANDS=()
+        BUILD_OUTPUT_DIRS=()
+        DEPLOY_PATHS=()
+        DOMAINS=()
+        SSL_ENABLED=()
+        SSL_CERTS=()
+        SSL_KEYS=()
+
+        # Environment configuration loop
+        echo -e "${GREEN}Environment Configuration${NC}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Build command [npm run build:production]: " PROD_BUILD_COMMAND
-        PROD_BUILD_COMMAND=${PROD_BUILD_COMMAND:-npm run build:production}
-
-        read -p "Build output directory [dist]: " PROD_BUILD_OUTPUT_DIR
-        PROD_BUILD_OUTPUT_DIR=${PROD_BUILD_OUTPUT_DIR:-dist}
-
-        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME-prod]: " PROD_DEPLOY_PATH
-        PROD_DEPLOY_PATH=${PROD_DEPLOY_PATH:-/var/www/$PRODUCT_NAME-prod}
-
-        read -p "Domain (e.g., example.com): " PROD_DOMAIN
-        while [ -z "$PROD_DOMAIN" ]; do
-            echo -e "${YELLOW}Production domain is required${NC}"
-            read -p "Domain: " PROD_DOMAIN
-        done
+        echo "Configure your deployment environments (e.g., production, staging, development)"
+        echo "Common environments: production, staging, development, testing"
         echo ""
 
-        # Staging environment configuration
-        echo -e "${GREEN}Staging Environment Configuration${NC}"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Build command [npm run build:staging]: " STAGING_BUILD_COMMAND
-        STAGING_BUILD_COMMAND=${STAGING_BUILD_COMMAND:-npm run build:staging}
+        ADD_MORE=true
+        while [ "$ADD_MORE" = true ]; do
+            # Ask for environment name
+            read -p "Environment name (lowercase, no spaces): " ENV_NAME
+            while [ -z "$ENV_NAME" ] || [[ "$ENV_NAME" =~ [^a-z0-9_-] ]]; do
+                echo -e "${YELLOW}Please enter a valid environment name (lowercase letters, numbers, hyphens, underscores only)${NC}"
+                read -p "Environment name: " ENV_NAME
+            done
 
-        read -p "Build output directory [dist]: " STAGING_BUILD_OUTPUT_DIR
-        STAGING_BUILD_OUTPUT_DIR=${STAGING_BUILD_OUTPUT_DIR:-dist}
+            echo ""
+            echo -e "${GREEN}Configuring '${ENV_NAME}' environment${NC}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-        read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME-staging]: " STAGING_DEPLOY_PATH
-        STAGING_DEPLOY_PATH=${STAGING_DEPLOY_PATH:-/var/www/$PRODUCT_NAME-staging}
+            # Build command
+            read -p "Build command [npm run build:${ENV_NAME}]: " BUILD_CMD
+            BUILD_CMD=${BUILD_CMD:-npm run build:${ENV_NAME}}
 
-        read -p "Domain (e.g., staging.example.com): " STAGING_DOMAIN
-        while [ -z "$STAGING_DOMAIN" ]; do
-            echo -e "${YELLOW}Staging domain is required${NC}"
-            read -p "Domain: " STAGING_DOMAIN
+            # Build output directory
+            read -p "Build output directory [dist]: " BUILD_DIR
+            BUILD_DIR=${BUILD_DIR:-dist}
+
+            # Deploy path
+            read -p "Deploy path on System Server [/var/www/$PRODUCT_NAME-${ENV_NAME}]: " DEPLOY_PATH
+            DEPLOY_PATH=${DEPLOY_PATH:-/var/www/$PRODUCT_NAME-${ENV_NAME}}
+
+            # Domain
+            read -p "Domain (e.g., ${ENV_NAME}.example.com): " DOMAIN
+            while [ -z "$DOMAIN" ]; do
+                echo -e "${YELLOW}Domain is required${NC}"
+                read -p "Domain: " DOMAIN
+            done
+
+            # SSL Configuration
+            echo ""
+            read -p "Enable SSL/HTTPS for this environment? (y/N): " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                SSL_ENABLED+=("true")
+
+                echo -e "${YELLOW}SSL Certificate Configuration${NC}"
+                read -p "SSL certificate path [/etc/letsencrypt/live/example.com/fullchain.pem]: " SSL_CERT
+                SSL_CERT=${SSL_CERT:-/etc/letsencrypt/live/example.com/fullchain.pem}
+
+                read -p "SSL certificate key path [/etc/letsencrypt/live/example.com/privkey.pem]: " SSL_KEY
+                SSL_KEY=${SSL_KEY:-/etc/letsencrypt/live/example.com/privkey.pem}
+
+                SSL_CERTS+=("$SSL_CERT")
+                SSL_KEYS+=("$SSL_KEY")
+            else
+                SSL_ENABLED+=("false")
+                SSL_CERTS+=("")
+                SSL_KEYS+=("")
+            fi
+
+            # Store in arrays
+            ENV_NAMES+=("$ENV_NAME")
+            BUILD_COMMANDS+=("$BUILD_CMD")
+            BUILD_OUTPUT_DIRS+=("$BUILD_DIR")
+            DEPLOY_PATHS+=("$DEPLOY_PATH")
+            DOMAINS+=("$DOMAIN")
+
+            echo ""
+            echo -e "${GREEN}✓ Environment '${ENV_NAME}' configured${NC}"
+            echo ""
+
+            # Ask if user wants to add more
+            read -p "Add another environment? (y/N): " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                ADD_MORE=false
+            fi
+            echo ""
         done
-        echo ""
     fi
 
     # Server Configuration
@@ -223,15 +276,90 @@ if [ "$INTERACTIVE" = true ]; then
         APP_KEY=${APP_KEY:-~/.ssh/id_rsa}
         echo ""
 
-        # Environment Paths
+        # Initialize arrays for environments
+        ENV_NAMES=()
+        ENV_PATHS=()
+        IMAGE_TAGS=()
+        DOMAINS=()
+        SSL_ENABLED=()
+        SSL_CERTS=()
+        SSL_KEYS=()
+
+        # Environment configuration loop
         echo -e "${GREEN}Environment Configuration${NC}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        read -p "Production .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.production]: " PROD_ENV
-        PROD_ENV=${PROD_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.production}
-
-        read -p "Staging .env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.staging]: " STAGING_ENV
-        STAGING_ENV=${STAGING_ENV:-/home/ubuntu/apps/$PRODUCT_NAME/.env.staging}
+        echo "Configure your deployment environments (e.g., production, staging, development)"
+        echo "Common environments: production, staging, development, testing"
         echo ""
+
+        ADD_MORE=true
+        while [ "$ADD_MORE" = true ]; do
+            # Ask for environment name
+            read -p "Environment name (lowercase, no spaces): " ENV_NAME
+            while [ -z "$ENV_NAME" ] || [[ "$ENV_NAME" =~ [^a-z0-9_-] ]]; do
+                echo -e "${YELLOW}Please enter a valid environment name (lowercase letters, numbers, hyphens, underscores only)${NC}"
+                read -p "Environment name: " ENV_NAME
+            done
+
+            echo ""
+            echo -e "${GREEN}Configuring '${ENV_NAME}' environment${NC}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            # .env file path
+            read -p ".env file path on app server [/home/ubuntu/apps/$PRODUCT_NAME/.env.${ENV_NAME}]: " ENV_PATH
+            ENV_PATH=${ENV_PATH:-/home/ubuntu/apps/$PRODUCT_NAME/.env.${ENV_NAME}}
+
+            # Image tag
+            read -p "Docker image tag [${ENV_NAME}]: " IMAGE_TAG
+            IMAGE_TAG=${IMAGE_TAG:-${ENV_NAME}}
+
+            # Domain
+            read -p "Domain (e.g., ${ENV_NAME}.example.com): " DOMAIN
+            while [ -z "$DOMAIN" ]; do
+                echo -e "${YELLOW}Domain is required${NC}"
+                read -p "Domain: " DOMAIN
+            done
+
+            # SSL Configuration
+            echo ""
+            read -p "Enable SSL/HTTPS for this environment? (y/N): " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                SSL_ENABLED+=("true")
+
+                echo -e "${YELLOW}SSL Certificate Configuration${NC}"
+                read -p "SSL certificate path [/etc/letsencrypt/live/example.com/fullchain.pem]: " SSL_CERT
+                SSL_CERT=${SSL_CERT:-/etc/letsencrypt/live/example.com/fullchain.pem}
+
+                read -p "SSL certificate key path [/etc/letsencrypt/live/example.com/privkey.pem]: " SSL_KEY
+                SSL_KEY=${SSL_KEY:-/etc/letsencrypt/live/example.com/privkey.pem}
+
+                SSL_CERTS+=("$SSL_CERT")
+                SSL_KEYS+=("$SSL_KEY")
+            else
+                SSL_ENABLED+=("false")
+                SSL_CERTS+=("")
+                SSL_KEYS+=("")
+            fi
+
+            # Store in arrays
+            ENV_NAMES+=("$ENV_NAME")
+            ENV_PATHS+=("$ENV_PATH")
+            IMAGE_TAGS+=("$IMAGE_TAG")
+            DOMAINS+=("$DOMAIN")
+
+            echo ""
+            echo -e "${GREEN}✓ Environment '${ENV_NAME}' configured${NC}"
+            echo ""
+
+            # Ask if user wants to add more
+            read -p "Add another environment? (y/N): " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                ADD_MORE=false
+            fi
+            echo ""
+        done
 
         # Docker Configuration
         echo -e "${GREEN}Docker Configuration${NC}"
@@ -246,7 +374,7 @@ if [ "$INTERACTIVE" = true ]; then
 
     # Generate configuration file
     if [ "$PRODUCT_TYPE" = "static" ]; then
-        # Generate static site configuration
+        # Generate static site configuration - header
         cat > "$OUTPUT_FILE" <<EOF
 # AXON Deployment Configuration
 # Generated by: axon init-config --interactive (static site)
@@ -274,22 +402,64 @@ servers:
     user: "${SYS_USER}"
     ssh_key: "${SYS_KEY}"
 
+EOF
+
+        # Generate nginx SSL configuration if any environment has SSL enabled
+        HAS_SSL=false
+        for i in "${!ENV_NAMES[@]}"; do
+            if [ "${SSL_ENABLED[$i]}" = "true" ]; then
+                HAS_SSL=true
+                break
+            fi
+        done
+
+        if [ "$HAS_SSL" = true ]; then
+            cat >> "$OUTPUT_FILE" <<EOF
+# Nginx Configuration
+nginx:
+  ssl:
+EOF
+            # Generate SSL entries for each environment
+            for i in "${!ENV_NAMES[@]}"; do
+                if [ "${SSL_ENABLED[$i]}" = "true" ]; then
+                    ENV_NAME="${ENV_NAMES[$i]}"
+                    SSL_CERT="${SSL_CERTS[$i]}"
+                    SSL_KEY="${SSL_KEYS[$i]}"
+
+                    cat >> "$OUTPUT_FILE" <<EOF
+    ${ENV_NAME}:
+      certificate: "${SSL_CERT}"
+      certificate_key: "${SSL_KEY}"
+EOF
+                fi
+            done
+            echo "" >> "$OUTPUT_FILE"
+        fi
+
+        cat >> "$OUTPUT_FILE" <<EOF
 # Environment Configurations
 environments:
-  production:
-    build_command: "${PROD_BUILD_COMMAND}"
-    build_output_dir: "${PROD_BUILD_OUTPUT_DIR}"
-    deploy_path: "${PROD_DEPLOY_PATH}"
-    domain: "${PROD_DOMAIN}"
-
-  staging:
-    build_command: "${STAGING_BUILD_COMMAND}"
-    build_output_dir: "${STAGING_BUILD_OUTPUT_DIR}"
-    deploy_path: "${STAGING_DEPLOY_PATH}"
-    domain: "${STAGING_DOMAIN}"
 EOF
+
+        # Generate environment entries dynamically
+        for i in "${!ENV_NAMES[@]}"; do
+            ENV_NAME="${ENV_NAMES[$i]}"
+            BUILD_CMD="${BUILD_COMMANDS[$i]}"
+            BUILD_DIR="${BUILD_OUTPUT_DIRS[$i]}"
+            DEPLOY_PATH="${DEPLOY_PATHS[$i]}"
+            DOMAIN="${DOMAINS[$i]}"
+
+            cat >> "$OUTPUT_FILE" <<EOF
+  ${ENV_NAME}:
+    build_command: "${BUILD_CMD}"
+    build_output_dir: "${BUILD_DIR}"
+    deploy_path: "${DEPLOY_PATH}"
+    domain: "${DOMAIN}"
+
+EOF
+        done
     else
-        # Generate Docker configuration
+        # Generate Docker configuration - header
         cat > "$OUTPUT_FILE" <<EOF
 # AXON Deployment Configuration
 # Generated by: axon init-config --interactive (docker)
@@ -323,16 +493,63 @@ servers:
     user: "${APP_USER}"
     ssh_key: "${APP_KEY}"
 
+EOF
+
+        # Generate nginx SSL configuration if any environment has SSL enabled
+        HAS_SSL=false
+        for i in "${!ENV_NAMES[@]}"; do
+            if [ "${SSL_ENABLED[$i]}" = "true" ]; then
+                HAS_SSL=true
+                break
+            fi
+        done
+
+        if [ "$HAS_SSL" = true ]; then
+            cat >> "$OUTPUT_FILE" <<EOF
+# Nginx Configuration
+nginx:
+  ssl:
+EOF
+            # Generate SSL entries for each environment
+            for i in "${!ENV_NAMES[@]}"; do
+                if [ "${SSL_ENABLED[$i]}" = "true" ]; then
+                    ENV_NAME="${ENV_NAMES[$i]}"
+                    SSL_CERT="${SSL_CERTS[$i]}"
+                    SSL_KEY="${SSL_KEYS[$i]}"
+
+                    cat >> "$OUTPUT_FILE" <<EOF
+    ${ENV_NAME}:
+      certificate: "${SSL_CERT}"
+      certificate_key: "${SSL_KEY}"
+EOF
+                fi
+            done
+            echo "" >> "$OUTPUT_FILE"
+        fi
+
+        cat >> "$OUTPUT_FILE" <<EOF
 # Environment Configurations
 environments:
-  production:
-    env_path: "${PROD_ENV}"
-    image_tag: "production"
+EOF
 
-  staging:
-    env_path: "${STAGING_ENV}"
-    image_tag: "staging"
+        # Generate environment entries dynamically
+        for i in "${!ENV_NAMES[@]}"; do
+            ENV_NAME="${ENV_NAMES[$i]}"
+            ENV_PATH="${ENV_PATHS[$i]}"
+            IMAGE_TAG="${IMAGE_TAGS[$i]}"
+            DOMAIN="${DOMAINS[$i]}"
 
+            cat >> "$OUTPUT_FILE" <<EOF
+  ${ENV_NAME}:
+    env_path: "${ENV_PATH}"
+    image_tag: "${IMAGE_TAG}"
+    domain: "${DOMAIN}"
+
+EOF
+        done
+
+        # Generate Docker configuration - footer
+        cat >> "$OUTPUT_FILE" <<EOF
 # Health Check Configuration
 health_check:
   endpoint: "${HEALTH_ENDPOINT}"
@@ -416,13 +633,16 @@ if [ "$INTERACTIVE" = false ]; then
     echo "  2. Update product type (docker or static) and corresponding configuration"
     echo "  3. Validate: axon validate --config ${CONFIG_BASENAME}"
 else
+    # Get first configured environment for example command
+    FIRST_ENV="${ENV_NAMES[0]:-production}"
+
     echo "  1. Validate: axon validate --config ${CONFIG_BASENAME}"
     if [ "$PRODUCT_TYPE" = "static" ]; then
         echo "  2. Install on System Server: axon install system-server"
-        echo "  3. Deploy: axon run staging"
+        echo "  3. Deploy: axon run ${FIRST_ENV}"
     else
         echo "  2. Install on servers: axon install app-server && axon install system-server"
-        echo "  3. Deploy: axon run staging"
+        echo "  3. Deploy: axon run ${FIRST_ENV}"
     fi
 fi
 echo ""

@@ -181,7 +181,7 @@ push_docker() {
         echo -e "${RED}Error: Image not found locally: ${FULL_IMAGE_NAME}${NC}"
         echo ""
         echo "Please build the image first:"
-        echo "  ./tools/build.sh ${ENVIRONMENT}"
+        echo "  axon build ${ENVIRONMENT}"
         exit 1
     fi
 
@@ -255,7 +255,7 @@ push_docker() {
     echo -e "Image size: ${YELLOW}${IMAGE_SIZE}${NC}"
     echo ""
     echo "Next steps:"
-    echo "  Deploy to ${ENVIRONMENT}: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo "  Deploy to ${ENVIRONMENT}: axon deploy ${ENVIRONMENT}"
     echo ""
 }
 
@@ -292,7 +292,7 @@ push_static() {
         echo -e "${RED}Error: No build archive found in /tmp/${NC}"
         echo ""
         echo "Please build first:"
-        echo "  ./tools/build.sh ${ENVIRONMENT}"
+        echo "  axon build ${ENVIRONMENT}"
         exit 1
     fi
 
@@ -330,6 +330,7 @@ push_static() {
     echo ""
 
     rsync -avz --progress \
+        -e "ssh -i $SSH_KEY" \
         "$LATEST_ARCHIVE" \
         "${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}:/tmp/"
 
@@ -356,7 +357,7 @@ push_static() {
     echo -e "Archive uploaded to: ${YELLOW}${REMOTE_ARCHIVE}${NC}"
     echo ""
     echo "Next steps:"
-    echo "  Deploy to ${ENVIRONMENT}: ./tools/deploy.sh ${ENVIRONMENT}"
+    echo "  Deploy to ${ENVIRONMENT}: axon deploy ${ENVIRONMENT}"
     echo ""
 }
 
