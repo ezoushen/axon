@@ -83,8 +83,6 @@ sudo ln -s ~/.axon/axon /usr/local/bin/axon
 axon --version
 ```
 
-See [INSTALL.md](INSTALL.md) for detailed installation instructions, including custom locations, prerequisites, and troubleshooting.
-
 ## Quick Start
 
 ### 1. Install Prerequisites
@@ -96,8 +94,6 @@ axon install local
 # Auto-install (recommended)
 axon install local --auto-install
 ```
-
-For manual installation or troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ### 2. Add as Git Submodule
 
@@ -122,16 +118,17 @@ axon config validate
 
 ### 4. Set Up Environment Files (Docker deployments)
 
-For Docker deployments, create `.env` files on Application Server at the path configured in `axon.config.yml`:
+For Docker deployments, create `.env` files on Application Server using the built-in editor:
 
 ```bash
-# SSH to Application Server and create .env files
-ssh user@app-server
-cat > /path/to/deploy/.env.production <<EOF
-DATABASE_URL=your-production-db-url
-API_KEY=your-production-api-key
-EOF
+# Edit environment file directly on Application Server
+axon env edit production
+
+# Or edit staging environment
+axon env edit staging
 ```
+
+This opens your configured `$EDITOR` (vim/nano) via SSH to edit `.env.production` or `.env.staging` at the path configured in `axon.config.yml`.
 
 For static sites, environment variables are typically injected during build time.
 
