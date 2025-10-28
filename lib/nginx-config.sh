@@ -37,6 +37,7 @@ generate_nginx_proxy_site_config() {
 
         # Access logging
         access_log /var/log/nginx/${product_name}-${environment}.log combined;
+        error_log /var/log/nginx/${product_name}-${environment}-error.log warn;
 
         # To redirect HTTP to HTTPS, uncomment the line below and comment out the location block:
         # return 301 https://\$server_name\$request_uri;
@@ -97,6 +98,7 @@ EOFSITE2
 
         # Access logging
         access_log /var/log/nginx/${product_name}-${environment}.log combined;
+        error_log /var/log/nginx/${product_name}-${environment}-error.log warn;
 
         # SSL certificates
         ssl_certificate ${ssl_cert};
