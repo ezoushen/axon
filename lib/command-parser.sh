@@ -3,7 +3,7 @@
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands
-AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health install uninstall delete config context"
+AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health install uninstall delete config context env"
 
 # Commands that require environment argument (delete is optional with --all)
 AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart"
@@ -34,6 +34,9 @@ UTILITY COMMANDS:
 CONFIGURATION COMMANDS:
   config init              Generate axon.config.yml file
   config validate          Validate configuration file
+
+ENVIRONMENT FILE COMMANDS:
+  env edit <env>           Edit .env file for environment on Application Server
 
 CONTEXT COMMANDS:
   context add <name>       Add a new global context
@@ -353,6 +356,40 @@ EXAMPLES:
 
 For subcommand-specific help:
   axon config <subcommand> --help
+EOF
+            ;;
+        env)
+            cat <<EOF
+Usage: axon env <subcommand> [environment] [options]
+
+Manage environment files (.env files) on Application Server.
+
+SUBCOMMANDS:
+  edit <environment>       Edit environment file for specified environment
+
+OPTIONS:
+  -c, --config FILE        Config file (default: axon.config.yml)
+  --editor EDITOR          Editor to use (default: \$EDITOR or vim)
+  -h, --help               Show this help message
+
+EXAMPLES:
+  # Edit production environment file
+  axon env edit production
+
+  # Edit staging with custom editor
+  axon env edit staging --editor nano
+
+  # Edit with custom config file
+  axon env edit production -c custom.yml
+
+NOTES:
+  - Edits .env file directly on Application Server via SSH
+  - Uses \$EDITOR environment variable, falls back to \$VISUAL, then vim
+  - Requires SSH access to Application Server configured in axon.config.yml
+  - Environment must be defined in config file with env_path set
+
+For subcommand-specific help:
+  axon env <subcommand> --help
 EOF
             ;;
         context)

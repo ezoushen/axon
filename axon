@@ -753,6 +753,13 @@ if [ "$COMMAND" = "config" ]; then
     exit $?
 fi
 
+# Special handling for env command - pass all args directly to handler
+if [ "$COMMAND" = "env" ]; then
+    source "$SCRIPT_DIR/tools/env.sh"
+    handle_env_command "$@"
+    exit $?
+fi
+
 # Parse arguments based on command
 # Note: Some commands require environment, others don't
 # Global flags (-c, --context, -v) are already parsed above
@@ -935,13 +942,16 @@ esac
 #==============================================================================
 
 # Resolve config and project root using context system
-# Skip for commands that don't need config (context, config, setup local, --version, --help)
+# Skip for commands that don't need config (context, config, env, setup local, --version, --help)
 SKIP_CONTEXT_RESOLUTION=false
 case "$COMMAND" in
     context)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
     config)
+        SKIP_CONTEXT_RESOLUTION=true
+        ;;
+    env)
         SKIP_CONTEXT_RESOLUTION=true
         ;;
     install|uninstall)
