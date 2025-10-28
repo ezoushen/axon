@@ -504,11 +504,11 @@ axon --context frontend deploy production
 **3. "Uncommitted changes" error**
 ```bash
 git add . && git commit -m "Your changes"      # Commit first
-./tools/build.sh --skip-git staging    # Or skip git SHA
+axon build staging --skip-git          # Or skip git SHA
 ```
 
 **4. Health check fails**
-- Check logs: `./tools/logs.sh production`
+- Check logs: `axon logs production`
 - Verify health endpoint is exposed at configured path
 - Test locally: `curl http://localhost:3000/api/health`
 
