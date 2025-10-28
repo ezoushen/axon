@@ -195,6 +195,30 @@ server {
     # To redirect HTTP to HTTPS, uncomment the line below and comment out the location block:
     # return 301 https://\$server_name\$request_uri;
 
+    # Security: Block access to hidden files and directories
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
+
+    # Security: Block access to sensitive file types
+    location ~* \.(env|git|gitignore|gitattributes|yml|yaml|ini|config|log|sql|bak|swp|tmp)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
+
+    # Security: Block common sensitive paths
+    location ~* ^/(\.git|\.env|config\.json|config\.js|aws-config\.js|aws\.config\.js|\.gitlab-ci\.yml|backend/\.env|admin/\.env|core/\.env) {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.html;
     }
@@ -234,6 +258,30 @@ server {
     # Document root
     root ${document_root};
     index index.html index.htm;
+
+    # Security: Block access to hidden files and directories
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
+
+    # Security: Block access to sensitive file types
+    location ~* \.(env|git|gitignore|gitattributes|yml|yaml|ini|config|log|sql|bak|swp|tmp)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
+
+    # Security: Block common sensitive paths
+    location ~* ^/(\.git|\.env|config\.json|config\.js|aws-config\.js|aws\.config\.js|\.gitlab-ci\.yml|backend/\.env|admin/\.env|core/\.env) {
+        deny all;
+        access_log off;
+        log_not_found off;
+        return 404;
+    }
 
     location / {
         try_files \$uri \$uri/ /index.html;
