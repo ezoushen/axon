@@ -242,6 +242,12 @@ build_docker() {
 
     cd "$PRODUCT_ROOT"
 
+    # Detect Application Server architecture for platform flag
+    echo -e "${GREEN}Detecting Application Server architecture...${NC}"
+    PLATFORM=$(get_application_server_arch "$CONFIG_FILE")
+    echo -e "Target platform: ${YELLOW}${PLATFORM}${NC}"
+    echo ""
+
     # Construct docker build command with build args
     BUILD_CMD="docker build"
     BUILD_CMD="$BUILD_CMD --build-arg BUILD_STANDALONE=true"
@@ -255,7 +261,7 @@ build_docker() {
         done <<< "$BUILD_ARGS_FROM_CONFIG"
     fi
 
-    BUILD_CMD="$BUILD_CMD --platform linux/amd64"
+    BUILD_CMD="$BUILD_CMD --platform $PLATFORM"
     BUILD_CMD="$BUILD_CMD -f \"$DOCKERFILE_PATH\""
     BUILD_CMD="$BUILD_CMD -t \"$FULL_IMAGE_NAME\""
     BUILD_CMD="$BUILD_CMD ."

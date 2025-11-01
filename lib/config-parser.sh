@@ -619,3 +619,61 @@ get_build_args() {
     # Extract build_args as KEY=VALUE pairs (one per line)
     yq eval ".environments.${environment}.build_args | to_entries | .[] | .key + \"=\" + .value" "$config_file" 2>/dev/null
 }
+
+# ==============================================================================
+# Application Server Architecture Detection
+# ==============================================================================
+
+# Detect CPU architecture on Application Server
+# Returns: "linux/amd64" or "linux/arm64"
+# Defaults to "linux/amd64" if detection fails or for static sites
+get_application_server_arch() {
+    local config_file=${1:-$CONFIG_FILE}
+
+    # Default to amd64 for static sites (no application server needed)
+    local product_type=$(get_product_type "$config_file")
+    if [ "$product_type" = "static" ]; then
+        echo "linux/amd64"
+        return 0
+    fi
+
+    # Get application server connection details
+    local host=$(parse_yaml_key "servers.application.host" "" "$config_file")
+    local user=$(parse_yaml_key "servers.application.ssh_user" "" "$config_file")
+    local ssh_key=$(parse_yaml_key "servers.application.ssh_key" "" "$config_file")
+
+    # Validate required fields
+    if [ -z "$host" ] || [ -z "$user" ] || [ -z "$ssh_key" ]; then
+        echo -e "${YELLOW}Warning: Application Server not configured, using default linux/amd64${NC}" >&2
+        echo "linux/amd64"
+        return 0
+    fi
+
+    # Expand tilde in SSH key path
+    ssh_key="${ssh_key/#\~/$HOME}"
+
+    # Detect architecture via SSH
+    local arch_output
+    arch_output=$(ssh -i "$ssh_key" -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+        "${user}@${host}" "uname -m" 2>/dev/null)
+
+    if [ $? -ne 0 ] || [ -z "$arch_output" ]; then
+        echo -e "${YELLOW}Warning: Could not detect Application Server architecture, using default linux/amd64${NC}" >&2
+        echo "linux/amd64"
+        return 0
+    fi
+
+    # Map architecture to Docker platform
+    case "$arch_output" in
+        x86_64|amd64)
+            echo "linux/amd64"
+            ;;
+        aarch64|arm64)
+            echo "linux/arm64"
+            ;;
+        *)
+            echo -e "${YELLOW}Warning: Unknown architecture '$arch_output', using default linux/amd64${NC}" >&2
+            echo "linux/amd64"
+            ;;
+    esac
+}
