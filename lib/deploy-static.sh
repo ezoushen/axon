@@ -305,23 +305,145 @@ EOF
     # Step 11: Test and reload nginx
     echo -e "${BLUE}Step 11/12: Testing and reloading nginx...${NC}"
 
-    # Test nginx configuration
-    NGINX_TEST_OUTPUT=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} nginx -t 2>&1")
+    # Temporarily disable 'set -e' to capture nginx test failures without exiting
+    # We want to handle the error gracefully, not exit immediately
+    set +e
+
+    # Test nginx configuration (with timeout to prevent hanging)
+    # Capture output separately from exit code to preserve nginx error messages
+    NGINX_TEST_OUTPUT=$(timeout 30 ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} nginx -t 2>&1")
+    SSH_EXIT_CODE=$?
+
+    # Re-enable 'set -e' for remaining commands
+    set -e
+
+    # Check for timeout (timeout command returns 124)
+    if [ $SSH_EXIT_CODE -eq 124 ]; then
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}✗ SSH CONNECTION TIMEOUT${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "${YELLOW}Could not connect to System Server to test nginx configuration${NC}"
+        echo -e "${CYAN}Server: ${SYSTEM_SERVER}${NC}"
+        echo ""
+        echo -e "${YELLOW}The nginx -t command timed out after 30 seconds${NC}"
+        echo ""
+        echo -e "${CYAN}Troubleshooting:${NC}"
+        echo -e "  Test connection: ${BLUE}ssh -i $SSH_KEY $SYSTEM_SERVER 'echo Connected'${NC}"
+        echo -e "  Check nginx manually: ${BLUE}ssh -i $SSH_KEY $SYSTEM_SERVER 'sudo nginx -t'${NC}"
+        echo ""
+        exit 1
+    fi
+
+    # Check for SSH connection failure (exit code 255)
+    if [ $SSH_EXIT_CODE -eq 255 ]; then
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}✗ SSH CONNECTION FAILED${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "${YELLOW}Could not establish SSH connection to System Server${NC}"
+        echo -e "${CYAN}Server: ${SYSTEM_SERVER}${NC}"
+        echo ""
+        echo -e "${CYAN}Troubleshooting:${NC}"
+        echo -e "  Test connection: ${BLUE}ssh -i $SSH_KEY $SYSTEM_SERVER 'echo Connected'${NC}"
+        echo -e "  Check server status: ${BLUE}ping ${SYSTEM_SERVER_HOST}${NC}"
+        echo ""
+        exit 1
+    fi
 
     if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
-        echo -e "${RED}Error: nginx configuration test failed!${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}✗ NGINX CONFIGURATION TEST FAILED${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "${YELLOW}nginx -t output:${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────${NC}"
         echo "$NGINX_TEST_OUTPUT"
+        echo -e "${CYAN}────────────────────────────────────────────────${NC}"
         echo ""
 
-        # Rollback symlink if there was a previous release
+        # Automatic rollback
+        echo -e "${YELLOW}⚠ Initiating automatic rollback to prevent service disruption...${NC}"
+        echo ""
+
+        # Step 1: Rollback symlink if there was a previous release
         if [ -n "$CURRENT_RELEASE" ]; then
-            echo -e "${YELLOW}Rolling back to previous release...${NC}"
+            echo -e "${BLUE}1/2: Rolling back symlink to previous release...${NC}"
             PREVIOUS_RELEASE_PATH=$(get_release_path "$DEPLOY_PATH" "$ENVIRONMENT" "$CURRENT_RELEASE")
-            ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "ln -snf '$PREVIOUS_RELEASE_PATH' '$CURRENT_SYMLINK'"
+            ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} ln -snf '$PREVIOUS_RELEASE_PATH' '$CURRENT_SYMLINK'"
+            if [ $? -eq 0 ]; then
+                echo -e "  ${GREEN}✓${NC} Symlink restored to: ${CURRENT_RELEASE}"
+            else
+                echo -e "  ${RED}✗${NC} Failed to rollback symlink"
+            fi
+        else
+            echo -e "${BLUE}1/2: No previous release to rollback symlink${NC}"
         fi
 
+        # Step 2: Remove the bad nginx config file (CRITICAL for preventing corruption)
+        echo -e "${BLUE}2/2: Removing invalid nginx configuration...${NC}"
+
+        # First, verify the file exists
+        FILE_EXISTS=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+
+        if [ "$FILE_EXISTS" = "YES" ]; then
+            # Remove the invalid config file
+            ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} rm -f ${NGINX_SITE_FILE}"
+
+            # Verify it was actually removed
+            STILL_EXISTS=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+
+            if [ "$STILL_EXISTS" = "NO" ]; then
+                echo -e "  ${GREEN}✓${NC} Removed invalid config: ${NGINX_SITE_FILE}"
+            else
+                echo -e "  ${RED}✗${NC} CRITICAL: Failed to remove invalid config!"
+                echo -e "  ${RED}⚠ The bad config file still exists and will break other deployments!${NC}"
+                echo ""
+                echo -e "${YELLOW}Attempting forced removal...${NC}"
+                ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} rm -f ${NGINX_SITE_FILE} && echo 'Forced removal succeeded' || echo 'Forced removal FAILED'"
+
+                # Check one more time
+                FINAL_CHECK=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+                if [ "$FINAL_CHECK" = "YES" ]; then
+                    echo -e "  ${RED}✗ CRITICAL: Cannot remove config file - manual intervention required immediately!${NC}"
+                else
+                    echo -e "  ${GREEN}✓${NC} Forced removal succeeded"
+                fi
+            fi
+        else
+            echo -e "  ${CYAN}ℹ${NC} Config file doesn't exist (already removed or never uploaded)"
+        fi
+
+        # Verify nginx is still working with old config
+        echo ""
+        echo -e "${BLUE}Verifying nginx status after rollback...${NC}"
+        ROLLBACK_TEST=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} nginx -t 2>&1")
+        if echo "$ROLLBACK_TEST" | grep -q "successful"; then
+            echo -e "  ${GREEN}✓${NC} nginx configuration is now valid (rollback successful)"
+            echo -e "  ${GREEN}✓${NC} Your site is still serving the previous release"
+        else
+            echo -e "  ${RED}✗${NC} nginx configuration still invalid after rollback!"
+            echo -e "  ${RED}⚠ CRITICAL: Manual intervention required on System Server${NC}"
+            echo ""
+            echo -e "${YELLOW}Please SSH to the server and fix nginx configuration:${NC}"
+            echo -e "  ${CYAN}ssh -i $SSH_KEY $SYSTEM_SERVER${NC}"
+            echo -e "  ${CYAN}sudo nginx -t${NC}"
+        fi
+
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}Deployment aborted - nginx configuration invalid${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "${CYAN}Troubleshooting steps:${NC}"
+        echo -e "  1. Check generated nginx config: cat ${TEMP_SITE_FILE}"
+        echo -e "  2. Validate config syntax locally: nginx -t -c <config-file>"
+        echo -e "  3. Review nginx error messages above for specific issues"
+        echo -e "  4. Common issues:"
+        echo -e "     - Invalid domain name or SSL certificate paths"
+        echo -e "     - Syntax errors in custom nginx properties"
+        echo -e "     - Port conflicts or upstream server issues"
+        echo ""
         exit 1
     fi
 

@@ -103,7 +103,7 @@ deploy_docker() {
     fi
 
     # Step 0: Pre-flight nginx validation on System Server
-    echo -e "${BLUE}Step 0/9: Validating nginx setup on System Server...${NC}"
+    echo -e "${BLUE}Step 0/10: Validating nginx setup on System Server...${NC}"
 
     # Determine sudo usage
     if [ "$SYSTEM_SERVER_USER" = "root" ]; then
@@ -182,7 +182,7 @@ deploy_docker() {
     echo ""
 
     # Step 1: Detect current deployment (PARALLELIZED)
-    echo -e "${BLUE}Step 1/9: Detecting current deployment...${NC}"
+    echo -e "${BLUE}Step 1/10: Detecting current deployment...${NC}"
 
     # PARALLEL: Query System Server and App Server simultaneously
     # Batch 1: Get current port from System Server
@@ -229,7 +229,7 @@ deploy_docker() {
     echo ""
 
     # Step 2: Check deployment files on Application Server
-    echo -e "${BLUE}Step 2/9: Checking deployment files on Application Server...${NC}"
+    echo -e "${BLUE}Step 2/10: Checking deployment files on Application Server...${NC}"
 
     # Check if .env file exists (already checked in parallel batch above)
     ENV_EXISTS=$(ssh_batch_result_from "app_check" "check_env")
@@ -248,7 +248,7 @@ deploy_docker() {
     ssh_batch_cleanup "system_check" "app_check"
 
     # Step 4: Authenticate with registry on Application Server and pull latest image
-    echo -e "${BLUE}Step 3/9: Authenticating and pulling image on Application Server...${NC}"
+    echo -e "${BLUE}Step 3/10: Authenticating and pulling image on Application Server...${NC}"
     echo -e "  Registry: ${YELLOW}${REGISTRY_PROVIDER}${NC}"
     echo -e "  Image:    ${YELLOW}${FULL_IMAGE}${NC}"
 
@@ -387,7 +387,7 @@ EOF
     fi
 
     # Step 4: Start new container on Application Server
-    echo -e "${BLUE}Step 4/9: Starting new container on Application Server...${NC}"
+    echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
     echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
     echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
 
@@ -468,7 +468,7 @@ EOF
     echo ""
 
     # Step 5: Wait for Docker health check on Application Server
-    echo -e "${BLUE}Step 5/9: Waiting for health check on Application Server...${NC}"
+    echo -e "${BLUE}Step 5/10: Waiting for health check on Application Server...${NC}"
 
     RETRY_COUNT=0
 
@@ -519,7 +519,7 @@ EOF
     echo ""
 
     # Step 6: Generate nginx configs (site + upstream)
-    echo -e "${BLUE}Step 6/9: Generating nginx configurations for ${ENVIRONMENT}...${NC}"
+    echo -e "${BLUE}Step 6/10: Generating nginx configurations for ${ENVIRONMENT}...${NC}"
 
     # Get nginx settings for this environment
     DOMAIN=$(get_nginx_domain "$ENVIRONMENT" "$CONFIG_FILE")
@@ -566,7 +566,7 @@ EOF
     echo -e "  ✓ Upstream config generated: ${NGINX_UPSTREAM_FILENAME}"
 
     # Step 7: Upload and apply nginx configs
-    echo -e "${BLUE}Step 7/9: Updating System Server nginx...${NC}"
+    echo -e "${BLUE}Step 7/10: Updating System Server nginx...${NC}"
 
     # Batch: Ensure directories, upload configs, test, and reload nginx
     ssh_batch_start
@@ -606,37 +606,138 @@ EOF
     echo ""
 
     # Step 8: Test nginx configuration
-    echo -e "${BLUE}Step 8/9: Testing nginx configuration on System Server...${NC}"
+    echo -e "${BLUE}Step 8/10: Testing nginx configuration on System Server...${NC}"
 
     NGINX_TEST_OUTPUT=$(ssh_batch_result "test_nginx")
 
     if ! echo "$NGINX_TEST_OUTPUT" | grep -q "successful"; then
-        echo -e "${RED}Error: nginx configuration test failed!${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}✗ NGINX CONFIGURATION TEST FAILED${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "${YELLOW}nginx -t output:${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────${NC}"
         echo "$NGINX_TEST_OUTPUT"
+        echo -e "${CYAN}────────────────────────────────────────────────${NC}"
         echo ""
 
-        # Rollback nginx config
-        echo -e "${YELLOW}Rolling back nginx configuration...${NC}"
-        ROLLBACK_CONFIG="upstream $NGINX_UPSTREAM_NAME {
+        # Automatic rollback
+        echo -e "${YELLOW}⚠ Initiating automatic rollback to prevent service disruption...${NC}"
+        echo ""
+
+        # Step 1: Rollback nginx config
+        if [ -n "$CURRENT_PORT" ] && [ -n "$CURRENT_CONTAINER" ]; then
+            echo -e "${BLUE}1/3: Rolling back nginx upstream to previous container...${NC}"
+            ROLLBACK_CONFIG="upstream $NGINX_UPSTREAM_NAME {
         server $APP_UPSTREAM_IP:$CURRENT_PORT;
     }"
-        ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | ${USE_SUDO} tee $NGINX_UPSTREAM_FILE > /dev/null"
+            ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "echo '$ROLLBACK_CONFIG' | ${USE_SUDO} tee $NGINX_UPSTREAM_FILE > /dev/null"
+            if [ $? -eq 0 ]; then
+                echo -e "  ${GREEN}✓${NC} Upstream restored to: ${CURRENT_CONTAINER} (port ${CURRENT_PORT})"
+            else
+                echo -e "  ${RED}✗${NC} Failed to rollback nginx upstream"
+            fi
+        else
+            echo -e "${BLUE}1/3: Removing invalid nginx configuration files (first deployment)...${NC}"
 
-        # Stop new container
-        echo -e "${YELLOW}Stopping new container on Application Server...${NC}"
+            # Remove upstream file
+            UPSTREAM_EXISTS=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_UPSTREAM_FILE}' ] && echo 'YES' || echo 'NO'")
+            if [ "$UPSTREAM_EXISTS" = "YES" ]; then
+                ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} rm -f ${NGINX_UPSTREAM_FILE}"
+                UPSTREAM_REMOVED=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ ! -f '${NGINX_UPSTREAM_FILE}' ] && echo 'YES' || echo 'NO'")
+                if [ "$UPSTREAM_REMOVED" = "YES" ]; then
+                    echo -e "  ${GREEN}✓${NC} Removed invalid upstream: ${NGINX_UPSTREAM_FILE}"
+                else
+                    echo -e "  ${RED}✗${NC} Failed to remove upstream config!"
+                fi
+            fi
+
+            # Remove site file
+            SITE_EXISTS=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+            if [ "$SITE_EXISTS" = "YES" ]; then
+                ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} rm -f ${NGINX_SITE_FILE}"
+                SITE_REMOVED=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ ! -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+                if [ "$SITE_REMOVED" = "YES" ]; then
+                    echo -e "  ${GREEN}✓${NC} Removed invalid site config: ${NGINX_SITE_FILE}"
+                else
+                    echo -e "  ${RED}✗${NC} Failed to remove site config!"
+                fi
+            fi
+
+            # If any files still exist, try forced removal
+            STILL_UPSTREAM=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_UPSTREAM_FILE}' ] && echo 'YES' || echo 'NO'")
+            STILL_SITE=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+
+            if [ "$STILL_UPSTREAM" = "YES" ] || [ "$STILL_SITE" = "YES" ]; then
+                echo -e "  ${YELLOW}⚠ Some config files remain, attempting forced removal...${NC}"
+                ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} rm -f ${NGINX_UPSTREAM_FILE} ${NGINX_SITE_FILE}"
+
+                # Final verification
+                FINAL_UPSTREAM=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_UPSTREAM_FILE}' ] && echo 'YES' || echo 'NO'")
+                FINAL_SITE=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "[ -f '${NGINX_SITE_FILE}' ] && echo 'YES' || echo 'NO'")
+
+                if [ "$FINAL_UPSTREAM" = "NO" ] && [ "$FINAL_SITE" = "NO" ]; then
+                    echo -e "  ${GREEN}✓${NC} Forced removal succeeded"
+                else
+                    echo -e "  ${RED}✗ CRITICAL: Some config files could not be removed!${NC}"
+                    [ "$FINAL_UPSTREAM" = "YES" ] && echo -e "    ${RED}- Upstream: ${NGINX_UPSTREAM_FILE}${NC}"
+                    [ "$FINAL_SITE" = "YES" ] && echo -e "    ${RED}- Site: ${NGINX_SITE_FILE}${NC}"
+                fi
+            fi
+        fi
+
+        # Step 2: Stop new container
+        echo -e "${BLUE}2/3: Stopping failed container on Application Server...${NC}"
         ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-    # Stop and remove the specific failed container
-    FAILED_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${APP_PORT}"
+    # Stop and remove the failed container
+    FAILED_CONTAINER="${CONTAINER_NAME}"
 
     if docker ps -a --format '{{.Names}}' | grep -q "^\${FAILED_CONTAINER}\$"; then
         echo "  Stopping \${FAILED_CONTAINER}..."
         docker stop "\${FAILED_CONTAINER}" 2>/dev/null || true
         docker rm "\${FAILED_CONTAINER}" 2>/dev/null || true
+        echo "  ${GREEN}✓${NC} Container removed"
+    else
+        echo "  ${YELLOW}⚠${NC} Container not found (may have already been removed)"
     fi
 EOF
 
+        # Step 3: Verify nginx is still working
+        echo -e "${BLUE}3/3: Verifying nginx status after rollback...${NC}"
+        ROLLBACK_TEST=$(ssh -i "$SSH_KEY" "$SYSTEM_SERVER" "${USE_SUDO} nginx -t 2>&1")
+        if echo "$ROLLBACK_TEST" | grep -q "successful"; then
+            echo -e "  ${GREEN}✓${NC} nginx configuration is now valid (rollback successful)"
+            if [ -n "$CURRENT_CONTAINER" ]; then
+                echo -e "  ${GREEN}✓${NC} Traffic still flowing to previous container: ${CURRENT_CONTAINER}"
+            else
+                echo -e "  ${YELLOW}⚠${NC} No previous container (first deployment failed)"
+            fi
+        else
+            echo -e "  ${RED}✗${NC} nginx configuration still invalid after rollback!"
+            echo -e "  ${RED}⚠ CRITICAL: Manual intervention required on System Server${NC}"
+            echo ""
+            echo -e "${YELLOW}Please SSH to the server and fix nginx configuration:${NC}"
+            echo -e "  ${CYAN}ssh -i $SSH_KEY $SYSTEM_SERVER${NC}"
+            echo -e "  ${CYAN}sudo nginx -t${NC}"
+        fi
+
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}Deployment aborted - nginx configuration invalid${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "${CYAN}Troubleshooting steps:${NC}"
+        echo -e "  1. Check generated nginx configs:"
+        echo -e "     - Site: cat ${TEMP_SITE_FILE}"
+        echo -e "     - Upstream: cat ${TEMP_UPSTREAM_FILE}"
+        echo -e "  2. Review nginx error messages above for specific issues"
+        echo -e "  3. Common issues:"
+        echo -e "     - Invalid domain name or SSL certificate paths"
+        echo -e "     - Syntax errors in custom nginx properties"
+        echo -e "     - Upstream server unreachable (port $APP_PORT)"
+        echo -e "  4. Check container health:"
+        echo -e "     ${CYAN}axon health ${ENVIRONMENT}${NC}"
+        echo ""
         exit 1
     fi
 
@@ -652,8 +753,45 @@ EOF
     echo -e "  ${GREEN}✓ Traffic now flows to new container (port $APP_PORT)${NC}"
     echo ""
 
-    # Step 9: Graceful shutdown of old containers (BACKGROUND)
-    echo -e "${BLUE}Step 9/9: Gracefully shutting down old containers (timeout: ${GRACEFUL_SHUTDOWN_TIMEOUT}s)...${NC}"
+    # Step 9: Disconnect old containers from network (removes network alias)
+    echo -e "${BLUE}Step 9/10: Disconnecting old containers from network...${NC}"
+
+    # Get list of old containers for this product/environment (exclude new container)
+    OLD_CONTAINER_LIST=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+docker ps -a --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-' --format '{{.Names}}' | grep -v '^${CONTAINER_NAME}\$' || true
+EOF
+)
+
+    if [ -n "$OLD_CONTAINER_LIST" ]; then
+        # Disconnect each old container from network (removes DNS alias immediately)
+        while IFS= read -r old_container; do
+            if [ -n "$old_container" ]; then
+                DISCONNECT_OUTPUT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+                    "docker network disconnect '${NETWORK_NAME}' '${old_container}' 2>&1")
+                DISCONNECT_EXIT=$?
+
+                if [ $DISCONNECT_EXIT -eq 0 ]; then
+                    echo -e "  ${GREEN}✓${NC} Disconnected: ${old_container}"
+                elif echo "$DISCONNECT_OUTPUT" | grep -q "is not connected to network"; then
+                    echo -e "  ${CYAN}○${NC} Not connected: ${old_container}"
+                elif echo "$DISCONNECT_OUTPUT" | grep -q "No such container"; then
+                    echo -e "  ${CYAN}○${NC} Container not found: ${old_container}"
+                else
+                    echo -e "  ${YELLOW}⚠${NC} Failed to disconnect: ${old_container}"
+                    echo -e "      ${YELLOW}Reason: ${DISCONNECT_OUTPUT}${NC}"
+                    # Continue anyway - container will be stopped soon
+                fi
+            fi
+        done <<< "$OLD_CONTAINER_LIST"
+        echo -e "  ${GREEN}✓ Network aliases removed from old containers${NC}"
+        echo -e "  ${GREEN}✓ All internal network traffic now flows to new container${NC}"
+    else
+        echo -e "  ${CYAN}No old containers to disconnect (first deployment)${NC}"
+    fi
+    echo ""
+
+    # Step 10: Graceful shutdown of old containers (BACKGROUND)
+    echo -e "${BLUE}Step 10/10: Gracefully shutting down old containers (timeout: ${GRACEFUL_SHUTDOWN_TIMEOUT}s)...${NC}"
 
     # Run cleanup in background - deployment is already successful
     {
