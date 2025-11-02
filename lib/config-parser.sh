@@ -237,7 +237,14 @@ get_registry_provider() {
 get_registry_config() {
     local provider=$(get_registry_provider)
     local key=$1
-    parse_yaml_key "registry.${provider}.${key}" ""
+    local value=$(parse_yaml_key "registry.${provider}.${key}" "")
+
+    # Expand environment variables if present
+    if [ -n "$value" ]; then
+        expand_env_vars "$value"
+    else
+        echo "$value"
+    fi
 }
 
 # Get repository name (respects provider-specific setting or defaults to product name)
