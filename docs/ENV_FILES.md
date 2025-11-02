@@ -135,3 +135,64 @@ Only the **first file found** is loaded. Priority: `.env.axon` > `.env.local` > 
 - `.env.axon.example` - Complete template
 - `CHANGES_SUMMARY.md` - v0.7.0 improvements
 - `README.md` - Main documentation
+
+## Config File vs Environment Files
+
+### Important: Config Files Are Safe to Commit
+
+As of v0.8.0, **`axon.config.yml` should be committed to git** because it uses environment variable syntax (`${VAR_NAME}`):
+
+```yaml
+# axon.config.yml - SAFE TO COMMIT
+registry:
+  docker_hub:
+    username: "${DOCKER_HUB_USERNAME}"    # Variable, not actual value
+    access_token: "${DOCKER_HUB_TOKEN}"  # Variable, not actual value
+```
+
+### What NOT to Commit
+
+Only the environment files containing actual credentials should be gitignored:
+
+```bash
+# .gitignore
+.env
+.env.local
+.env.axon
+.env*.local
+```
+
+### Summary
+
+| File | Contains | Commit? | Example |
+|------|----------|---------|---------|
+| `axon.config.yml` | Variable references | ✅ YES | `username: "${DOCKER_HUB_USERNAME}"` |
+| `.env.axon` | Actual credentials | ❌ NO | `DOCKER_HUB_USERNAME=myuser` |
+| `.env.axon.example` | Templates | ✅ YES | `DOCKER_HUB_USERNAME=your-username` |
+
+### Migration from Old Versions
+
+If you used AXON before v0.8.0, your config file might be in `.gitignore`. Remove it:
+
+```bash
+# Check if config is gitignored
+git check-ignore axon.config.yml
+
+# If it returns the filename, remove it from .gitignore
+vim .gitignore  # Remove the axon.config.yml line
+
+# Now you can commit it safely
+git add axon.config.yml
+git commit -m "Add AXON config (safe with env var syntax)"
+```
+
+### Why This Changed
+
+**Before v0.8.0:**
+- Config files contained actual credentials (unsafe to commit)
+- `axon config init` added config to `.gitignore`
+
+**After v0.8.0:**
+- Config files use `${VAR}` syntax (safe to commit)
+- Credentials go in `.env.axon` (gitignored)
+- `axon config init` NO LONGER adds config to `.gitignore`
