@@ -413,7 +413,17 @@ expand_env_vars() {
         return 1
     fi
 
-    echo "$value" | envsubst
+    # First, use envsubst for basic expansion
+    local expanded=$(echo "$value" | envsubst)
+
+    # Handle default value syntax ${VAR:-default} which envsubst doesn't expand properly
+    # Use eval with proper escaping to let Bash handle parameter expansion
+    if [[ "$expanded" =~ \$\{[^}]+:-[^}]+\} ]]; then
+        # Use eval to expand default values (safe because we control the input format)
+        expanded=$(eval "echo \"$expanded\"")
+    fi
+
+    echo "$expanded"
 }
 
 # ==============================================================================

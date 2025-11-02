@@ -58,7 +58,8 @@ load_env_file() {
     if [ -f "$env_file" ]; then
         # Export all variables from the file
         # Skip comments and empty lines
-        while IFS='=' read -r key value; do
+        # Note: || [ -n "$key" ] handles files without trailing newline
+        while IFS='=' read -r key value || [ -n "$key" ]; do
             # Skip empty lines and comments
             [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
 

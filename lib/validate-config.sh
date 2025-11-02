@@ -134,7 +134,13 @@ validate_required() {
         report_error "Required field missing: ${key} (${description})"
         return 1
     else
-        report_success "${description}: ${value}"
+        # Check if value contains environment variable syntax
+        if [[ "$value" =~ \$\{ ]]; then
+            local expanded_value=$(expand_env_vars "$value")
+            report_success "${description}: ${value} (expanded: ${expanded_value})"
+        else
+            report_success "${description}: ${value}"
+        fi
         return 0
     fi
 }
@@ -149,7 +155,13 @@ validate_optional() {
     if [ -z "$value" ] || [ "$value" = "null" ]; then
         echo -e "  ${BLUE}○ ${description}: <not set> (will use default: ${default})${NC}"
     else
-        report_success "${description}: ${value}"
+        # Check if value contains environment variable syntax
+        if [[ "$value" =~ \$\{ ]]; then
+            local expanded_value=$(expand_env_vars "$value")
+            report_success "${description}: ${value} (expanded: ${expanded_value})"
+        else
+            report_success "${description}: ${value}"
+        fi
     fi
 }
 
