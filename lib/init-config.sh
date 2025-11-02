@@ -605,27 +605,54 @@ echo ""
 echo -e "File: ${YELLOW}${OUTPUT_FILE}${NC}"
 echo ""
 
-# Add to .gitignore if not already there
+# Create .gitignore for environment files (NOT for config file)
+# Config files now use ${VAR} syntax and are safe to commit
 GITIGNORE_FILE="${PRODUCT_ROOT}/.gitignore"
 CONFIG_BASENAME=$(basename "$OUTPUT_FILE")
 
-if [ -f "$GITIGNORE_FILE" ]; then
-    if ! grep -qF "$CONFIG_BASENAME" "$GITIGNORE_FILE"; then
-        echo "" >> "$GITIGNORE_FILE"
-        echo "# AXON deployment configuration (contains secrets)" >> "$GITIGNORE_FILE"
-        echo "$CONFIG_BASENAME" >> "$GITIGNORE_FILE"
-        echo -e "${GREEN}✓ Added ${CONFIG_BASENAME} to .gitignore${NC}"
-    else
-        echo -e "${YELLOW}Note: ${CONFIG_BASENAME} already in .gitignore${NC}"
-    fi
-else
-    cat > "$GITIGNORE_FILE" <<EOF
-# AXON deployment configuration (contains secrets)
-$CONFIG_BASENAME
+if [ ! -f "$GITIGNORE_FILE" ]; then
+    cat > "$GITIGNORE_FILE" <<'EOF'
+# Environment files (contain secrets)
+.env
+.env.local
+.env.axon
+.env*.local
+!.env*.example
 EOF
-    echo -e "${GREEN}✓ Created .gitignore with ${CONFIG_BASENAME}${NC}"
+    echo -e "${GREEN}✓ Created .gitignore for environment files${NC}"
+else
+    # Check if env file patterns are in .gitignore
+    if ! grep -qF ".env.axon" "$GITIGNORE_FILE" 2>/dev/null; then
+        echo "" >> "$GITIGNORE_FILE"
+        echo "# Environment files (contain secrets)" >> "$GITIGNORE_FILE"
+        echo ".env" >> "$GITIGNORE_FILE"
+        echo ".env.local" >> "$GITIGNORE_FILE"
+        echo ".env.axon" >> "$GITIGNORE_FILE"
+        echo ".env*.local" >> "$GITIGNORE_FILE"
+        echo "!.env*.example" >> "$GITIGNORE_FILE"
+        echo -e "${GREEN}✓ Added environment file patterns to .gitignore${NC}"
+    fi
+
+    # Remove config file from .gitignore if it was added by old versions
+    if grep -qF "$CONFIG_BASENAME" "$GITIGNORE_FILE" 2>/dev/null; then
+        # Remove the config file entry and the comment above it if it says "contains secrets"
+        sed -i.bak "/# AXON deployment configuration (contains secrets)/d" "$GITIGNORE_FILE" 2>/dev/null || sed -i '' "/# AXON deployment configuration (contains secrets)/d" "$GITIGNORE_FILE"
+        sed -i.bak "/$CONFIG_BASENAME/d" "$GITIGNORE_FILE" 2>/dev/null || sed -i '' "/$CONFIG_BASENAME/d" "$GITIGNORE_FILE"
+        rm -f "${GITIGNORE_FILE}.bak"
+        echo -e "${YELLOW}✓ Removed ${CONFIG_BASENAME} from .gitignore (config is now safe to commit)${NC}"
+    fi
 fi
 
+echo ""
+echo -e "${CYAN}Important: Configuration Security${NC}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "✓ ${CONFIG_BASENAME} uses \${VAR} syntax and is ${GREEN}safe to commit${NC}"
+echo -e "✓ Create .env.axon for your credentials (will be ${YELLOW}gitignored${NC})"
+echo ""
+echo "Example .env.axon:"
+echo "  DOCKER_HUB_USERNAME=myuser"
+echo "  DOCKER_HUB_TOKEN=\${YOUR_TOKEN}"
+echo "  AWS_ACCOUNT_ID=123456789012"
 echo ""
 echo "Next steps:"
 if [ "$INTERACTIVE" = false ]; then
