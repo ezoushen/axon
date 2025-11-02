@@ -183,17 +183,17 @@ load_config() {
     fi
 
     # System Server config
-    export SYSTEM_SERVER_HOST=$(parse_yaml_key "servers.system.host" "")
-    export SYSTEM_SERVER_USER=$(parse_yaml_key "servers.system.user" "")
+    export SYSTEM_SERVER_HOST=$(expand_env_vars "$(parse_yaml_key "servers.system.host" "")")
+    export SYSTEM_SERVER_USER=$(expand_env_vars "$(parse_yaml_key "servers.system.user" "")")
     export SSH_KEY=$(parse_yaml_key "servers.system.ssh_key" "")
     export SSH_KEY="${SSH_KEY/#\~/$HOME}"
 
     # Application Server config
-    export APPLICATION_SERVER_HOST=$(parse_yaml_key "servers.application.host" "")
-    export APPLICATION_SERVER_USER=$(parse_yaml_key "servers.application.user" "")
+    export APPLICATION_SERVER_HOST=$(expand_env_vars "$(parse_yaml_key "servers.application.host" "")")
+    export APPLICATION_SERVER_USER=$(expand_env_vars "$(parse_yaml_key "servers.application.user" "")")
     export APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key "servers.application.ssh_key" "")
     export APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
-    export APPLICATION_SERVER_PRIVATE_IP=$(parse_yaml_key "servers.application.private_ip" "")
+    export APPLICATION_SERVER_PRIVATE_IP=$(expand_env_vars "$(parse_yaml_key "servers.application.private_ip" "")")
 
     # Environment-specific config
     export ENV_FILE_PATH=$(parse_yaml_key "environments.${env}.env_path" "")
