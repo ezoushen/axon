@@ -221,11 +221,11 @@ echo ""
 
 # Load configuration
 PRODUCT_NAME=$(get_config_with_default ".product.name" "" "$CONFIG_FILE")
-APP_SERVER=$(get_config_with_default ".servers.application.host" "" "$CONFIG_FILE")
-APP_USER=$(get_config_with_default ".servers.application.user" "" "$CONFIG_FILE")
+APP_SERVER=$(expand_env_vars "$(get_config_with_default ".servers.application.host" "" "$CONFIG_FILE")")
+APP_USER=$(expand_env_vars "$(get_config_with_default ".servers.application.user" "" "$CONFIG_FILE")")
 APP_SSH_KEY=$(get_config_with_default ".servers.application.ssh_key" "" "$CONFIG_FILE")
-SYSTEM_SERVER=$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")
-SYSTEM_USER=$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")
+SYSTEM_SERVER=$(expand_env_vars "$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")")
+SYSTEM_USER=$(expand_env_vars "$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")")
 SYSTEM_SSH_KEY=$(get_config_with_default ".servers.system.ssh_key" "" "$CONFIG_FILE")
 NGINX_AXON_DIR=$(get_nginx_axon_dir "$CONFIG_FILE")
 SHUTDOWN_TIMEOUT=$(get_config_with_default ".docker.shutdown_timeout" "30" "$CONFIG_FILE")

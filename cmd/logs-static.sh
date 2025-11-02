@@ -156,8 +156,8 @@ if [ -z "$PRODUCT_NAME" ]; then
 fi
 
 # Get System Server SSH details
-SYSTEM_SERVER_HOST=$(parse_yaml_key ".servers.system.host" "")
-SYSTEM_SERVER_USER=$(parse_yaml_key ".servers.system.user" "")
+SYSTEM_SERVER_HOST=$(expand_env_vars "$(parse_yaml_key ".servers.system.host" "")")
+SYSTEM_SERVER_USER=$(expand_env_vars "$(parse_yaml_key ".servers.system.user" "")")
 SYSTEM_SERVER_SSH_KEY=$(parse_yaml_key ".servers.system.ssh_key" "")
 SYSTEM_SERVER_SSH_KEY="${SYSTEM_SERVER_SSH_KEY/#\~/$HOME}"
 

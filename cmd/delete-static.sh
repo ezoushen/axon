@@ -191,8 +191,8 @@ echo ""
 # Load configuration
 PRODUCT_NAME=$(get_config_with_default ".product.name" "" "$CONFIG_FILE")
 DEPLOY_PATH=$(get_deploy_path "$ENVIRONMENT" "$CONFIG_FILE")
-SYSTEM_SERVER_HOST=$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")
-SYSTEM_SERVER_USER=$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")
+SYSTEM_SERVER_HOST=$(expand_env_vars "$(get_config_with_default ".servers.system.host" "" "$CONFIG_FILE")")
+SYSTEM_SERVER_USER=$(expand_env_vars "$(get_config_with_default ".servers.system.user" "" "$CONFIG_FILE")")
 SYSTEM_SERVER_SSH_KEY=$(get_config_with_default ".servers.system.ssh_key" "" "$CONFIG_FILE")
 NGINX_AXON_DIR=$(get_nginx_axon_dir "$CONFIG_FILE")
 

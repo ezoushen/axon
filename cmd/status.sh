@@ -172,8 +172,8 @@ PRODUCT_NAME=$(parse_yaml_key "product.name" "")
 
 # Get Application Server SSH details
 # We load these early since they're needed for all environments
-APPLICATION_SERVER_HOST=$(parse_yaml_key ".servers.application.host" "")
-APPLICATION_SERVER_USER=$(parse_yaml_key ".servers.application.user" "")
+APPLICATION_SERVER_HOST=$(expand_env_vars "$(parse_yaml_key ".servers.application.host" "")")
+APPLICATION_SERVER_USER=$(expand_env_vars "$(parse_yaml_key ".servers.application.user" "")")
 APPLICATION_SERVER_SSH_KEY=$(parse_yaml_key ".servers.application.ssh_key" "")
 APPLICATION_SERVER_SSH_KEY="${APPLICATION_SERVER_SSH_KEY/#\~/$HOME}"
 
