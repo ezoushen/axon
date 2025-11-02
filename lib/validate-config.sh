@@ -185,12 +185,15 @@ validate_aws_account_id() {
         return 1
     fi
 
+    # Expand environment variables if present (e.g., ${AWS_ACCOUNT_ID})
+    local expanded_value=$(expand_env_vars "$value")
+
     # AWS account IDs are 12 digits
-    if ! [[ "$value" =~ ^[0-9]{12}$ ]]; then
-        report_error "Invalid AWS account ID format: ${value} (must be 12 digits)"
+    if ! [[ "$expanded_value" =~ ^[0-9]{12}$ ]]; then
+        report_error "Invalid AWS account ID format: ${value} (expanded: ${expanded_value}, must be 12 digits)"
         return 1
     else
-        report_success "AWS Account ID: ${value}"
+        report_success "AWS Account ID: ${value} (expanded: ${expanded_value})"
         return 0
     fi
 }
