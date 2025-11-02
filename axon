@@ -44,6 +44,47 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 # This allows axon to work as both a git submodule (deploy/) and Homebrew install
 PRODUCT_ROOT="$PWD"
 
+# ==============================================================================
+# Auto-load Environment Files
+# ==============================================================================
+# Load .env files for AXON deployment configuration
+# Searches for .env files in this order (later files override earlier ones):
+#   1. .env.axon (recommended name)
+#   2. .env.local (alternative)
+#   3. .env (generic)
+
+load_env_file() {
+    local env_file=$1
+    if [ -f "$env_file" ]; then
+        # Export all variables from the file
+        # Skip comments and empty lines
+        while IFS='=' read -r key value; do
+            # Skip empty lines and comments
+            [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+
+            # Remove leading/trailing whitespace
+            key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+            # Remove quotes if present
+            value=$(echo "$value" | sed 's/^["'\'']\(.*\)["'\'']$/\1/')
+
+            # Export the variable
+            if [ -n "$key" ]; then
+                export "$key=$value"
+            fi
+        done < "$env_file"
+        echo -e "${BLUE}[INFO]${NC} Loaded environment from: $env_file" >&2
+        return 0
+    fi
+    return 1
+}
+
+# Auto-load .env files (first found wins, then each subsequent file overrides)
+for env_file in ".env.axon" ".env.local" ".env"; do
+    load_env_file "$env_file" && break
+done
+
 # Source command parser library
 source "$SCRIPT_DIR/lib/command-parser.sh"
 

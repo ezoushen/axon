@@ -1,6 +1,13 @@
 *.local.json
 *_PLAN.md
 
+# Environment files (contain secrets)
+.env
+.env.local
+.env.axon
+.env*.local
+!.env*.example
+
 # Generated icon files (source is SVG)
 assets/icon-*.png
 assets/favicon.ico
