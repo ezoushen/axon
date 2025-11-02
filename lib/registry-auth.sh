@@ -58,30 +58,59 @@ auth_docker_hub() {
     local username=$(get_registry_config "username")
     local access_token=$(get_registry_config "access_token")
 
-    if [ -z "$username" ]; then
-        echo -e "${RED}Error: registry.docker_hub.username not configured${NC}" >&2
+    # Option 1: Explicit credentials
+    if [ -n "$username" ] && [ -n "$access_token" ]; then
+        echo "Using explicit credentials..."
+
+        # Expand environment variables
+        username=$(expand_env_vars "$username")
+        access_token=$(expand_env_vars "$access_token")
+
+        # Login to Docker Hub
+        echo "$access_token" | docker login -u "$username" --password-stdin
+
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Successfully authenticated with Docker Hub using credentials${NC}"
+            return 0
+        else
+            echo -e "${RED}✗ Failed to authenticate with Docker Hub${NC}" >&2
+            return 1
+        fi
+    fi
+
+    # Option 2: Docker CLI config fallback
+    echo "Using Docker CLI config (~/.docker/config.json)..."
+
+    # Check if Docker config exists
+    local docker_config="$HOME/.docker/config.json"
+    if [ ! -f "$docker_config" ]; then
+        echo -e "${RED}Error: No Docker Hub credentials available${NC}" >&2
+        echo "" >&2
+        echo "Please configure one of the following:" >&2
+        echo "" >&2
+        echo "Option 1: Explicit credentials (recommended for CI/CD)" >&2
+        echo "  registry.docker_hub.username: \"\${DOCKER_HUB_USERNAME}\"" >&2
+        echo "  registry.docker_hub.access_token: \"\${DOCKER_HUB_TOKEN}\"" >&2
+        echo "" >&2
+        echo "Option 2: Docker CLI login (recommended for local development)" >&2
+        echo "  Run: docker login" >&2
+        echo "  This stores credentials in ~/.docker/config.json" >&2
+        echo "" >&2
         return 1
     fi
 
-    if [ -z "$access_token" ]; then
-        echo -e "${RED}Error: registry.docker_hub.access_token not configured${NC}" >&2
-        echo "Tip: Use environment variable syntax: access_token: \"\${DOCKER_HUB_TOKEN}\"" >&2
+    # Check if Docker Hub credentials exist in config
+    if ! grep -q "index.docker.io" "$docker_config" 2>/dev/null; then
+        echo -e "${RED}Error: No Docker Hub credentials found in ~/.docker/config.json${NC}" >&2
+        echo "" >&2
+        echo "Please run 'docker login' first, or configure explicit credentials in axon.config.yml" >&2
+        echo "" >&2
         return 1
     fi
 
-    # Expand environment variables in access token
-    access_token=$(expand_env_vars "$access_token")
-
-    # Login to Docker Hub
-    echo "$access_token" | docker login -u "$username" --password-stdin
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Successfully authenticated with Docker Hub${NC}"
-        return 0
-    else
-        echo -e "${RED}✗ Failed to authenticate with Docker Hub${NC}" >&2
-        return 1
-    fi
+    echo -e "${GREEN}✓ Using Docker Hub credentials from ~/.docker/config.json${NC}"
+    echo "Note: Credentials stored by previous 'docker login' command"
+    return 0
 }
 
 # ==============================================================================
@@ -93,12 +122,14 @@ auth_aws_ecr() {
 
     local profile=$(get_registry_config "profile")
     local region=$(get_registry_config "region")
+    local access_key_id=$(get_registry_config "access_key_id")
+    local secret_access_key=$(get_registry_config "secret_access_key")
+    local session_token=$(get_registry_config "session_token")
+    local credentials_file=$(get_registry_config "credentials_file")
     local registry_url=$(build_registry_url)
 
-    if [ -z "$profile" ]; then
-        echo -e "${RED}Error: registry.aws_ecr.profile not configured${NC}" >&2
-        return 1
-    fi
+    # Expand environment variables
+    region=$(expand_env_vars "$region")
 
     if [ -z "$region" ]; then
         echo -e "${RED}Error: registry.aws_ecr.region not configured${NC}" >&2
@@ -122,21 +153,96 @@ auth_aws_ecr() {
         return 1
     fi
 
+    local aws_cmd="aws ecr get-login-password --region $region"
+    local auth_method=""
+
+    # Option 1: Direct credentials (recommended for CI/CD)
+    if [ -n "$access_key_id" ] && [ -n "$secret_access_key" ]; then
+        echo "Using direct AWS credentials..."
+
+        # Expand environment variables
+        access_key_id=$(expand_env_vars "$access_key_id")
+        secret_access_key=$(expand_env_vars "$secret_access_key")
+
+        # Set AWS environment variables for this command
+        export AWS_ACCESS_KEY_ID="$access_key_id"
+        export AWS_SECRET_ACCESS_KEY="$secret_access_key"
+
+        if [ -n "$session_token" ]; then
+            session_token=$(expand_env_vars "$session_token")
+            export AWS_SESSION_TOKEN="$session_token"
+        fi
+
+        auth_method="direct credentials"
+    # Option 2: Credentials file
+    elif [ -n "$credentials_file" ]; then
+        echo "Using AWS credentials file..."
+
+        # Expand tilde to home directory
+        credentials_file="${credentials_file/#\~/$HOME}"
+
+        if [ ! -f "$credentials_file" ]; then
+            echo -e "${RED}Error: Credentials file not found: $credentials_file${NC}" >&2
+            return 1
+        fi
+
+        # Use credentials file with optional profile
+        if [ -n "$profile" ]; then
+            aws_cmd="$aws_cmd --profile $profile"
+            export AWS_SHARED_CREDENTIALS_FILE="$credentials_file"
+            auth_method="credentials file with profile $profile"
+        else
+            export AWS_SHARED_CREDENTIALS_FILE="$credentials_file"
+            auth_method="credentials file"
+        fi
+    # Option 3: AWS CLI profile (recommended for local development)
+    elif [ -n "$profile" ]; then
+        echo "Using AWS CLI profile..."
+        aws_cmd="$aws_cmd --profile $profile"
+        auth_method="AWS CLI profile $profile"
+    else
+        echo -e "${RED}Error: No AWS authentication method configured${NC}" >&2
+        echo "" >&2
+        echo "Please configure one of the following:" >&2
+        echo "" >&2
+        echo "Option 1: AWS CLI profile (recommended for local development)" >&2
+        echo "  registry.aws_ecr.profile: \"default\"" >&2
+        echo "" >&2
+        echo "Option 2: Direct credentials (recommended for CI/CD)" >&2
+        echo "  registry.aws_ecr.access_key_id: \"\${AWS_ACCESS_KEY_ID}\"" >&2
+        echo "  registry.aws_ecr.secret_access_key: \"\${AWS_SECRET_ACCESS_KEY}\"" >&2
+        echo "  registry.aws_ecr.session_token: \"\${AWS_SESSION_TOKEN}\"  # Optional" >&2
+        echo "" >&2
+        echo "Option 3: Credentials file" >&2
+        echo "  registry.aws_ecr.credentials_file: \"~/.aws/credentials\"" >&2
+        echo "  registry.aws_ecr.profile: \"custom-profile\"  # Optional" >&2
+        echo "" >&2
+        return 1
+    fi
+
     # Get ECR login password and authenticate
     echo "Getting ECR login token (valid for 12 hours)..."
-    aws ecr get-login-password --region "$region" --profile "$profile" | \
-        docker login --username AWS --password-stdin "$registry_url"
+    eval "$aws_cmd" | docker login --username AWS --password-stdin "$registry_url"
+    local login_result=$?
 
-    if [ $? -eq 0 ]; then
+    # Clean up exported credentials
+    unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SHARED_CREDENTIALS_FILE
+
+    if [ $login_result -eq 0 ]; then
         echo -e "${GREEN}✓ Successfully authenticated with AWS ECR${NC}"
-        echo "Region: $region, Profile: $profile"
+        echo "Region: $region, Method: $auth_method"
         return 0
     else
         echo -e "${RED}✗ Failed to authenticate with AWS ECR${NC}" >&2
         echo "" >&2
         echo "Troubleshooting:" >&2
-        echo "  1. Verify AWS CLI is configured: aws configure --profile $profile" >&2
-        echo "  2. Check AWS credentials: aws sts get-caller-identity --profile $profile" >&2
+        if [ -n "$profile" ]; then
+            echo "  1. Verify AWS CLI is configured: aws configure --profile $profile" >&2
+            echo "  2. Check AWS credentials: aws sts get-caller-identity --profile $profile" >&2
+        else
+            echo "  1. Verify credentials are correct" >&2
+            echo "  2. Check AWS credentials: aws sts get-caller-identity" >&2
+        fi
         echo "  3. Verify ECR permissions for this AWS account" >&2
         echo "" >&2
         return 1

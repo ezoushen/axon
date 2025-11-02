@@ -62,8 +62,14 @@ registry:
   # --------------------------------------------------------------------------
   # Uncomment and configure this section if using Docker Hub
   # docker_hub:
-  #   username: "myuser"                          # [REQUIRED] Docker Hub username
-  #   access_token: "${DOCKER_HUB_TOKEN}"         # [REQUIRED] Personal Access Token (use env var for security)
+  #   # Authentication method (choose ONE):
+  #   # Option 1: Explicit credentials (recommended for CI/CD)
+  #   username: "${DOCKER_HUB_USERNAME}"          # [OPTIONAL] Docker Hub username (supports env var)
+  #   access_token: "${DOCKER_HUB_TOKEN}"         # [OPTIONAL] Personal Access Token (supports env var)
+  #   # Option 2: Docker CLI config (default fallback)
+  #   # If username and access_token are not provided, uses credentials from ~/.docker/config.json
+  #   # Requires prior 'docker login' on local machine
+  #
   #   namespace: "myuser"                         # [OPTIONAL] Namespace (default: username)
   #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
 
@@ -71,9 +77,19 @@ registry:
   # AWS ECR Configuration (Example - Currently Active)
   # --------------------------------------------------------------------------
   aws_ecr:
-    profile: "default"                            # [REQUIRED] AWS CLI profile name
-    region: "ap-northeast-1"                      # [REQUIRED] AWS region for ECR
-    account_id: "123456789012"                    # [REQUIRED] AWS account ID (12 digits)
+    # Authentication method (choose ONE):
+    # Option 1: AWS CLI profile (recommended for local development)
+    profile: "default"                            # [OPTIONAL] AWS CLI profile name
+    # Option 2: Direct credentials (recommended for CI/CD)
+    # access_key_id: "${AWS_ACCESS_KEY_ID}"       # [OPTIONAL] AWS access key
+    # secret_access_key: "${AWS_SECRET_ACCESS_KEY}" # [OPTIONAL] AWS secret key
+    # session_token: "${AWS_SESSION_TOKEN}"       # [OPTIONAL] Session token (for temporary credentials)
+    # Option 3: Credentials file
+    # credentials_file: "~/.aws/credentials"      # [OPTIONAL] Path to credentials file
+    # profile: "custom-profile"                   # [OPTIONAL] Profile within credentials file
+
+    region: "${AWS_REGION:-ap-northeast-1}"       # [REQUIRED] AWS region (supports env var with default)
+    account_id: "${AWS_ACCOUNT_ID}"               # [REQUIRED] AWS account ID (supports env var)
     repository: "my-product"                      # [OPTIONAL] ECR repository name (default: product.name)
 
   # --------------------------------------------------------------------------
@@ -81,9 +97,15 @@ registry:
   # --------------------------------------------------------------------------
   # Uncomment and configure this section if using GCR
   # google_gcr:
-  #   project_id: "my-gcp-project"                # [REQUIRED] GCP project ID
+  #   # Authentication method (choose ONE):
+  #   # Option 1: Service account key file (recommended for CI/CD)
+  #   service_account_key: "~/gcp-key.json"       # [OPTIONAL] Service account key file path
+  #   # Option 2: gcloud CLI (default fallback)
+  #   # If service_account_key is not provided, uses 'gcloud auth' session
+  #   # Requires prior 'gcloud auth login' on local machine
+  #
+  #   project_id: "${GCP_PROJECT_ID}"             # [REQUIRED] GCP project ID (supports env var)
   #   location: "us"                              # [OPTIONAL] Location: us, eu, asia (default: us)
-  #   service_account_key: "~/gcp-key.json"       # [OPTIONAL] Service account key file (if not using gcloud CLI)
   #   use_artifact_registry: false                # [OPTIONAL] Use Artifact Registry instead of GCR (default: false)
   #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
 
@@ -92,24 +114,45 @@ registry:
   # --------------------------------------------------------------------------
   # Uncomment and configure this section if using ACR
   # azure_acr:
-  #   registry_name: "myregistry"                 # [REQUIRED] ACR registry name (without .azurecr.io)
+  #   registry_name: "${AZURE_REGISTRY_NAME}"     # [REQUIRED] ACR registry name (supports env var, without .azurecr.io)
   #   # Authentication method (choose ONE):
   #   # Option 1: Service Principal (recommended for CI/CD)
-  #   service_principal_id: "sp-app-id"           # [OPTIONAL] Service principal application ID
-  #   service_principal_password: "${AZURE_SP_PASSWORD}"  # [OPTIONAL] Service principal secret (use env var)
+  #   service_principal_id: "${AZURE_SP_ID}"      # [OPTIONAL] Service principal application ID (supports env var)
+  #   service_principal_password: "${AZURE_SP_PASSWORD}"  # [OPTIONAL] Service principal secret (supports env var)
   #   # Option 2: Admin User (must be enabled in Azure Portal)
-  #   # admin_username: "myregistry"              # [OPTIONAL] Admin username
-  #   # admin_password: "${AZURE_ADMIN_PASSWORD}" # [OPTIONAL] Admin password (use env var)
-  #   # Option 3: Azure CLI (no credentials needed if 'az login' is active)
+  #   # admin_username: "${AZURE_ADMIN_USERNAME}" # [OPTIONAL] Admin username (supports env var)
+  #   # admin_password: "${AZURE_ADMIN_PASSWORD}" # [OPTIONAL] Admin password (supports env var)
+  #   # Option 3: Azure CLI (default fallback)
+  #   # If no credentials provided, uses 'az login' session
+  #   # Requires prior 'az login' on local machine
   #   repository: "my-product"                    # [OPTIONAL] Repository name (default: product.name)
 
 # IMPORTANT: Security Best Practices for Credentials
-# - Use environment variables for sensitive values: ${VAR_NAME}
+# =====================================================
+# ALL REGISTRY PROVIDERS SUPPORT MULTIPLE AUTHENTICATION METHODS
+# Choose the method that best fits your workflow:
+#
+# FOR LOCAL DEVELOPMENT:
+# - Docker Hub: Use 'docker login' (credentials in ~/.docker/config.json)
+# - AWS ECR: Use AWS CLI profile (credentials in ~/.aws/credentials)
+# - Google GCR: Use 'gcloud auth login' or service account key file
+# - Azure ACR: Use 'az login' or service principal
+#
+# FOR CI/CD ENVIRONMENTS:
+# - ALL providers support environment variables: ${VAR_NAME}
+# - Use secrets management in your CI/CD platform (GitHub Secrets, GitLab CI Variables, etc.)
 # - Never commit credentials directly in this file
-# - For Docker Hub: Use Personal Access Tokens, not passwords
-# - For AWS: Use AWS CLI profiles with proper IAM permissions
-# - For GCP: Use service account keys stored securely
-# - For Azure: Use service principals or Azure CLI authentication
+#
+# ENVIRONMENT VARIABLE SYNTAX:
+# - Simple: ${VAR_NAME} - expands to environment variable value
+# - With default: ${VAR_NAME:-default} - uses 'default' if VAR_NAME is not set
+# - Can be used in ANY string field in this config file
+#
+# EXAMPLES:
+# - Docker Hub Token: access_token: "${DOCKER_HUB_TOKEN}"
+# - AWS Account ID: account_id: "${AWS_ACCOUNT_ID}"
+# - GCP Project: project_id: "${GCP_PROJECT_ID}"
+# - With default: region: "${AWS_REGION:-us-east-1}"
 
 # ==============================================================================
 # Server Configuration
