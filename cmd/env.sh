@@ -164,9 +164,16 @@ handle_env_edit() {
         exit 1
     fi
 
-    # Get Application Server configuration
+    # Source config-parser to get expand_env_vars function
+    source "$SCRIPT_DIR/lib/config-parser.sh"
+
+    # Get Application Server configuration and expand environment variables
     APP_HOST=$(yq eval '.servers.application.host' "$CONFIG_FILE" 2>/dev/null)
+    APP_HOST=$(expand_env_vars "$APP_HOST")
+
     APP_USER=$(yq eval '.servers.application.user' "$CONFIG_FILE" 2>/dev/null)
+    APP_USER=$(expand_env_vars "$APP_USER")
+
     APP_SSH_KEY=$(yq eval '.servers.application.ssh_key' "$CONFIG_FILE" 2>/dev/null)
 
     # Validate Application Server config

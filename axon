@@ -852,6 +852,12 @@ if [ "$COMMAND" = "config" ]; then
     exit $?
 fi
 
+# Special handling for env command - pass all args directly to handler
+if [ "$COMMAND" = "env" ]; then
+    cmd_env "$@"
+    exit $?
+fi
+
 # Parse arguments based on command
 # Note: Some commands require environment, others don't
 # Global flags (-c, --context, -v) are already parsed above
