@@ -275,26 +275,29 @@ cmd_run() {
         build_args+=("$GIT_SHA")
     fi
 
-    # Capture build output to extract auto-detected git SHA
-    BUILD_OUTPUT=$("$SCRIPT_DIR/cmd/build.sh" "${build_args[@]}" 2>&1)
-    BUILD_EXIT_CODE=$?
-
-    # Display build output
-    echo "$BUILD_OUTPUT"
+    # Run build and capture output for git SHA extraction while streaming to stdout
+    # Use a temporary file to capture output without buffering
+    BUILD_LOG=$(mktemp /tmp/axon-build-XXXXXX)
+    "$SCRIPT_DIR/cmd/build.sh" "${build_args[@]}" 2>&1 | tee "$BUILD_LOG"
+    BUILD_EXIT_CODE=${PIPESTATUS[0]}
 
     if [ $BUILD_EXIT_CODE -ne 0 ]; then
+        rm -f "$BUILD_LOG"
         echo -e "${RED}✗ Build failed!${NC}"
         exit 1
     fi
 
     # Extract auto-detected git SHA if present
     if [ -z "$GIT_SHA" ] && [ "$SKIP_GIT" = false ]; then
-        DETECTED_SHA=$(echo "$BUILD_OUTPUT" | grep "GIT_SHA_DETECTED=" | cut -d'=' -f2)
+        DETECTED_SHA=$(grep "GIT_SHA_DETECTED=" "$BUILD_LOG" | cut -d'=' -f2)
         if [ -n "$DETECTED_SHA" ]; then
             GIT_SHA="$DETECTED_SHA"
             verbose "Captured git SHA from build: $GIT_SHA"
         fi
     fi
+
+    # Clean up temp file
+    rm -f "$BUILD_LOG"
 
     echo ""
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
