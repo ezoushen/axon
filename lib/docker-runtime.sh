@@ -78,14 +78,52 @@ EOF
     fi
 
     # Add health check
+    # Check if health checks are enabled (default: true for backward compatibility)
+    local health_enabled=$(parse_config ".health_check.enabled" "true")
     local health_endpoint=$(parse_config ".health_check.endpoint" "")
-    if [ -n "$health_endpoint" ]; then
+
+    if [ "$health_enabled" = "true" ] && [ -n "$health_endpoint" ]; then
         echo "" >> "$temp_compose"
         echo "    healthcheck:" >> "$temp_compose"
 
-        # Generate health check test command from endpoint
-        # Using wget to test the health endpoint inside the container
-        echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:${container_port}${health_endpoint}\"]" >> "$temp_compose"
+        # Check if custom health check command is provided
+        local custom_command=$(parse_config ".health_check.command" "" | grep -E "^\s*-\s*" || true)
+
+        if [ -n "$custom_command" ]; then
+            # Use custom health check command from config
+            # Parse array items and build the test command
+            local cmd_parts=()
+            while IFS= read -r line; do
+                # Extract value after dash
+                local part=$(echo "$line" | sed 's/^\s*-\s*//')
+                # Strip inline comments (before removing quotes to handle: "value" # comment)
+                part=$(echo "$part" | sed 's/[[:space:]]*#.*//')
+                # Trim whitespace and remove surrounding quotes
+                part=$(echo "$part" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed 's/^"//; s/"$//')
+                if [ -n "$part" ]; then
+                    # Substitute template variables using parameter expansion (more reliable than sed)
+                    part="${part//\$\{container_port\}/${container_port}}"
+                    part="${part//\$\{health_endpoint\}/${health_endpoint}}"
+                    cmd_parts+=("$part")
+                fi
+            done <<< "$custom_command"
+
+            # Build JSON array format for docker-compose
+            echo -n "      test: [" >> "$temp_compose"
+            local first=true
+            for part in "${cmd_parts[@]}"; do
+                if [ "$first" = true ]; then
+                    first=false
+                else
+                    echo -n ", " >> "$temp_compose"
+                fi
+                echo -n "\"$part\"" >> "$temp_compose"
+            done
+            echo "]" >> "$temp_compose"
+        else
+            # Use default wget-based health check
+            echo "      test: [\"CMD\", \"wget\", \"--quiet\", \"--tries=1\", \"--spider\", \"http://127.0.0.1:${container_port}${health_endpoint}\"]" >> "$temp_compose"
+        fi
 
         local health_interval=$(parse_config ".health_check.interval" "30s")
         local health_timeout=$(parse_config ".health_check.timeout" "10s")

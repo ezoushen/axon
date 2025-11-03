@@ -317,9 +317,37 @@ environments:
 # ONLY used when product.type: "docker"
 # For static type: Health checks performed via HTTP GET to domain
 health_check:
+  enabled: true                              # [OPTIONAL] Enable AXON-managed health checks (default: true)
+                                             # Set to false to:
+                                             # - Use Dockerfile HEALTHCHECK instruction instead
+                                             # - Disable health checks entirely
+                                             # - Manage health checks manually
   endpoint: "/api/health"                    # [OPTIONAL] Health check endpoint (default: /api/health)
+                                             # Only used when enabled: true
+
+  # Docker container health check command (optional override)
+  # If not specified, uses default wget-based health check
+  # Supports template variables: ${container_port}, ${health_endpoint}
+  # command:                                 # [OPTIONAL] Custom health check command (default: wget-based check)
+  #   - "CMD"                                # CMD or CMD-SHELL
+  #   - "curl"
+  #   - "-f"
+  #   - "http://127.0.0.1:${container_port}${health_endpoint}"
+  # Alternative example using CMD-SHELL:
+  # command:
+  #   - "CMD-SHELL"
+  #   - "curl -f http://127.0.0.1:${container_port}${health_endpoint} || exit 1"
+  # Default (when not specified):
+  # command:
+  #   - "CMD"
+  #   - "wget"
+  #   - "--quiet"
+  #   - "--tries=1"
+  #   - "--spider"
+  #   - "http://127.0.0.1:${container_port}${health_endpoint}"
 
   # Docker container health check settings (used by Docker daemon)
+  # Only used when enabled: true
   interval: "30s"                            # [OPTIONAL] How often Docker checks (default: 30s)
   timeout: "10s"                             # [OPTIONAL] Max time to wait for response (default: 10s)
   retries: 3                                 # [OPTIONAL] Failed checks before unhealthy (default: 3)
