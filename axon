@@ -81,10 +81,8 @@ load_env_file() {
     return 1
 }
 
-# Auto-load .env files (first found wins, then each subsequent file overrides)
-for env_file in ".env.axon" ".env.local" ".env"; do
-    load_env_file "$env_file" && break
-done
+# NOTE: .env files are loaded AFTER context resolution (see bottom of script)
+# This ensures we load .env from the correct PROJECT_ROOT when using contexts
 
 # Source command parser library
 source "$SCRIPT_DIR/lib/command-parser.sh"
@@ -1111,6 +1109,12 @@ if [ "$SKIP_CONTEXT_RESOLUTION" = false ]; then
     verbose "Config resolved via: $CONTEXT_MODE"
     verbose "Config file: $CONFIG_FILE"
     verbose "Project root: $PROJECT_ROOT"
+
+    # Load .env files from PROJECT_ROOT after context resolution
+    # This ensures we load from the correct directory when using contexts
+    for env_file in ".env.axon" ".env.local" ".env"; do
+        load_env_file "$PROJECT_ROOT/$env_file" && break
+    done
 fi
 
 #==============================================================================

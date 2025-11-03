@@ -200,10 +200,15 @@ build_docker_run_command() {
         docker_run_cmd=$(echo "$docker_run_cmd" | sed "s/-p [0-9]*:${container_port}/-p ${container_port}/")
     fi
 
-    # Fix health check format (decomposerize outputs CMD,wget,... but docker expects space-separated)
+    # Fix health check format (decomposerize outputs CMD,wget,... but docker expects space-separated and quoted)
     if echo "$docker_run_cmd" | grep -q -- "--health-cmd"; then
+        # Extract health command value - decomposerize outputs comma-separated format
+        # Example: --health-cmd CMD,wget,--quiet,--tries=1,--spider,http://...
+        # We need to convert to: --health-cmd "wget --quiet --tries=1 --spider http://..."
         local health_value=$(echo "$docker_run_cmd" | sed -n 's/.*--health-cmd \([^ ]*\).*/\1/p' | sed 's/^CMD,//' | tr ',' ' ')
-        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|--health-cmd [^ ]*|--health-cmd \"$health_value\"|")
+        # Replace with properly quoted and escaped health command (escape for heredoc)
+        # Use '\' to escape quotes so they survive heredoc expansion
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed "s|--health-cmd [^ ]*|--health-cmd \\\\\"$health_value\\\\\"|")
     fi
 
     # Fix log options (decomposerize may output: --log-opt max-file=3,max-size=10m)

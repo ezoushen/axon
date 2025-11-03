@@ -437,7 +437,7 @@ EOF
     # Start new container using docker run command built from docker-compose.yml
     # This ensures we don't interfere with the old container and maintains docker-compose.yml as source of truth
     echo "  Running docker run command: ${DOCKER_RUN_CMD}"
-    ${DOCKER_RUN_CMD}
+    eval "${DOCKER_RUN_CMD}"
 
     if [ \$? -ne 0 ]; then
         echo "Error: Failed to start container"
