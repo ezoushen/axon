@@ -260,19 +260,44 @@ echo -e "  Shutdown Timeout: ${CYAN}${SHUTDOWN_TIMEOUT}s${NC}"
 echo ""
 
 # Warning
-# Step 0: Check if environment exists
+# Step 0: Check if environment exists (consolidated check)
 echo -e "${BLUE}Checking if environment '${ENVIRONMENT}' exists...${NC}"
 echo ""
 
-# Check for containers on Application Server
-CONTAINERS_EXIST=$(ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" \
-    "docker ps -a --filter 'name=${CONTAINER_PATTERN}-' --format '{{.Names}}' 2>/dev/null || true")
+# Consolidated check via single SSH call to Application Server
+APP_CHECK=$(axon_ssh "app" -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" bash <<EOF_CHECK
+# Check for containers
+CONTAINERS=\$(docker ps -a --filter "name=${CONTAINER_PATTERN}-" --format '{{.Names}}' 2>/dev/null || true)
+if [ -n "\$CONTAINERS" ]; then
+    echo "===CONTAINERS==="
+    echo "\$CONTAINERS"
+fi
+EOF_CHECK
+)
 
-# Check for nginx configs on System Server
-SITE_EXISTS=$(ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" \
-    "[ -f '${NGINX_SITE_FILE}' ] && echo 'yes' || echo 'no'")
-UPSTREAM_EXISTS=$(ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" \
-    "[ -f '${NGINX_UPSTREAM_FILE}' ] && echo 'yes' || echo 'no'")
+# Extract container list
+CONTAINERS_EXIST=$(echo "$APP_CHECK" | awk '/===CONTAINERS===/{flag=1; next} flag')
+
+# Consolidated check via single SSH call to System Server
+SYS_CHECK=$(axon_ssh "sys" -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" bash <<EOF_SYS_CHECK
+# Check if configs exist
+if [ -f "${NGINX_SITE_FILE}" ]; then
+    echo "SITE_EXISTS=yes"
+else
+    echo "SITE_EXISTS=no"
+fi
+
+if [ -f "${NGINX_UPSTREAM_FILE}" ]; then
+    echo "UPSTREAM_EXISTS=yes"
+else
+    echo "UPSTREAM_EXISTS=no"
+fi
+EOF_SYS_CHECK
+)
+
+# Extract existence flags
+SITE_EXISTS=$(echo "$SYS_CHECK" | grep "SITE_EXISTS=" | cut -d'=' -f2)
+UPSTREAM_EXISTS=$(echo "$SYS_CHECK" | grep "UPSTREAM_EXISTS=" | cut -d'=' -f2)
 
 # Check if anything exists
 if [ -z "$CONTAINERS_EXIST" ] && [ "$SITE_EXISTS" = "no" ] && [ "$UPSTREAM_EXISTS" = "no" ]; then
@@ -339,10 +364,10 @@ if [ "$FORCE" = false ]; then
     echo ""
 fi
 
-# Step 1: Remove Docker containers from Application Server
-echo -e "${BLUE}Step 1/4: Removing Docker containers from Application Server...${NC}"
+# Steps 1-2: Remove Docker containers and images (consolidated single SSH call)
+echo -e "${BLUE}Steps 1-2/4: Removing Docker containers and images from Application Server...${NC}"
 
-ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" "bash -s" <<EOF
+axon_ssh "app" -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" bash <<EOF_APP_CLEANUP
 set -e
 
 # Find all containers for this environment
@@ -365,19 +390,11 @@ else
     echo "  ✓ Containers stopped gracefully"
     echo ""
     echo "  Removing containers..."
-    echo "\$CONTAINERS" | xargs -r docker rm > /dev/null 2>&1
+    echo "\$CONTAINERS" | xargs docker rm > /dev/null 2>&1
     echo "  ✓ Containers removed"
 fi
-EOF
 
-echo -e "  ${GREEN}✓ Containers cleaned up${NC}"
 echo ""
-
-# Step 2: Remove Docker images from Application Server
-echo -e "${BLUE}Step 2/4: Removing Docker images from Application Server...${NC}"
-
-ssh -i "$APP_SSH_KEY" "${APP_USER}@${APP_SERVER}" "bash -s" <<EOF
-set -e
 
 # Find images matching the environment pattern
 # Images are typically tagged as: {product}:{env} or {registry}/{product}:{env}
@@ -390,20 +407,21 @@ else
     echo "\$IMAGES" | sed 's/^/    - /'
     echo ""
     echo "  Removing images..."
-    echo "\$IMAGES" | xargs -r docker rmi -f > /dev/null 2>&1
+    echo "\$IMAGES" | xargs docker rmi -f > /dev/null 2>&1
     echo "  ✓ Images removed"
 fi
-EOF
+EOF_APP_CLEANUP
 
-echo -e "  ${GREEN}✓ Images cleaned up${NC}"
+echo -e "  ${GREEN}✓ Application Server cleanup completed${NC}"
 echo ""
 
-# Step 3: Remove nginx site configuration from System Server
-echo -e "${BLUE}Step 3/4: Removing nginx site configuration...${NC}"
+# Steps 3-4: Remove nginx configurations and reload (consolidated single SSH call)
+echo -e "${BLUE}Steps 3-4/4: Removing nginx configurations and reloading...${NC}"
 
-ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" "bash -s" <<EOF
+axon_ssh "sys" -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" bash <<EOF_NGINX_CLEANUP
 set -e
 
+# Remove site configuration
 if [ -f "${NGINX_SITE_FILE}" ]; then
     echo "  Removing: ${NGINX_SITE_FILE}"
     ${USE_SUDO} rm -f "${NGINX_SITE_FILE}"
@@ -411,17 +429,10 @@ if [ -f "${NGINX_SITE_FILE}" ]; then
 else
     echo "  Site config not found (already removed or never created)"
 fi
-EOF
 
-echo -e "  ${GREEN}✓ Site configuration cleaned up${NC}"
 echo ""
 
-# Step 4: Remove nginx upstream configuration and reload nginx
-echo -e "${BLUE}Step 4/4: Removing nginx upstream configuration...${NC}"
-
-ssh -i "$SYSTEM_SSH_KEY" "${SYSTEM_USER}@${SYSTEM_SERVER}" "bash -s" <<EOF
-set -e
-
+# Remove upstream configuration
 if [ -f "${NGINX_UPSTREAM_FILE}" ]; then
     echo "  Removing: ${NGINX_UPSTREAM_FILE}"
     ${USE_SUDO} rm -f "${NGINX_UPSTREAM_FILE}"
@@ -439,13 +450,13 @@ if ${USE_SUDO} nginx -t 2>&1 | grep -q 'successful'; then
     ${USE_SUDO} nginx -s reload
     echo "  ✓ nginx reloaded"
 else
-    echo "  ${RED}✗ nginx configuration test failed${NC}"
+    echo "  ✗ nginx configuration test failed"
     echo "  Please check nginx configuration manually"
     exit 1
 fi
-EOF
+EOF_NGINX_CLEANUP
 
-echo -e "  ${GREEN}✓ Upstream configuration cleaned up${NC}"
+echo -e "  ${GREEN}✓ System Server cleanup completed${NC}"
 echo ""
 
 # Success

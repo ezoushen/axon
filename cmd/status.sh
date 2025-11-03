@@ -237,17 +237,61 @@ echo -e "${BLUE}On Application Server: ${APP_SERVER}${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo ""
 
-# Get containers for this product/environment from Application Server
-CONTAINERS=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}' | sort")
+# Consolidated data fetch - single SSH call for all container data
+REMOTE_DATA=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_FETCH
+CONTAINER_FILTER="${CONTAINER_FILTER}"
 
-if [ -z "$CONTAINERS" ]; then
+# Get container list
+CONTAINERS=\$(docker ps -a --filter "name=\${CONTAINER_FILTER}" --format '{{.Names}}' | sort)
+
+if [ -z "\$CONTAINERS" ]; then
+    echo "===NO_CONTAINERS==="
+    exit 0
+fi
+
+# Output container names
+echo "===CONTAINERS==="
+echo "\$CONTAINERS"
+
+# Get complete inspect data as JSON (single call for all containers)
+echo "===INSPECT==="
+docker inspect \$CONTAINERS 2>/dev/null
+
+# Get summary table
+echo "===SUMMARY==="
+docker ps -a --filter "name=\${CONTAINER_FILTER}" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+
+# Get stats for running containers only
+RUNNING=\$(docker ps --filter "name=\${CONTAINER_FILTER}" --format '{{.Names}}' | tr '\n' ' ')
+if [ -n "\$RUNNING" ]; then
+    echo "===STATS==="
+    docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' \$RUNNING
+fi
+
+EOF_FETCH
+)
+
+# Check if no containers found
+if echo "$REMOTE_DATA" | grep -q "===NO_CONTAINERS==="; then
     echo -e "${YELLOW}No containers found for ${PRODUCT_NAME}${NC}"
     echo ""
     echo "To deploy:"
     echo "  ./deploy.sh production"
     echo "  ./deploy.sh staging"
     exit 0
+fi
+
+# Extract sections from remote data
+CONTAINERS=$(echo "$REMOTE_DATA" | awk '/===CONTAINERS===/,/===INSPECT===/' | grep -v '===')
+INSPECT_JSON=$(echo "$REMOTE_DATA" | awk '/===INSPECT===/,/===SUMMARY===/' | grep -v '===')
+
+# Extract SUMMARY_TABLE - stop at ===STATS=== if it exists, otherwise get everything after ===SUMMARY===
+if echo "$REMOTE_DATA" | grep -q "===STATS==="; then
+    SUMMARY_TABLE=$(echo "$REMOTE_DATA" | awk '/===SUMMARY===/,/===STATS===/' | grep -v '===')
+    STATS_TABLE=$(echo "$REMOTE_DATA" | awk '/===STATS===/{flag=1; next} flag')
+else
+    SUMMARY_TABLE=$(echo "$REMOTE_DATA" | awk '/===SUMMARY===/{flag=1; next} flag')
+    STATS_TABLE=""
 fi
 
 #==============================================================================
@@ -276,109 +320,117 @@ show_detailed() {
     echo -e "${BLUE}==================================================${NC}"
     echo ""
 
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_DETAILED
-CONTAINER="$container"
+    # Parse all data locally from INSPECT_JSON (single jq call, much faster)
+    local DATA=$(echo "$INSPECT_JSON" | jq -r --arg name "$container" '
+        .[] | select(.Name == "/\($name)") | {
+            status: .State.Status,
+            health: (.State.Health.Status // "N/A"),
+            created: .Created,
+            started: .State.StartedAt,
+            image: .Config.Image,
+            image_id: .Image,
+            ports: [.NetworkSettings.Ports | to_entries[] | select(.value != null) | "\(.key) -> \(.value[0].HostPort)"] | join(" "),
+            network: [.NetworkSettings.Networks | keys[]] | join(","),
+            ip: [.NetworkSettings.Networks | to_entries[].value.IPAddress] | join(","),
+            env_count: (.Config.Env | length),
+            healthcheck_test: (if .Config.Healthcheck then [.Config.Healthcheck.Test[]] | join(" ") else "" end),
+            volumes: [.Mounts[] | "\(.Source) → \(.Destination)"] | join("\n")
+        } | @json
+    ')
 
-# Basic info
-STATUS=\$(docker inspect --format='{{.State.Status}}' "\$CONTAINER" 2>/dev/null)
-HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' "\$CONTAINER" 2>/dev/null)
-[ "\$HEALTH" == "<no value>" ] && HEALTH="N/A"
-CREATED=\$(docker inspect --format='{{.Created}}' "\$CONTAINER" | cut -d'.' -f1)
-STARTED=\$(docker inspect --format='{{.State.StartedAt}}' "\$CONTAINER" | cut -d'.' -f1)
+    # Extract individual fields
+    local STATUS=$(echo "$DATA" | jq -r '.status')
+    local HEALTH=$(echo "$DATA" | jq -r '.health')
+    local CREATED=$(echo "$DATA" | jq -r '.created' | cut -d'.' -f1)
+    local STARTED=$(echo "$DATA" | jq -r '.started' | cut -d'.' -f1)
+    local IMAGE=$(echo "$DATA" | jq -r '.image')
+    local IMAGE_ID=$(echo "$DATA" | jq -r '.image_id' | cut -d':' -f2 | cut -c1-12)
+    local TAG=$(echo "$IMAGE" | cut -d':' -f2)
+    local PORTS=$(echo "$DATA" | jq -r '.ports')
+    local NETWORK=$(echo "$DATA" | jq -r '.network')
+    local IP=$(echo "$DATA" | jq -r '.ip')
+    local ENV_COUNT=$(echo "$DATA" | jq -r '.env_count')
+    local HEALTH_TEST=$(echo "$DATA" | jq -r '.healthcheck_test')
+    local VOLUMES=$(echo "$DATA" | jq -r '.volumes')
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+    # Status icon and text
+    if [ "$STATUS" == "running" ]; then
+        STATUS_ICON="${GREEN}✓"
+        if [ "$HEALTH" == "healthy" ]; then
+            STATUS_TEXT="Running (Healthy)"
+        elif [ "$HEALTH" == "unhealthy" ]; then
+            STATUS_TEXT="Running (Unhealthy)"
+            STATUS_ICON="${YELLOW}⚠"
+        else
+            STATUS_TEXT="Running"
+        fi
+    else
+        STATUS_ICON="${RED}✗"
+        STATUS_TEXT="$STATUS"
+    fi
 
-# Status icon
-if [ "\$STATUS" == "running" ]; then
-    STATUS_ICON="\${GREEN}✓"
-    [ "\$HEALTH" == "healthy" ] && STATUS_TEXT="Running (Healthy)"
-    [ "\$HEALTH" == "unhealthy" ] && STATUS_TEXT="Running (Unhealthy)" && STATUS_ICON="\${YELLOW}⚠"
-    [ "\$HEALTH" == "N/A" ] && STATUS_TEXT="Running"
-else
-    STATUS_ICON="\${RED}✗"
-    STATUS_TEXT="\${STATUS}"
-fi
+    echo -e "Status: ${STATUS_ICON} ${STATUS_TEXT}${NC}"
 
-echo -e "Status: \${STATUS_ICON} \${STATUS_TEXT}\${NC}"
-
-# Uptime
-if [ "\$STATUS" == "running" ]; then
-    UPTIME=\$(docker inspect --format='{{.State.StartedAt}}' "\$CONTAINER")
-    echo -e "Uptime: \${CYAN}\$(TZ=UTC date -d "\$UPTIME" '+%Y-%m-%d %H:%M:%S UTC')\${NC}"
-fi
-
-echo ""
-
-# Image info
-echo -e "\${CYAN}IMAGE & VERSION:\${NC}"
-IMAGE=\$(docker inspect --format='{{.Config.Image}}' "\$CONTAINER")
-IMAGE_ID=\$(docker inspect --format='{{.Image}}' "\$CONTAINER" | cut -d':' -f2 | cut -c1-12)
-TAG=\$(echo "\$IMAGE" | cut -d':' -f2)
-echo -e "  Image: \${IMAGE}"
-echo -e "  Image ID: \${IMAGE_ID}"
-echo -e "  Tag: \${TAG}"
-echo -e "  Created: \${CREATED}"
-echo ""
-
-# Network & Ports
-echo -e "\${CYAN}NETWORK & PORTS:\${NC}"
-PORTS=\$(docker inspect --format='{{range \$p, \$conf := .NetworkSettings.Ports}}{{if \$conf}}{{\$p}} -> {{(index \$conf 0).HostPort}} {{end}}{{end}}' "\$CONTAINER")
-NETWORK=\$(docker inspect --format='{{range \$net, \$conf := .NetworkSettings.Networks}}{{\$net}}{{end}}' "\$CONTAINER")
-IP=\$(docker inspect --format='{{range \$net, \$conf := .NetworkSettings.Networks}}{{\$conf.IPAddress}}{{end}}' "\$CONTAINER")
-
-echo -e "  Port Mapping: \${PORTS:-None}"
-echo -e "  Networks: \${NETWORK:-None}"
-echo -e "  IP Address: \${IP:-None}"
-echo ""
-
-# Resources
-if [ "\$STATUS" == "running" ]; then
-    echo -e "\${CYAN}RESOURCES:\${NC}"
-    docker stats --no-stream --format "  CPU Usage: {{.CPUPerc}}\n  Memory Usage: {{.MemUsage}}" "\$CONTAINER"
+    # Uptime
+    if [ "$STATUS" == "running" ]; then
+        echo -e "Uptime: ${CYAN}$(TZ=UTC date -d "$STARTED" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo "$STARTED")${NC}"
+    fi
     echo ""
-fi
 
-# Health check
-if [ "\$HEALTH" != "N/A" ]; then
-    echo -e "\${CYAN}HEALTH CHECK:\${NC}"
-    HEALTH_TEST=\$(docker inspect --format='{{range .Config.Healthcheck.Test}}{{.}} {{end}}' "\$CONTAINER")
-    echo -e "  Status: \${HEALTH}"
-    echo -e "  Test: \${HEALTH_TEST}"
+    # Image info
+    echo -e "${CYAN}IMAGE & VERSION:${NC}"
+    echo -e "  Image: ${IMAGE}"
+    echo -e "  Image ID: ${IMAGE_ID}"
+    echo -e "  Tag: ${TAG}"
+    echo -e "  Created: ${CREATED}"
     echo ""
-fi
 
-# Environment variables (count only, redacted)
-ENV_COUNT=\$(docker inspect --format='{{range .Config.Env}}{{.}}
-{{end}}' "\$CONTAINER" | wc -l)
-echo -e "\${CYAN}ENVIRONMENT:\${NC}"
-echo -e "  Variables: \${ENV_COUNT} set"
-echo -e "  (Use --configuration to view details)"
-echo ""
-
-# Volumes
-VOLUMES=\$(docker inspect --format='{{range \$vol, \$conf := .Mounts}}{{.Source}} → {{.Destination}}
-{{end}}' "\$CONTAINER")
-if [ -n "\$VOLUMES" ]; then
-    echo -e "\${CYAN}VOLUMES:\${NC}"
-    echo "\$VOLUMES" | while read line; do
-        [ -n "\$line" ] && echo -e "  \$line"
-    done
+    # Network & Ports
+    echo -e "${CYAN}NETWORK & PORTS:${NC}"
+    echo -e "  Port Mapping: ${PORTS:-None}"
+    echo -e "  Networks: ${NETWORK:-None}"
+    echo -e "  IP Address: ${IP:-None}"
     echo ""
-fi
 
-# Recent logs
-if [ "\$STATUS" == "running" ]; then
-    echo -e "\${CYAN}RECENT LOGS (last 10 lines):\${NC}"
-    docker logs --tail 10 "\$CONTAINER" 2>&1 | sed 's/^/  /'
+    # Resources (fetch from remote only for running containers)
+    if [ "$STATUS" == "running" ]; then
+        echo -e "${CYAN}RESOURCES:${NC}"
+        axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+            "docker stats --no-stream --format '  CPU Usage: {{.CPUPerc}}\n  Memory Usage: {{.MemUsage}}' '$container'"
+        echo ""
+    fi
+
+    # Health check
+    if [ "$HEALTH" != "N/A" ]; then
+        echo -e "${CYAN}HEALTH CHECK:${NC}"
+        echo -e "  Status: ${HEALTH}"
+        echo -e "  Test: ${HEALTH_TEST}"
+        echo ""
+    fi
+
+    # Environment variables (count only)
+    echo -e "${CYAN}ENVIRONMENT:${NC}"
+    echo -e "  Variables: ${ENV_COUNT} set"
+    echo -e "  (Use --configuration to view details)"
     echo ""
-fi
 
-EOF_DETAILED
+    # Volumes
+    if [ -n "$VOLUMES" ] && [ "$VOLUMES" != "null" ]; then
+        echo -e "${CYAN}VOLUMES:${NC}"
+        echo "$VOLUMES" | while read line; do
+            [ -n "$line" ] && echo -e "  $line"
+        done
+        echo ""
+    fi
+
+    # Recent logs (fetch from remote only for running containers)
+    if [ "$STATUS" == "running" ]; then
+        echo -e "${CYAN}RECENT LOGS (last 10 lines):${NC}"
+        axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+            "docker logs --tail 10 '$container' 2>&1" | sed 's/^/  /'
+        echo ""
+    fi
+
     echo ""
 }
 
@@ -391,51 +443,50 @@ show_configuration() {
     echo -e "${BLUE}==================================================${NC}"
     echo ""
 
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_CONFIG
-CONTAINER="$container"
+    # Parse all data locally from INSPECT_JSON (single jq call)
+    local DATA=$(echo "$INSPECT_JSON" | jq -r --arg name "$container" '
+        .[] | select(.Name == "/\($name)") | {
+            env: .Config.Env,
+            volumes: [.Mounts[] | "\(.Source) → \(.Destination)"] | join("\n"),
+            network: [.NetworkSettings.Networks | keys[]] | join(","),
+            ip: [.NetworkSettings.Networks | to_entries[].value.IPAddress] | join(","),
+            ports: [.NetworkSettings.Ports | to_entries[] | select(.value != null) | "\(.key) -> \(.value[0].HostPort)"] | join(" ")
+        } | @json
+    ')
 
-# Colors
-CYAN='\033[0;36m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-# Environment Variables
-echo -e "\${CYAN}Environment Variables:\${NC}"
-docker inspect --format='{{range .Config.Env}}{{.}}
-{{end}}' "\$CONTAINER" | while IFS='=' read -r key value; do
-    if [[ "\$key" =~ (PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL|AUTH) ]]; then
-        echo -e "  \${key}=\${YELLOW}[REDACTED]\${NC}"
-    else
-        echo "  \${key}=\${value}"
-    fi
-done
-echo ""
-
-# Volumes
-echo -e "\${CYAN}Volumes:\${NC}"
-VOLUMES=\$(docker inspect --format='{{range \$vol, \$conf := .Mounts}}{{.Source}} → {{.Destination}}
-{{end}}' "\$CONTAINER")
-if [ -n "\$VOLUMES" ]; then
-    echo "\$VOLUMES" | while read line; do
-        [ -n "\$line" ] && echo "  \$line"
+    # Environment Variables
+    echo -e "${CYAN}Environment Variables:${NC}"
+    echo "$DATA" | jq -r '.env[]' | while IFS='=' read -r key value; do
+        if [[ "$key" =~ (PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL|AUTH) ]]; then
+            echo -e "  ${key}=${YELLOW}[REDACTED]${NC}"
+        else
+            echo "  ${key}=${value}"
+        fi
     done
-else
-    echo "  None"
-fi
-echo ""
+    echo ""
 
-# Network
-echo -e "\${CYAN}Network:\${NC}"
-NETWORK=\$(docker inspect --format='{{range \$net, \$conf := .NetworkSettings.Networks}}{{\$net}}{{end}}' "\$CONTAINER")
-IP=\$(docker inspect --format='{{range \$net, \$conf := .NetworkSettings.Networks}}{{\$conf.IPAddress}}{{end}}' "\$CONTAINER")
-PORTS=\$(docker inspect --format='{{range \$p, \$conf := .NetworkSettings.Ports}}{{if \$conf}}{{\$p}} -> {{(index \$conf 0).HostPort}} {{end}}{{end}}' "\$CONTAINER")
+    # Volumes
+    echo -e "${CYAN}Volumes:${NC}"
+    local VOLUMES=$(echo "$DATA" | jq -r '.volumes')
+    if [ -n "$VOLUMES" ] && [ "$VOLUMES" != "null" ]; then
+        echo "$VOLUMES" | while read line; do
+            [ -n "$line" ] && echo "  $line"
+        done
+    else
+        echo "  None"
+    fi
+    echo ""
 
-echo -e "  Mode: \${NETWORK:-bridge}"
-echo -e "  IP: \${IP:-None}"
-echo -e "  Ports: \${PORTS:-None}"
-echo ""
+    # Network
+    echo -e "${CYAN}Network:${NC}"
+    local NETWORK=$(echo "$DATA" | jq -r '.network')
+    local IP=$(echo "$DATA" | jq -r '.ip')
+    local PORTS=$(echo "$DATA" | jq -r '.ports')
 
-EOF_CONFIG
+    echo -e "  Mode: ${NETWORK:-bridge}"
+    echo -e "  IP: ${IP:-None}"
+    echo -e "  Ports: ${PORTS:-None}"
+    echo ""
 }
 
 # Function to show health check details
@@ -447,68 +498,69 @@ show_health() {
     echo -e "${BLUE}==================================================${NC}"
     echo ""
 
-    ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_HEALTH
-CONTAINER="$container"
+    # Parse all health data locally from INSPECT_JSON (single jq call)
+    local DATA=$(echo "$INSPECT_JSON" | jq -r --arg name "$container" '
+        .[] | select(.Name == "/\($name)") | {
+            health_status: (.State.Health.Status // "N/A"),
+            test: (if .Config.Healthcheck then [.Config.Healthcheck.Test[]] | join(" ") else "" end),
+            interval: (.Config.Healthcheck.Interval // "N/A"),
+            timeout: (.Config.Healthcheck.Timeout // "N/A"),
+            retries: (.Config.Healthcheck.Retries // "N/A"),
+            start_period: (.Config.Healthcheck.StartPeriod // "N/A"),
+            log: (.State.Health.Log // [])
+        } | @json
+    ')
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+    local HEALTH_STATUS=$(echo "$DATA" | jq -r '.health_status')
 
-HEALTH_STATUS=\$(docker inspect --format='{{.State.Health.Status}}' "\$CONTAINER" 2>/dev/null)
-
-if [ "\$HEALTH_STATUS" == "<no value>" ] || [ -z "\$HEALTH_STATUS" ]; then
-    echo -e "\${YELLOW}No health check configured for this container\${NC}"
-    echo ""
-    exit 0
-fi
-
-# Status icon
-case "\$HEALTH_STATUS" in
-    healthy) STATUS_ICON="\${GREEN}✓"; STATUS_TEXT="Healthy" ;;
-    unhealthy) STATUS_ICON="\${RED}✗"; STATUS_TEXT="Unhealthy" ;;
-    starting) STATUS_ICON="\${YELLOW}⚠"; STATUS_TEXT="Starting" ;;
-    *) STATUS_ICON="\${YELLOW}?"; STATUS_TEXT="\$HEALTH_STATUS" ;;
-esac
-
-echo -e "Overall Status: \${STATUS_ICON} \${STATUS_TEXT}\${NC}"
-echo ""
-
-# Health check configuration
-echo -e "\${CYAN}Health Check Configuration:\${NC}"
-TEST=\$(docker inspect --format='{{range .Config.Healthcheck.Test}}{{.}} {{end}}' "\$CONTAINER")
-INTERVAL=\$(docker inspect --format='{{.Config.Healthcheck.Interval}}' "\$CONTAINER")
-TIMEOUT=\$(docker inspect --format='{{.Config.Healthcheck.Timeout}}' "\$CONTAINER")
-RETRIES=\$(docker inspect --format='{{.Config.Healthcheck.Retries}}' "\$CONTAINER")
-START_PERIOD=\$(docker inspect --format='{{.Config.Healthcheck.StartPeriod}}' "\$CONTAINER")
-
-echo -e "  Test: \${TEST}"
-echo -e "  Interval: \${INTERVAL}"
-echo -e "  Timeout: \${TIMEOUT}"
-echo -e "  Retries: \${RETRIES}"
-echo -e "  Start Period: \${START_PERIOD}"
-echo ""
-
-# Recent health check results
-echo -e "\${CYAN}Recent Health Checks (last 5):\${NC}"
-docker inspect --format='{{range .State.Health.Log}}{{.Start}} - {{.ExitCode}}
-{{end}}' "\$CONTAINER" | tail -5 | while read line; do
-    if [ -n "\$line" ]; then
-        TIMESTAMP=\$(echo "\$line" | cut -d' ' -f1)
-        EXIT_CODE=\$(echo "\$line" | awk '{print \$NF}')
-
-        if [ "\$EXIT_CODE" == "0" ]; then
-            echo -e "  [\${TIMESTAMP}] \${GREEN}✓ Passed\${NC}"
-        else
-            echo -e "  [\${TIMESTAMP}] \${RED}✗ Failed (exit code: \${EXIT_CODE})\${NC}"
-        fi
+    if [ "$HEALTH_STATUS" == "N/A" ] || [ -z "$HEALTH_STATUS" ]; then
+        echo -e "${YELLOW}No health check configured for this container${NC}"
+        echo ""
+        return 0
     fi
-done
-echo ""
 
-EOF_HEALTH
+    # Status icon and text
+    local STATUS_ICON STATUS_TEXT
+    case "$HEALTH_STATUS" in
+        healthy) STATUS_ICON="${GREEN}✓"; STATUS_TEXT="Healthy" ;;
+        unhealthy) STATUS_ICON="${RED}✗"; STATUS_TEXT="Unhealthy" ;;
+        starting) STATUS_ICON="${YELLOW}⚠"; STATUS_TEXT="Starting" ;;
+        *) STATUS_ICON="${YELLOW}?"; STATUS_TEXT="$HEALTH_STATUS" ;;
+    esac
+
+    echo -e "Overall Status: ${STATUS_ICON} ${STATUS_TEXT}${NC}"
+    echo ""
+
+    # Health check configuration
+    echo -e "${CYAN}Health Check Configuration:${NC}"
+    local TEST=$(echo "$DATA" | jq -r '.test')
+    local INTERVAL=$(echo "$DATA" | jq -r '.interval')
+    local TIMEOUT=$(echo "$DATA" | jq -r '.timeout')
+    local RETRIES=$(echo "$DATA" | jq -r '.retries')
+    local START_PERIOD=$(echo "$DATA" | jq -r '.start_period')
+
+    echo -e "  Test: ${TEST}"
+    echo -e "  Interval: ${INTERVAL}"
+    echo -e "  Timeout: ${TIMEOUT}"
+    echo -e "  Retries: ${RETRIES}"
+    echo -e "  Start Period: ${START_PERIOD}"
+    echo ""
+
+    # Recent health check results (last 5)
+    echo -e "${CYAN}Recent Health Checks (last 5):${NC}"
+    echo "$DATA" | jq -r '.log[-5:] | .[] | "\(.Start) - \(.ExitCode)"' | while read line; do
+        if [ -n "$line" ]; then
+            local TIMESTAMP=$(echo "$line" | cut -d' ' -f1)
+            local EXIT_CODE=$(echo "$line" | awk '{print $NF}')
+
+            if [ "$EXIT_CODE" == "0" ]; then
+                echo -e "  [${TIMESTAMP}] ${GREEN}✓ Passed${NC}"
+            else
+                echo -e "  [${TIMESTAMP}] ${RED}✗ Failed (exit code: ${EXIT_CODE})${NC}"
+            fi
+        fi
+    done
+    echo ""
 }
 
 #==============================================================================
@@ -538,62 +590,44 @@ fi
 # Summary
 echo -e "${CYAN}Container Summary:${NC}"
 echo ""
-axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${CONTAINER_FILTER}' \
-     --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+echo "$SUMMARY_TABLE"
 echo ""
 
 # Detailed status
 echo -e "${CYAN}Detailed Status:${NC}"
 echo ""
 
-# Get detailed info for all containers in one SSH call
-CONTAINER_DETAILS=$(ssh -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" bash <<EOF_REMOTE
-CONTAINER_FILTER="${CONTAINER_FILTER}"
-CONTAINERS=\$(docker ps -a --filter "name=\${CONTAINER_FILTER}" --format "{{.Names}}" | sort)
+# Parse container details locally using jq (much faster than remote docker loops)
+while IFS= read -r CONTAINER; do
+    if [ -z "$CONTAINER" ]; then
+        continue
+    fi
 
-for CONTAINER in \$CONTAINERS; do
+    # Extract all data for this container from JSON in one pass
+    CONTAINER_DATA=$(echo "$INSPECT_JSON" | jq -r --arg name "$CONTAINER" '
+        .[] | select(.Name == "/\($name)") | {
+            status: .State.Status,
+            health: (.State.Health.Status // "N/A"),
+            image: .Config.Image,
+            started: .State.StartedAt
+        } | @json
+    ')
+
     # Parse environment from container name
-    if [[ \$CONTAINER == *"production"* ]]; then
+    if [[ $CONTAINER == *"production"* ]]; then
         ENV="PRODUCTION"
-    elif [[ \$CONTAINER == *"staging"* ]]; then
+    elif [[ $CONTAINER == *"staging"* ]]; then
         ENV="STAGING"
     else
         ENV="UNKNOWN"
     fi
 
-    # Get container details
-    STATUS=\$(docker inspect --format='{{.State.Status}}' "\$CONTAINER" 2>/dev/null)
-    HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' "\$CONTAINER" 2>/dev/null)
-    [ "\$HEALTH" == "<no value>" ] && HEALTH="N/A"
-
-    IMAGE=\$(docker inspect --format='{{.Config.Image}}' "\$CONTAINER" 2>/dev/null)
-    IMAGE_TAG=\$(echo "\$IMAGE" | cut -d':' -f2)
-
-    STARTED=""
-    if [ "\$STATUS" == "running" ]; then
-        STARTED=\$(docker inspect --format='{{.State.StartedAt}}' "\$CONTAINER" | cut -d'.' -f1)
-    fi
-
-    # Output in parseable format
-    echo "CONTAINER:\${CONTAINER}|ENV:\${ENV}|STATUS:\${STATUS}|HEALTH:\${HEALTH}|IMAGE_TAG:\${IMAGE_TAG}|STARTED:\${STARTED}"
-done
-EOF_REMOTE
-)
-
-# Parse and display the details
-while IFS= read -r LINE; do
-    if [ -z "$LINE" ]; then
-        continue
-    fi
-
-    # Parse the line (macOS/BSD compatible - no grep -P)
-    CONTAINER=$(echo "$LINE" | sed 's/.*CONTAINER:\([^|]*\).*/\1/')
-    ENV=$(echo "$LINE" | sed 's/.*ENV:\([^|]*\).*/\1/')
-    STATUS=$(echo "$LINE" | sed 's/.*STATUS:\([^|]*\).*/\1/')
-    HEALTH=$(echo "$LINE" | sed 's/.*HEALTH:\([^|]*\).*/\1/')
-    IMAGE_TAG=$(echo "$LINE" | sed 's/.*IMAGE_TAG:\([^|]*\).*/\1/')
-    STARTED=$(echo "$LINE" | sed 's/.*STARTED:\([^|]*\).*/\1/')
+    # Extract fields from JSON
+    STATUS=$(echo "$CONTAINER_DATA" | jq -r '.status')
+    HEALTH=$(echo "$CONTAINER_DATA" | jq -r '.health')
+    IMAGE=$(echo "$CONTAINER_DATA" | jq -r '.image')
+    IMAGE_TAG=$(echo "$IMAGE" | cut -d':' -f2)
+    STARTED=$(echo "$CONTAINER_DATA" | jq -r '.started' | cut -d'.' -f1)
 
     # Environment color
     case "$ENV" in
@@ -629,21 +663,14 @@ while IFS= read -r LINE; do
     fi
 
     echo ""
-done <<< "$CONTAINER_DETAILS"
+done <<< "$CONTAINERS"
 
 # Resource usage
 echo -e "${CYAN}Resource Usage:${NC}"
 echo ""
 
-# Get container names and pass them directly to docker stats
-# (--filter not supported in older Docker versions)
-# Convert newlines to spaces so they're passed as separate arguments, not separate commands
-CONTAINER_NAMES=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps --filter 'name=${CONTAINER_FILTER}' --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-
-if [ -n "$CONTAINER_NAMES" ]; then
-    axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-        "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}' ${CONTAINER_NAMES}"
+if [ -n "$STATS_TABLE" ]; then
+    echo "$STATS_TABLE"
 else
     echo -e "${YELLOW}No running containers to show stats${NC}"
 fi
