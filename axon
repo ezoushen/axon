@@ -839,6 +839,22 @@ if [ $# -gt 0 ] && ([ "$1" = "--help" ] || [ "$1" = "-h" ]); then
     exit 0
 fi
 
+#==============================================================================
+# Early Environment Loading
+#==============================================================================
+# Load .env files for commands that exit before context resolution
+# (context, config, env commands). These commands use current directory.
+# Other commands will reload .env after context resolution to use correct PROJECT_ROOT.
+
+case "$COMMAND" in
+    context|config|env)
+        verbose "Loading .env files for early-exit command: $COMMAND"
+        for env_file in ".env.axon" ".env.local" ".env"; do
+            load_env_file "$PWD/$env_file" && break
+        done
+        ;;
+esac
+
 # Special handling for context command - pass all args directly to handler
 if [ "$COMMAND" = "context" ]; then
     source "$SCRIPT_DIR/cmd/context.sh"
