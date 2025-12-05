@@ -114,6 +114,7 @@ fi
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
 source "$MODULE_DIR/lib/ssh-connection.sh"
+source "$MODULE_DIR/lib/nginx-config.sh"
 
 # Check product type - restart only works for Docker deployments
 PRODUCT_TYPE=$(get_product_type "$CONFIG_FILE")
@@ -300,6 +301,85 @@ if [ $? -eq 0 ]; then
     echo -e "${BLUE}Container status:${NC}"
     axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
         "docker ps --filter 'name=$CONTAINER' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+    echo ""
+
+    # Verify port and sync nginx if needed
+    echo -e "${BLUE}Verifying port configuration...${NC}"
+
+    # Get container port from config
+    CONTAINER_PORT=$(parse_yaml_key ".docker.container_port" "3000")
+
+    # Get current container port
+    CURRENT_CONTAINER_PORT=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+        "docker port '$CONTAINER' '$CONTAINER_PORT' 2>/dev/null | cut -d: -f2")
+
+    if [ -z "$CURRENT_CONTAINER_PORT" ]; then
+        echo -e "${YELLOW}  Warning: Could not determine container port${NC}"
+    else
+        echo -e "  Container port: ${CYAN}${CURRENT_CONTAINER_PORT}${NC}"
+
+        # Get System Server details for nginx sync
+        SYSTEM_SERVER_HOST=$(expand_env_vars "$(parse_yaml_key ".servers.system.host" "")")
+        SYSTEM_SERVER_USER=$(expand_env_vars "$(parse_yaml_key ".servers.system.user" "")")
+        SYSTEM_SSH_KEY=$(parse_yaml_key ".servers.system.ssh_key" "")
+        SYSTEM_SSH_KEY="${SYSTEM_SSH_KEY/#\~/$HOME}"
+
+        if [ -n "$SYSTEM_SERVER_HOST" ] && [ -f "$SYSTEM_SSH_KEY" ]; then
+            SYSTEM_SERVER="${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}"
+
+            # Get nginx upstream file path
+            NGINX_AXON_DIR=$(get_nginx_axon_dir "$CONFIG_FILE")
+            NGINX_UPSTREAM_FILENAME=$(get_upstream_filename "$PRODUCT_NAME" "$ENVIRONMENT")
+            NGINX_UPSTREAM_FILE="${NGINX_AXON_DIR}/upstreams/${NGINX_UPSTREAM_FILENAME}"
+
+            # Get current nginx port
+            NGINX_PORT=$(axon_ssh "system" -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" \
+                "grep -oP 'server.*:\K\d+' '$NGINX_UPSTREAM_FILE' 2>/dev/null || echo ''")
+
+            if [ -n "$NGINX_PORT" ]; then
+                echo -e "  nginx upstream port: ${CYAN}${NGINX_PORT}${NC}"
+
+                if [ "$NGINX_PORT" = "$CURRENT_CONTAINER_PORT" ]; then
+                    echo -e "  ${GREEN}✓ Ports match - no sync needed${NC}"
+                else
+                    echo -e "  ${YELLOW}⚠ Port mismatch detected!${NC}"
+                    echo -e "  ${YELLOW}  nginx: ${NGINX_PORT} → container: ${CURRENT_CONTAINER_PORT}${NC}"
+                    echo ""
+                    echo -e "${BLUE}Syncing nginx upstream...${NC}"
+
+                    # Get upstream name and IP
+                    NGINX_UPSTREAM_NAME=$(get_upstream_name "$PRODUCT_NAME" "$ENVIRONMENT")
+                    APP_PRIVATE_IP=$(expand_env_vars "$(parse_yaml_key ".servers.application.private_ip" "")")
+                    APP_UPSTREAM_IP="${APP_PRIVATE_IP:-$APPLICATION_SERVER_HOST}"
+
+                    # Determine sudo usage
+                    if [ "$SYSTEM_SERVER_USER" = "root" ]; then
+                        USE_SUDO=""
+                    else
+                        USE_SUDO="sudo"
+                    fi
+
+                    # Update nginx upstream
+                    UPSTREAM_CONFIG="upstream ${NGINX_UPSTREAM_NAME} {
+    server ${APP_UPSTREAM_IP}:${CURRENT_CONTAINER_PORT};
+}"
+                    axon_ssh "system" -i "$SYSTEM_SSH_KEY" "$SYSTEM_SERVER" \
+                        "echo '$UPSTREAM_CONFIG' | ${USE_SUDO} tee '$NGINX_UPSTREAM_FILE' > /dev/null && ${USE_SUDO} nginx -t && ${USE_SUDO} nginx -s reload"
+
+                    if [ $? -eq 0 ]; then
+                        echo -e "  ${GREEN}✓ nginx upstream synced to port ${CURRENT_CONTAINER_PORT}${NC}"
+                    else
+                        echo -e "  ${RED}✗ Failed to sync nginx upstream${NC}"
+                        echo -e "  ${YELLOW}Run 'axon sync ${ENVIRONMENT}' to manually sync${NC}"
+                    fi
+                fi
+            else
+                echo -e "  ${YELLOW}Warning: Could not read nginx upstream port${NC}"
+            fi
+        else
+            echo -e "  ${YELLOW}Skipping nginx sync (System Server not configured or SSH key missing)${NC}"
+        fi
+    fi
     echo ""
 else
     echo -e "${RED}✗ Failed to restart container${NC}"

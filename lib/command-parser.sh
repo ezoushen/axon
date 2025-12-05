@@ -6,10 +6,10 @@
 # Provides command parsing and help system for axon CLI
 
 # Command registry - list of valid commands
-AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart health install uninstall delete config context env"
+AXON_VALID_COMMANDS="build push deploy run build-and-push status logs restart sync health install uninstall delete config context env"
 
 # Commands that require environment argument (delete is optional with --all)
-AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart"
+AXON_ENV_REQUIRED_COMMANDS="build push deploy run build-and-push logs restart sync"
 
 # Show main help
 show_help() {
@@ -31,6 +31,7 @@ UTILITY COMMANDS:
   status <env|--all>       Show container status and Docker info (use --health for Docker health checks)
   logs <env|--all>         View container logs (specific environment or all)
   restart <env|--all>      Restart container (specific environment or all)
+  sync <env|--all>         Sync nginx upstream with current container port
   health <env|--all>       Test application health endpoints (HTTP requests to /api/health, etc.)
   delete <env|--all>       Remove environment-specific configs (Docker + nginx)
 
@@ -265,6 +266,29 @@ EXAMPLES:
   axon restart --all                # Restart all environments (with confirmation)
   axon restart --all --force        # Restart all without confirmation
   axon restart staging --config custom.yml
+EOF
+            ;;
+        sync)
+            cat <<EOF
+Usage: axon sync <environment|--all> [options]
+
+Synchronize nginx upstream configuration with the current container port.
+
+This command is useful when nginx is pointing to a stale port after a container
+restart or system reboot. With AXON-managed ports, this should rarely be needed
+as ports remain stable across restarts, but it's available for recovery scenarios.
+
+OPTIONS:
+  -c, --config FILE    Config file (default: axon.config.yml)
+  --all                Sync all environments
+  -f, --force          Force sync even if ports already match
+  -h, --help           Show this help
+
+EXAMPLES:
+  axon sync production              # Sync production environment
+  axon sync --all                   # Sync all environments
+  axon sync production --force      # Force sync even if ports match
+  axon sync staging --config custom.yml
 EOF
             ;;
         delete)

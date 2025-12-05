@@ -131,6 +131,7 @@ HEALTH_ALL=false
 LOGS_ALL=false
 RESTART_ALL=false
 DELETE_ALL=false
+SYNC_ALL=false
 # Status command flags
 STATUS_DETAILED=false
 STATUS_CONFIG=false
@@ -716,6 +717,31 @@ cmd_restart() {
     execute "\"$SCRIPT_DIR/cmd/restart.sh\" ${restart_args[*]}"
 }
 
+# Sync command - synchronize nginx upstream with container port
+cmd_sync() {
+    if [ "$SYNC_ALL" = true ]; then
+        verbose "Executing sync command for all environments"
+    else
+        verbose "Executing sync command for environment: $ENVIRONMENT"
+    fi
+    validate_config_file
+
+    local sync_args=("--config" "$CONFIG_FILE")
+
+    if [ "$SYNC_ALL" = true ]; then
+        sync_args+=("--all")
+    else
+        sync_args+=("$ENVIRONMENT")
+    fi
+
+    if [ "$FORCE" = true ]; then
+        sync_args+=("--force")
+    fi
+
+    verbose "Calling sync.sh with args: ${sync_args[*]}"
+    execute "\"$SCRIPT_DIR/cmd/sync.sh\" ${sync_args[*]}"
+}
+
 # Delete command
 cmd_delete() {
     if [ "$DELETE_ALL" = true ]; then
@@ -966,6 +992,9 @@ while [[ $# -gt 0 ]]; do
                 delete)
                     DELETE_ALL=true
                     ;;
+                sync)
+                    SYNC_ALL=true
+                    ;;
                 *)
                     echo -e "${RED}Error: --all flag is not supported for command: ${COMMAND}${NC}"
                     exit 1
@@ -1051,6 +1080,13 @@ case "$COMMAND" in
         if [ "$DELETE_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
             echo -e "${RED}Error: Environment parameter required for delete command (or use --all)${NC}"
             echo "Run 'axon delete --help' for usage information"
+            exit 1
+        fi
+        ;;
+    sync)
+        if [ "$SYNC_ALL" = false ] && [ -z "$ENVIRONMENT" ]; then
+            echo -e "${RED}Error: Environment parameter required for sync command (or use --all)${NC}"
+            echo "Run 'axon sync --help' for usage information"
             exit 1
         fi
         ;;
@@ -1170,6 +1206,9 @@ case "$COMMAND" in
         ;;
     restart)
         cmd_restart
+        ;;
+    sync)
+        cmd_sync
         ;;
     delete)
         cmd_delete

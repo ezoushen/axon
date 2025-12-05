@@ -32,11 +32,12 @@ AXON supports two deployment modes with zero-downtime guarantees:
 ```
 Internet → System Server (nginx + SSL)  →  Application Server (Docker)
            ├─ Port 443 (HTTPS)              ├─ Timestamp-based containers
-           └─ Proxies to apps               └─ Auto-assigned ports (32768-60999)
+           └─ Proxies to apps               └─ AXON-managed ports (30000-32767)
 ```
-- **Auto-assigned Ports**: Docker assigns random ephemeral ports
+- **AXON-managed Ports**: Ports are picked by AXON from a dedicated range and remain stable across container restarts
 - **Timestamp-based Naming**: `{product}-{env}-{timestamp}`
 - **Rolling Updates**: New container → health check → nginx switch → old container stops
+- **Port Persistence**: Port state is saved to `/var/lib/axon/{product}/{env}/port` for reliability
 
 ### Static Site Deployments
 ```
@@ -237,7 +238,7 @@ AXON follows a simple pattern: `axon <command> [environment] [options]`
 
 **Command categories:**
 - **Deployment**: `build`, `push`, `deploy`, `run` (full pipeline), `build-and-push` (CI/CD)
-- **Operations**: `status`, `health`, `logs`, `restart`, `delete`
+- **Operations**: `status`, `health`, `logs`, `restart`, `sync`, `delete`
 - **Configuration**: `config init/validate`, `env edit`
 - **Context**: `context add/use/list` (multi-project management)
 - **Setup**: `install`, `uninstall` (server prerequisites)
@@ -276,9 +277,11 @@ Use `axon install local` to check missing tools, or `axon install local --auto-i
 ## How It Works
 
 ### Docker Container Deployments
-1. Pull image from registry → Start new container (auto-assigned port) → Wait for health check
-2. Update nginx upstream → Test config → Reload nginx (zero downtime)
+1. Pull image from registry → Pick available port → Start new container → Wait for health check
+2. Save port state → Update nginx upstream → Test config → Reload nginx (zero downtime)
 3. Gracefully shutdown old container
+
+**Port Management**: AXON picks ports from a dedicated range (30000-32767) and binds them explicitly (`-p HOST_PORT:CONTAINER_PORT`). This ensures ports remain stable across container restarts, eliminating the nginx mismatch issue that occurs with Docker's ephemeral port assignment.
 
 ### Static Site Deployments
 1. Build static site → Create archive with git SHA → Upload to System Server

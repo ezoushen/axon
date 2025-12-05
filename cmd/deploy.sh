@@ -42,6 +42,9 @@ source "$MODULE_DIR/lib/deploy-docker.sh"
 # Source deploy-static library for static site deployment
 source "$MODULE_DIR/lib/deploy-static.sh"
 
+# Source port manager library for stable port allocation
+source "$MODULE_DIR/lib/port-manager.sh"
+
 # Default values
 CONFIG_FILE="${PRODUCT_ROOT}/axon.config.yml"
 ENVIRONMENT=""

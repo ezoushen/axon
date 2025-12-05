@@ -82,7 +82,7 @@ deploy_docker() {
     echo -e "  System Server:      ${YELLOW}${SYSTEM_SERVER_USER}@${SYSTEM_SERVER_HOST}${NC}"
     echo -e "  Application Server: ${YELLOW}${APP_SERVER_USER}@${APP_SERVER_HOST}${NC}"
     echo -e "  Deploy Path:        ${YELLOW}${APP_DEPLOY_PATH}${NC}"
-    echo -e "  Port Assignment:    ${YELLOW}Auto (Docker assigns)${NC}"
+    echo -e "  Port Assignment:    ${YELLOW}AXON-managed (stable across restarts)${NC}"
     echo ""
 
     # SSH connection strings
@@ -224,8 +224,17 @@ deploy_docker() {
     TIMESTAMP=$(date +%s)
     NEW_CONTAINER="${PRODUCT_NAME}-${ENVIRONMENT}-${TIMESTAMP}"
 
+    # Pick an available port for the new container (exclude current port to allow overlap)
+    echo -e "  Picking available port..."
+    APP_PORT=$(pick_available_port "$APP_SSH_KEY" "$APP_SERVER" "$CURRENT_PORT")
+
+    if [ -z "$APP_PORT" ]; then
+        echo -e "${RED}Error: Could not find an available port in range ${AXON_PORT_RANGE_START}-${AXON_PORT_RANGE_END}${NC}"
+        exit 1
+    fi
+
     echo -e "  New container:       ${GREEN}$NEW_CONTAINER${NC}"
-    echo -e "  Port:                ${GREEN}Auto-assigned by Docker${NC}"
+    echo -e "  Port:                ${GREEN}${APP_PORT} (AXON-managed)${NC}"
     echo ""
 
     # Step 2: Check deployment files on Application Server
@@ -389,7 +398,7 @@ EOF
     # Step 4: Start new container on Application Server
     echo -e "${BLUE}Step 4/10: Starting new container on Application Server...${NC}"
     echo -e "  Container: ${YELLOW}${NEW_CONTAINER}${NC}"
-    echo -e "  Port: ${YELLOW}Auto-assigned by Docker${NC}"
+    echo -e "  Port: ${YELLOW}${APP_PORT}:${CONTAINER_PORT} (AXON-managed)${NC}"
 
     # Build docker run command from axon.config.yml
     # FULL_IMAGE already defined earlier using build_image_uri()
@@ -404,10 +413,10 @@ EOF
     eval "NETWORK_ALIAS=\"$NETWORK_ALIAS_TEMPLATE\""
 
     # Build the docker run command from axon.config.yml (single source of truth)
-    # Note: We pass "auto" for app_port to let Docker assign a random port
+    # Note: We pass the AXON-picked port for stable port binding
     DOCKER_RUN_CMD=$(build_docker_run_command \
         "$CONTAINER_NAME" \
-        "auto" \
+        "$APP_PORT" \
         "$FULL_IMAGE" \
         "$ENV_PATH" \
         "$NETWORK_NAME" \
@@ -447,24 +456,69 @@ EOF
 
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: Failed to start container${NC}"
-        exit 1
+        echo -e "${YELLOW}This may be due to a port conflict. Trying with a different port...${NC}"
+
+        # Retry with a different port (port conflict recovery)
+        local retry_port=$(pick_available_port "$APP_SSH_KEY" "$APP_SERVER" "$APP_PORT")
+        if [ -n "$retry_port" ]; then
+            echo -e "  Retrying with port ${retry_port}..."
+            APP_PORT="$retry_port"
+
+            # Rebuild docker run command with new port
+            DOCKER_RUN_CMD=$(build_docker_run_command \
+                "$CONTAINER_NAME" \
+                "$APP_PORT" \
+                "$FULL_IMAGE" \
+                "$ENV_PATH" \
+                "$NETWORK_NAME" \
+                "$NETWORK_ALIAS" \
+                "$CONTAINER_PORT")
+
+            # Try again
+            ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+    set -e
+    cd $APP_DEPLOY_PATH
+
+    # Remove container if it exists from failed attempt
+    docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+
+    # Create network if it doesn't exist
+    if ! docker network ls | grep -q "${NETWORK_NAME}"; then
+        docker network create "${NETWORK_NAME}"
+    fi
+
+    eval "${DOCKER_RUN_CMD}"
+EOF
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Error: Failed to start container after retry${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${RED}Error: Could not find an alternative port${NC}"
+            exit 1
+        fi
     fi
 
     echo -e "  ✓ Container started"
     echo ""
 
-    # Query Docker for the assigned port
-    APP_PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
-        "docker port ${CONTAINER_NAME} ${CONTAINER_PORT} | cut -d: -f2")
+    # Verify the container is using the expected port
+    ACTUAL_PORT=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" \
+        "docker port ${CONTAINER_NAME} ${CONTAINER_PORT} 2>/dev/null | cut -d: -f2")
 
-    if [ -z "$APP_PORT" ]; then
-        echo -e "${RED}Error: Could not determine assigned port${NC}"
+    if [ -z "$ACTUAL_PORT" ]; then
+        echo -e "${RED}Error: Could not verify container port${NC}"
         echo -e "${YELLOW}Stopping new container...${NC}"
         axon_ssh "app" -i "$APP_SSH_KEY" "$APP_SERVER" "docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}"
         exit 1
     fi
 
-    echo -e "  ${GREEN}✓ Docker assigned port: ${APP_PORT}${NC}"
+    if [ "$ACTUAL_PORT" != "$APP_PORT" ]; then
+        echo -e "${YELLOW}Warning: Container using port ${ACTUAL_PORT} instead of expected ${APP_PORT}${NC}"
+        APP_PORT="$ACTUAL_PORT"
+    fi
+
+    echo -e "  ${GREEN}✓ Container running on port: ${APP_PORT}${NC}"
     echo ""
 
     # Step 5: Wait for Docker health check on Application Server
