@@ -1,0 +1,21 @@
+{
+  "name": "axon",
+  "description": "AXON deployment CLI companion for Claude Code: install, configure, and operate AXON deployments. Ships /axon:install, /axon:config, and /axon:update commands plus two skills — axon-config (full axon.config.yml schema) and axon-ops (auto-loads on deploy/rollback/status/logs/health/restart intent and drives the right axon subcommand).",
+  "version": "0.1.0",
+  "author": {
+    "name": "ezoushen",
+    "url": "https://github.com/ezoushen/axon"
+  },
+  "homepage": "https://github.com/ezoushen/axon",
+  "repository": "https://github.com/ezoushen/axon",
+  "license": "GPL-3.0",
+  "keywords": [
+    "axon",
+    "deployment",
+    "zero-downtime",
+    "docker",
+    "nginx",
+    "bash",
+    "devops"
+  ]
+}

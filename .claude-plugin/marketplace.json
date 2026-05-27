@@ -1,0 +1,29 @@
+{
+  "name": "axon",
+  "owner": {
+    "name": "ezoushen",
+    "url": "https://github.com/ezoushen/axon"
+  },
+  "metadata": {
+    "description": "AXON — zero-downtime deployment orchestration CLI. Plugin to install the AXON binary and set up deployments interactively from Claude Code.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "axon",
+      "description": "Install the AXON CLI via /axon:install, update it via /axon:update, scaffold deployments via /axon:config, and operate them via the axon-ops skill (deploy/rollback/status/logs/health/restart). Includes the axon-config skill: full axon.config.yml schema, docker/static modes, env-var expansion, and validation.",
+      "source": "./plugin",
+      "strict": false,
+      "version": "0.1.0",
+      "category": "developer-tools",
+      "keywords": [
+        "axon",
+        "deployment",
+        "zero-downtime",
+        "docker",
+        "nginx",
+        "devops"
+      ]
+    }
+  ]
+}
