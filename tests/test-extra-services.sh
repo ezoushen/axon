@@ -105,7 +105,7 @@ test_sidecar_compose_has_image_command_env_network() {
         "json-file" "10m" "3")
     local c; c=$(cat "$f"); rm -f "$f"
     assert_contains "$c" "image: registry/goodtogo:production" "image inherited" && \
-    assert_contains "$c" 'command: \[' "command set" && \
+    assert_contains "$c" 'command: \["./scheduler"\]' "command set" && \
     assert_contains "$c" "/home/ubuntu/.env.production" "env_file inherited" && \
     assert_contains "$c" "restart: unless-stopped" "restart inherited"
 }
