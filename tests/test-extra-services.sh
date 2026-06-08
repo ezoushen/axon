@@ -89,6 +89,58 @@ test_sidecar_name_format() {
 }
 
 # ------------------------------------------------------------------
+# generate_sidecar_compose
+# ------------------------------------------------------------------
+test_sidecar_compose_has_image_command_env_network() {
+    source "$AXON_DIR/lib/docker-runtime.sh"
+    local f
+    f=$(generate_sidecar_compose \
+        "goodtogo-production-svc-scheduler-1700000000" \
+        "registry/goodtogo:production" \
+        "/home/ubuntu/.env.production" \
+        "api" \
+        "unless-stopped" \
+        '["./scheduler"]' \
+        "" \
+        "json-file" "10m" "3")
+    local c; c=$(cat "$f"); rm -f "$f"
+    assert_contains "$c" "image: registry/goodtogo:production" "image inherited" && \
+    assert_contains "$c" 'command: \[' "command set" && \
+    assert_contains "$c" "/home/ubuntu/.env.production" "env_file inherited" && \
+    assert_contains "$c" "restart: unless-stopped" "restart inherited"
+}
+
+test_sidecar_compose_has_no_ports_or_healthcheck() {
+    source "$AXON_DIR/lib/docker-runtime.sh"
+    local f
+    f=$(generate_sidecar_compose \
+        "goodtogo-production-svc-scheduler-1700000000" \
+        "registry/goodtogo:production" \
+        "/home/ubuntu/.env.production" \
+        "api" "unless-stopped" '["./scheduler"]' "" "json-file" "10m" "3")
+    local c; c=$(cat "$f"); rm -f "$f"
+    if echo "$c" | grep -qE 'ports:|healthcheck:'; then
+        echo "  sidecar compose must NOT contain ports: or healthcheck:"
+        echo "  Content: $c"
+        return 1
+    fi
+    return 0
+}
+
+test_sidecar_compose_appends_override() {
+    source "$AXON_DIR/lib/docker-runtime.sh"
+    local f
+    f=$(generate_sidecar_compose \
+        "goodtogo-production-svc-scheduler-1700000000" \
+        "registry/goodtogo:production" \
+        "/home/ubuntu/.env.production" \
+        "api" "unless-stopped" '["./scheduler"]' \
+        'mem_limit: "128m"' "json-file" "10m" "3")
+    local c; c=$(cat "$f"); rm -f "$f"
+    assert_contains "$c" 'mem_limit: "128m"' "override appended at service level"
+}
+
+# ------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------
 echo ""
@@ -101,6 +153,13 @@ run_test "command empty when absent" test_command_json_empty_when_absent
 run_test "compose_override present" test_override_present
 run_test "compose_override absent" test_override_absent
 run_test "sidecar_container_name format" test_sidecar_name_format
+
+echo ""
+echo -e "${BLUE}Testing sidecar compose generation...${NC}"
+echo ""
+run_test "sidecar compose has image/command/env/restart" test_sidecar_compose_has_image_command_env_network
+run_test "sidecar compose has no ports/healthcheck" test_sidecar_compose_has_no_ports_or_healthcheck
+run_test "sidecar compose appends override" test_sidecar_compose_appends_override
 
 rm -rf "$FIXTURE_DIR"
 
