@@ -23,8 +23,12 @@ get_extra_service_names() {
 get_extra_service_command_json() {
     local name=$1
     local config_file=${2:-$CONFIG_FILE}
-    yq eval -o=json -I0 ".docker.extra_services.\"${name}\".command" "$config_file" 2>/dev/null \
-        | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+    local value
+    value=$(yq eval -o=json -I0 ".docker.extra_services.\"${name}\".command" "$config_file" 2>/dev/null \
+        | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
+        echo "$value"
+    fi
 }
 
 # Return a sidecar's raw compose_override YAML (empty if not set).

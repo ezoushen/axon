@@ -14,6 +14,7 @@ source "$AXON_DIR/lib/extra-services.sh"
 
 # Fixture config with two sidecars
 FIXTURE_DIR=$(mktemp -d)
+trap 'rm -rf "$FIXTURE_DIR"' EXIT
 FIXTURE_CONFIG="$FIXTURE_DIR/axon.config.yml"
 cat > "$FIXTURE_CONFIG" <<'EOF'
 docker:
@@ -55,6 +56,14 @@ test_command_json_array() {
     assert_equals '["./worker","--concurrency=4"]' "$cmd" "command should be emitted as JSON array"
 }
 
+test_command_json_empty_when_absent() {
+    local cfg="$FIXTURE_DIR/nocmd.yml"
+    printf 'docker:\n  extra_services:\n    bare:\n      compose_override: |\n        mem_limit: "64m"\n' > "$cfg"
+    local cmd
+    cmd=$(CONFIG_FILE="$cfg" get_extra_service_command_json "bare")
+    assert_equals "" "$cmd" "absent command must yield empty string, not 'null'"
+}
+
 # ------------------------------------------------------------------
 # get_extra_service_compose_override
 # ------------------------------------------------------------------
@@ -88,6 +97,7 @@ echo ""
 run_test "get_extra_service_names lists all" test_get_names_lists_all_services
 run_test "get_extra_service_names empty when absent" test_get_names_empty_when_absent
 run_test "command emitted as JSON array" test_command_json_array
+run_test "command empty when absent" test_command_json_empty_when_absent
 run_test "compose_override present" test_override_present
 run_test "compose_override absent" test_override_absent
 run_test "sidecar_container_name format" test_sidecar_name_format
