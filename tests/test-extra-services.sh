@@ -304,6 +304,18 @@ goodtogo-production-svc-scheduler-1700000000"
 }
 
 # ------------------------------------------------------------------
+# deploy_extra_services: structural / wiring tests
+# ------------------------------------------------------------------
+test_deploy_extra_services_defined() {
+    assert_equals "function" "$(type -t deploy_extra_services)" "deploy_extra_services must be defined"
+}
+
+test_deploy_docker_invokes_extra_services() {
+    local body; body=$(cat "$AXON_DIR/lib/deploy-docker.sh")
+    assert_contains "$body" "deploy_extra_services" "deploy-docker.sh must call deploy_extra_services"
+}
+
+# ------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------
 echo ""
@@ -351,6 +363,12 @@ run_test "pick latest main excludes sidecars" test_pick_latest_main_excludes_sid
 run_test "pick latest named sidecar" test_pick_latest_named_sidecar
 run_test "pick latest empty list" test_pick_latest_empty_list
 run_test "pick latest unknown service" test_pick_latest_unknown_service
+
+echo ""
+echo -e "${BLUE}Testing deploy orchestration wiring...${NC}"
+echo ""
+run_test "deploy_extra_services defined" test_deploy_extra_services_defined
+run_test "deploy-docker invokes extra services" test_deploy_docker_invokes_extra_services
 
 rm -rf "$FIXTURE_DIR"
 

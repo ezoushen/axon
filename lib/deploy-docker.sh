@@ -807,6 +807,9 @@ EOF
     echo -e "  ${GREEN}✓ Traffic now flows to new container (port $APP_PORT)${NC}"
     echo ""
 
+    # Deploy sidecars now that the main container is live (one release unit).
+    deploy_extra_services "$TIMESTAMP"
+
     # Step 9: Disconnect old containers from network (removes network alias)
     echo -e "${BLUE}Step 9/10: Disconnecting old containers from network...${NC}"
 

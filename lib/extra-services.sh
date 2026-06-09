@@ -109,3 +109,78 @@ reap_filter() {
     local new_container=$1
     grep -v "^${new_container}\$" | grep -v -- '-svc-' || true
 }
+
+# Deploy all sidecars after the main container is live. Each sidecar:
+#   - inherits FULL_IMAGE, ENV_PATH, NETWORK_NAME, docker.restart_policy, logging
+#   - is started as a new timestamped -svc- container
+#   - has its own old same-name containers stopped/removed (per-name cleanup)
+# Sidecars never gate the main deploy: failures here log a warning and leave the
+# main container untouched. Relies on globals set by deploy_docker:
+#   PRODUCT_NAME ENVIRONMENT FULL_IMAGE ENV_PATH NETWORK_NAME
+#   APP_SSH_KEY APP_SERVER CONFIG_FILE
+# Args: timestamp
+deploy_extra_services() {
+    local timestamp=$1
+    local names
+    names=$(get_extra_service_names "$CONFIG_FILE")
+    [ -z "$names" ] && return 0
+
+    echo -e "${BLUE}Deploying extra services (sidecars)...${NC}"
+
+    local restart_policy log_driver log_max_size log_max_file
+    restart_policy=$(parse_config ".docker.restart_policy" "unless-stopped")
+    log_driver=$(parse_config ".docker.logging.driver" "json-file")
+    log_max_size=$(parse_config ".docker.logging.max_size" "10m")
+    log_max_file=$(parse_config ".docker.logging.max_file" "3")
+
+    local name
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+
+        local cmd_json override svc_container run_cmd
+        cmd_json=$(get_extra_service_command_json "$name")
+        if [ -z "$cmd_json" ] || [ "$cmd_json" = "null" ]; then
+            echo -e "  ${YELLOW}⚠ Skipping ${name}: no command${NC}"
+            continue
+        fi
+        override=$(get_extra_service_compose_override "$name")
+        svc_container=$(sidecar_container_name "$PRODUCT_NAME" "$ENVIRONMENT" "$name" "$timestamp")
+
+        run_cmd=$(build_sidecar_run_command \
+            "$svc_container" "$FULL_IMAGE" "$ENV_PATH" "$NETWORK_NAME" \
+            "$restart_policy" "$cmd_json" "$override" \
+            "$log_driver" "$log_max_size" "$log_max_file")
+        if [ $? -ne 0 ] || [ -z "$run_cmd" ]; then
+            echo -e "  ${YELLOW}⚠ ${name}: could not build run command (sidecar skipped)${NC}"
+            continue
+        fi
+
+        ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
+set -e
+NETWORK_NAME="${NETWORK_NAME}"
+SVC_CONTAINER="${svc_container}"
+SVC_PREFIX="${PRODUCT_NAME}-${ENVIRONMENT}-svc-${name}-"
+
+if ! docker network ls | grep -q "\${NETWORK_NAME}"; then
+    docker network create "\${NETWORK_NAME}"
+fi
+
+docker rm -f "\${SVC_CONTAINER}" 2>/dev/null || true
+eval "${run_cmd}"
+
+OLD=\$(docker ps -a --filter "name=\${SVC_PREFIX}" --format '{{.Names}}' | grep -v "^\${SVC_CONTAINER}\$" || true)
+if [ -n "\$OLD" ]; then
+    for c in \$OLD; do
+        docker stop "\$c" 2>/dev/null || true
+        docker rm "\$c" 2>/dev/null || true
+    done
+fi
+EOF
+        if [ $? -eq 0 ]; then
+            echo -e "  ${GREEN}✓${NC} ${name} → ${svc_container}"
+        else
+            echo -e "  ${YELLOW}⚠ ${name}: deploy reported an error (main container unaffected)${NC}"
+        fi
+    done <<< "$names"
+    echo ""
+}

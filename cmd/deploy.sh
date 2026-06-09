@@ -39,6 +39,9 @@ source "$MODULE_DIR/lib/nginx-config.sh"
 # Source deploy-docker library for Docker deployment
 source "$MODULE_DIR/lib/deploy-docker.sh"
 
+# Source extra-services library for sidecar container deployment
+source "$MODULE_DIR/lib/extra-services.sh"
+
 # Source deploy-static library for static site deployment
 source "$MODULE_DIR/lib/deploy-static.sh"
 
