@@ -177,6 +177,71 @@ EOF
     echo "$temp_compose"
 }
 
+# Generate a temporary docker-compose.yml for a single sidecar service.
+# Sidecars inherit image/env/network; they have NO ports and NO healthcheck.
+# Args: container_name, full_image, env_file, network_name, restart_policy,
+#       command_json, compose_override, log_driver, log_max_size, log_max_file
+# Returns: path to temp compose file (stdout)
+generate_sidecar_compose() {
+    local container_name="$1"
+    local full_image="$2"
+    local env_file="$3"
+    local network_name="$4"
+    local restart_policy="$5"
+    local command_json="$6"
+    local compose_override="$7"
+    local log_driver="$8"
+    local log_max_size="$9"
+    local log_max_file="${10}"
+
+    local temp_compose
+    temp_compose=$(mktemp /tmp/docker-compose-svc.XXXXXX) || return 1
+
+    cat > "$temp_compose" <<EOF
+version: '3.8'
+
+services:
+  app:
+    container_name: ${container_name}
+    image: ${full_image}
+EOF
+
+    if [ -n "$command_json" ]; then
+        echo "    command: ${command_json}" >> "$temp_compose"
+    fi
+
+    cat >> "$temp_compose" <<EOF
+
+    env_file:
+      - ${env_file}
+
+    restart: ${restart_policy}
+
+    logging:
+      driver: ${log_driver}
+      options:
+        max-size: "${log_max_size}"
+        max-file: "${log_max_file}"
+
+    networks:
+      - ${network_name}
+EOF
+
+    # Per-service overrides (raw YAML, indented to service level)
+    if [ -n "$compose_override" ]; then
+        echo "" >> "$temp_compose"
+        echo "    # Custom overrides from axon.config.yml (extra_services)" >> "$temp_compose"
+        echo "$compose_override" | sed 's/^/    /' >> "$temp_compose"
+    fi
+
+    echo "" >> "$temp_compose"
+    echo "networks:" >> "$temp_compose"
+    echo "  ${network_name}:" >> "$temp_compose"
+    echo "    external: true" >> "$temp_compose"
+
+    echo "$temp_compose"
+}
+
 # Function to build docker run command from axon.config.yml using decomposerize
 # This generates a temporary docker-compose.yml and converts it to docker run
 # Args: container_name, app_port, full_image, env_file, network_name, network_alias, container_port
@@ -250,6 +315,61 @@ build_docker_run_command() {
     fi
 
     # Fix log options (decomposerize may output: --log-opt max-file=3,max-size=10m)
+    docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/--log-opt \([^,]*\),\([a-z-]*=\)/--log-opt \1 --log-opt \2/g')
+
+    echo "$docker_run_cmd"
+}
+
+# Build a docker run command for a sidecar from its generated compose file.
+# No port handling, no health-cmd fixup (sidecars have neither).
+# Args: container_name, full_image, env_file, network_name, restart_policy,
+#       command_json, compose_override, log_driver, log_max_size, log_max_file
+# Returns: docker run command string (stdout); returns 1 if decomposerize missing.
+build_sidecar_run_command() {
+    local container_name="$1"
+    local full_image="$2"
+    local env_file="$3"
+    local network_name="$4"
+    local restart_policy="$5"
+    local command_json="$6"
+    local compose_override="$7"
+    local log_driver="$8"
+    local log_max_size="$9"
+    local log_max_file="${10}"
+
+    if ! command -v decomposerize &> /dev/null; then
+        echo -e "${RED}Error: decomposerize not found${NC}" >&2
+        echo -e "${RED}Install decomposerize for full Docker feature support:${NC}" >&2
+        echo -e "${RED}  npm install -g decomposerize${NC}" >&2
+        return 1
+    fi
+
+    local temp_compose
+    temp_compose=$(generate_sidecar_compose \
+        "$container_name" "$full_image" "$env_file" "$network_name" \
+        "$restart_policy" "$command_json" "$compose_override" \
+        "$log_driver" "$log_max_size" "$log_max_file") || return 1
+
+    if [ -n "$DEBUG" ]; then
+        echo "Generated sidecar docker-compose.yml:" >&2
+        cat "$temp_compose" >&2
+    fi
+
+    local docker_run_cmd
+    docker_run_cmd=$(decomposerize < "$temp_compose" 2>&1 | grep "^docker run")
+    rm -f "$temp_compose"
+
+    if [ -z "$docker_run_cmd" ]; then
+        echo -e "${RED}Error: decomposerize failed for sidecar ${container_name}${NC}" >&2
+        return 1
+    fi
+
+    # Ensure detached mode
+    if ! echo "$docker_run_cmd" | grep -q " -d "; then
+        docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/^docker run /docker run -d /')
+    fi
+
+    # Fix log options (decomposerize may emit: --log-opt max-file=3,max-size=10m)
     docker_run_cmd=$(echo "$docker_run_cmd" | sed 's/--log-opt \([^,]*\),\([a-z-]*=\)/--log-opt \1 --log-opt \2/g')
 
     echo "$docker_run_cmd"

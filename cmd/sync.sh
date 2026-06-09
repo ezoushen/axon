@@ -241,7 +241,7 @@ echo ""
 # Find the container for this environment
 CONTAINER_FILTER="${PRODUCT_NAME}-${ENVIRONMENT}"
 CONTAINER=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
+    "docker ps --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | grep -v -- '-svc-' | sort -r | head -n 1")
 
 if [ -z "$CONTAINER" ]; then
     echo -e "${RED}Error: No running container found for ${ENVIRONMENT} environment${NC}"

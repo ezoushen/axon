@@ -56,6 +56,7 @@ run_test_suite() {
 run_test_suite "Port Manager Tests" "test-port-manager.sh"
 run_test_suite "Deployment Flow Tests" "test-deployment-flow.sh"
 run_test_suite "Sync Command Tests" "test-sync-command.sh"
+run_test_suite "Extra Services Tests" "test-extra-services.sh"
 
 # Summary
 echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"

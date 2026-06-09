@@ -807,12 +807,15 @@ EOF
     echo -e "  ${GREEN}✓ Traffic now flows to new container (port $APP_PORT)${NC}"
     echo ""
 
+    # Deploy sidecars now that the main container is live (one release unit).
+    deploy_extra_services "$TIMESTAMP"
+
     # Step 9: Disconnect old containers from network (removes network alias)
     echo -e "${BLUE}Step 9/10: Disconnecting old containers from network...${NC}"
 
     # Get list of old containers for this product/environment (exclude new container)
     OLD_CONTAINER_LIST=$(ssh -i "$APP_SSH_KEY" "$APP_SERVER" bash <<EOF
-docker ps -a --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-' --format '{{.Names}}' | grep -v '^${CONTAINER_NAME}\$' || true
+docker ps -a --filter 'name=${PRODUCT_NAME}-${ENVIRONMENT}-' --format '{{.Names}}' | grep -v '^${CONTAINER_NAME}\$' | grep -v -- '-svc-' || true
 EOF
 )
 
@@ -856,7 +859,7 @@ EOF
     TIMEOUT="${GRACEFUL_SHUTDOWN_TIMEOUT}"
 
     # Get list of all containers for this product/environment
-    OLD_CONTAINERS=\$(docker ps -a --filter "name=\${PRODUCT_ENV_PREFIX}" --format '{{.Names}}' | grep -v "^\${NEW_CONTAINER}\$" || true)
+    OLD_CONTAINERS=\$(docker ps -a --filter "name=\${PRODUCT_ENV_PREFIX}" --format '{{.Names}}' | grep -v "^\${NEW_CONTAINER}\$" | grep -v -- '-svc-' || true)
 
     if [ -n "\$OLD_CONTAINERS" ]; then
         # Silently cleanup old containers in background

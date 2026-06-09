@@ -422,3 +422,19 @@ docker:
   #   tmpfs:
   #     - /tmp:rw,noexec,nosuid
   #   # Any valid docker-compose service-level option works here!
+
+  # extra_services: [OPTIONAL] Sidecar containers deployed alongside the main
+  # container as ONE release unit. Sidecars INHERIT the main container's image,
+  # env file, network, restart policy and logging. They are never exposed
+  # (no ports, no nginx upstream) and never gate the deploy on a health check.
+  # Only `command` is required; `compose_override` is optional per service.
+  # Forbidden keys (rejected by `axon config validate`): ports, image,
+  # env_path, env_file, expose, health_check.
+  #
+  # extra_services:
+  #   scheduler:
+  #     command: ["./scheduler"]
+  #   worker:
+  #     command: ["./worker", "--concurrency=4"]
+  #     compose_override: |
+  #       mem_limit: "256m"

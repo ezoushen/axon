@@ -85,6 +85,7 @@ fi
 # Source config parser and defaults library
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
+source "$MODULE_DIR/lib/extra-services.sh"
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}Configuration Validator${NC}"
@@ -822,6 +823,17 @@ if [ "$PRODUCT_TYPE" = "docker" ]; then
         report_success "Docker compose override: configured"
     else
         echo -e "  ${BLUE}○ Docker compose override: <not set>${NC}"
+    fi
+
+    # Validate extra services (sidecars)
+    SIDECARS=$(parse_yaml_key "docker.extra_services" "" "$CONFIG_FILE")
+    if [ -n "$SIDECARS" ] && [ "$SIDECARS" != "null" ]; then
+        echo ""
+        echo -e "${BLUE}Docker Extra Services (sidecars)${NC}"
+        echo ""
+        validate_extra_services "$CONFIG_FILE"
+    else
+        echo -e "  ${BLUE}○ Docker extra services: <not set>${NC}"
     fi
 fi
 
