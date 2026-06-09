@@ -370,6 +370,30 @@ echo ""
 run_test "deploy_extra_services defined" test_deploy_extra_services_defined
 run_test "deploy-docker invokes extra services" test_deploy_docker_invokes_extra_services
 
+# ------------------------------------------------------------------
+# Ops commands (restart/health/sync) must select the MAIN container,
+# excluding -svc- sidecars, in their `sort -r | head` selection.
+# ------------------------------------------------------------------
+test_ops_commands_main_selection_excludes_sidecars() {
+    local rc=0 f sel line
+    for f in restart.sh health.sh sync.sh; do
+        sel=$(grep -n 'sort -r | head -n 1' "$AXON_DIR/cmd/$f" 2>/dev/null)
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            if ! echo "$line" | grep -q -- "grep -v -- '-svc-'"; then
+                echo "  cmd/$f: main-container selection missing -svc- exclusion -> $line"
+                rc=1
+            fi
+        done <<< "$sel"
+    done
+    return $rc
+}
+
+echo ""
+echo -e "${BLUE}Testing ops commands exclude sidecars from main selection...${NC}"
+echo ""
+run_test "ops commands exclude sidecars (restart/health/sync)" test_ops_commands_main_selection_excludes_sidecars
+
 rm -rf "$FIXTURE_DIR"
 
 echo ""

@@ -267,7 +267,7 @@ echo ""
 
 # Find the most recent container for this environment
 CONTAINER=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | grep -v -- '-svc-' | sort -r | head -n 1")
 
 # Check if container exists
 if [ -z "$CONTAINER" ]; then

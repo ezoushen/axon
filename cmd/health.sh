@@ -216,7 +216,7 @@ check_environment() {
     # Find the most recent container for this environment (timestamp-based naming)
     # Container name format: ${PRODUCT_NAME}-${env}-${timestamp}
     CONTAINER_NAME=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-        "docker ps -a --filter 'name=${PRODUCT_NAME}-${env}-' --format '{{.Names}}' | sort -r | head -n 1" 2>/dev/null)
+        "docker ps -a --filter 'name=${PRODUCT_NAME}-${env}-' --format '{{.Names}}' | grep -v -- '-svc-' | sort -r | head -n 1" 2>/dev/null)
 
     if [ -z "$CONTAINER_NAME" ]; then
         echo -e "  Status: ${YELLOW}⚠ Container not found on Application Server${NC}"
