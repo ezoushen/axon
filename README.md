@@ -38,6 +38,7 @@ Internet → System Server (nginx + SSL)  →  Application Server (Docker)
 - **Timestamp-based Naming**: `{product}-{env}-{timestamp}`
 - **Rolling Updates**: New container → health check → nginx switch → old container stops
 - **Port Persistence**: Port state is saved to `/var/lib/axon/{product}/{env}/port` for reliability
+- **Extra services (sidecars)** - Deploy companion containers (scheduler, worker, queue consumer) that share the main container's image, env, and network as one release unit. Declare under `docker.extra_services`; see `config.example.yml`. View their logs with `axon logs <env> <service>`.
 
 ### Static Site Deployments
 ```
