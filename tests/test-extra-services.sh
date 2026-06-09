@@ -193,6 +193,26 @@ test_sidecar_run_command_fails_without_decomposerize() {
 }
 
 # ------------------------------------------------------------------
+# reap_filter: given a container list on stdin and the new container
+# name, drop the new container AND any sidecar (-svc-).
+# ------------------------------------------------------------------
+test_reap_filter_drops_new_and_sidecars() {
+    local list="goodtogo-production-1700000000
+goodtogo-production-1699999999
+goodtogo-production-svc-scheduler-1700000000
+goodtogo-production-svc-worker-1700000000"
+    local out
+    out=$(printf '%s\n' "$list" | reap_filter "goodtogo-production-1700000000" | tr '\n' ' ')
+    assert_equals "goodtogo-production-1699999999 " "$out" "only the old MAIN container survives the filter"
+}
+
+test_reap_filter_empty_input() {
+    local out
+    out=$(printf '' | reap_filter "anything")
+    assert_equals "" "$out" "empty input produces empty output without error"
+}
+
+# ------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------
 echo ""
@@ -219,6 +239,12 @@ echo -e "${BLUE}Testing sidecar docker run builder...${NC}"
 echo ""
 run_test "sidecar run command is detached" test_sidecar_run_command_is_detached
 run_test "sidecar run fails without decomposerize" test_sidecar_run_command_fails_without_decomposerize
+
+echo ""
+echo -e "${BLUE}Testing reap filter...${NC}"
+echo ""
+run_test "reap_filter drops new + sidecars" test_reap_filter_drops_new_and_sidecars
+run_test "reap_filter empty input" test_reap_filter_empty_input
 
 rm -rf "$FIXTURE_DIR"
 

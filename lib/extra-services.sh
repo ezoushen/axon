@@ -47,3 +47,15 @@ get_extra_service_compose_override() {
 sidecar_container_name() {
     echo "${1}-${2}-svc-${3}-${4}"
 }
+
+# Filter a newline-delimited container list (stdin), dropping the new main
+# container and every sidecar (names containing -svc-).
+# NOTE: This is a tested parity model of the reap pipelines embedded in
+# deploy-docker.sh Step 9 and Step 10 — those run remotely inside SSH heredocs
+# and cannot call this function, so the exclusion is duplicated inline there.
+# Keep this in sync with both sweeps (guarded by `grep -c "grep -v -- '-svc-'"`).
+# Args: new_container_name
+reap_filter() {
+    local new_container=$1
+    grep -v "^${new_container}\$" | grep -v -- '-svc-' || true
+}
