@@ -160,6 +160,39 @@ test_sidecar_compose_appends_override() {
 }
 
 # ------------------------------------------------------------------
+# build_sidecar_run_command (decomposerize mocked)
+# ------------------------------------------------------------------
+test_sidecar_run_command_is_detached() {
+    setup_mocks
+    mock_command "decomposerize" 0 "docker run --name goodtogo-production-svc-scheduler-1700000000 --restart unless-stopped --network api registry/goodtogo:production ./scheduler"
+    source "$AXON_DIR/lib/docker-runtime.sh"
+
+    local cmd
+    cmd=$(build_sidecar_run_command \
+        "goodtogo-production-svc-scheduler-1700000000" \
+        "registry/goodtogo:production" \
+        "/home/ubuntu/.env.production" \
+        "api" "unless-stopped" '["./scheduler"]' "" "json-file" "10m" "3")
+
+    teardown_mocks
+    local rc=0
+    assert_contains "$cmd" "docker run -d " "sidecar run command must be detached" || rc=1
+    assert_contains "$cmd" "goodtogo-production-svc-scheduler-1700000000" "carries sidecar name" || rc=1
+    return $rc
+}
+
+test_sidecar_run_command_fails_without_decomposerize() {
+    local isolated; isolated=$(mktemp -d)
+    local rc=0
+    PATH="$isolated:/usr/bin:/bin" bash -c '
+        source "'"$AXON_DIR"'/lib/docker-runtime.sh"
+        build_sidecar_run_command "n" "i" "e" "net" "unless-stopped" "[\"./x\"]" "" "json-file" "10m" "3" >/dev/null 2>&1
+    ' || rc=$?
+    rm -rf "$isolated"
+    assert_equals "1" "$rc" "must return 1 when decomposerize missing"
+}
+
+# ------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------
 echo ""
@@ -180,6 +213,12 @@ run_test "sidecar compose has image/command/env/restart" test_sidecar_compose_ha
 run_test "sidecar compose has no ports/healthcheck" test_sidecar_compose_has_no_ports_or_healthcheck
 run_test "sidecar compose omits empty command" test_sidecar_compose_omits_empty_command
 run_test "sidecar compose appends override" test_sidecar_compose_appends_override
+
+echo ""
+echo -e "${BLUE}Testing sidecar docker run builder...${NC}"
+echo ""
+run_test "sidecar run command is detached" test_sidecar_run_command_is_detached
+run_test "sidecar run fails without decomposerize" test_sidecar_run_command_fails_without_decomposerize
 
 rm -rf "$FIXTURE_DIR"
 
