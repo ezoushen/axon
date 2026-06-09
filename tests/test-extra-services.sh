@@ -104,10 +104,12 @@ test_sidecar_compose_has_image_command_env_network() {
         "" \
         "json-file" "10m" "3")
     local c; c=$(cat "$f"); rm -f "$f"
-    assert_contains "$c" "image: registry/goodtogo:production" "image inherited" && \
-    assert_contains "$c" 'command: \["./scheduler"\]' "command set" && \
-    assert_contains "$c" "/home/ubuntu/.env.production" "env_file inherited" && \
-    assert_contains "$c" "restart: unless-stopped" "restart inherited"
+    local rc=0
+    assert_contains "$c" "image: registry/goodtogo:production" "image inherited" || rc=1
+    assert_contains "$c" 'command: \["./scheduler"\]' "command set" || rc=1
+    assert_contains "$c" "/home/ubuntu/.env.production" "env_file inherited" || rc=1
+    assert_contains "$c" "restart: unless-stopped" "restart inherited" || rc=1
+    return $rc
 }
 
 test_sidecar_compose_has_no_ports_or_healthcheck() {
@@ -121,6 +123,23 @@ test_sidecar_compose_has_no_ports_or_healthcheck() {
     local c; c=$(cat "$f"); rm -f "$f"
     if echo "$c" | grep -qE 'ports:|healthcheck:'; then
         echo "  sidecar compose must NOT contain ports: or healthcheck:"
+        echo "  Content: $c"
+        return 1
+    fi
+    return 0
+}
+
+test_sidecar_compose_omits_empty_command() {
+    source "$AXON_DIR/lib/docker-runtime.sh"
+    local f
+    f=$(generate_sidecar_compose \
+        "goodtogo-production-svc-bare-1700000000" \
+        "registry/goodtogo:production" \
+        "/home/ubuntu/.env.production" \
+        "api" "unless-stopped" "" "" "json-file" "10m" "3")
+    local c; c=$(cat "$f"); rm -f "$f"
+    if echo "$c" | grep -qE '^[[:space:]]*command:'; then
+        echo "  empty command_json must NOT emit a command: line (would null the image CMD)"
         echo "  Content: $c"
         return 1
     fi
@@ -159,6 +178,7 @@ echo -e "${BLUE}Testing sidecar compose generation...${NC}"
 echo ""
 run_test "sidecar compose has image/command/env/restart" test_sidecar_compose_has_image_command_env_network
 run_test "sidecar compose has no ports/healthcheck" test_sidecar_compose_has_no_ports_or_healthcheck
+run_test "sidecar compose omits empty command" test_sidecar_compose_omits_empty_command
 run_test "sidecar compose appends override" test_sidecar_compose_appends_override
 
 rm -rf "$FIXTURE_DIR"

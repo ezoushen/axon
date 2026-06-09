@@ -183,18 +183,19 @@ EOF
 #       command_json, compose_override, log_driver, log_max_size, log_max_file
 # Returns: path to temp compose file (stdout)
 generate_sidecar_compose() {
-    local container_name=$1
-    local full_image=$2
-    local env_file=$3
-    local network_name=$4
-    local restart_policy=$5
-    local command_json=$6
-    local compose_override=$7
-    local log_driver=$8
-    local log_max_size=$9
-    local log_max_file=${10}
+    local container_name="$1"
+    local full_image="$2"
+    local env_file="$3"
+    local network_name="$4"
+    local restart_policy="$5"
+    local command_json="$6"
+    local compose_override="$7"
+    local log_driver="$8"
+    local log_max_size="$9"
+    local log_max_file="${10}"
 
-    local temp_compose=$(mktemp /tmp/docker-compose-svc.XXXXXX)
+    local temp_compose
+    temp_compose=$(mktemp /tmp/docker-compose-svc.XXXXXX) || return 1
 
     cat > "$temp_compose" <<EOF
 version: '3.8'
@@ -203,7 +204,13 @@ services:
   app:
     container_name: ${container_name}
     image: ${full_image}
-    command: ${command_json}
+EOF
+
+    if [ -n "$command_json" ]; then
+        echo "    command: ${command_json}" >> "$temp_compose"
+    fi
+
+    cat >> "$temp_compose" <<EOF
 
     env_file:
       - ${env_file}
