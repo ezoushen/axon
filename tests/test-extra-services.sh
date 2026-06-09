@@ -193,6 +193,60 @@ test_sidecar_run_command_fails_without_decomposerize() {
 }
 
 # ------------------------------------------------------------------
+# validate_extra_services (report_error/report_success stubbed)
+# ------------------------------------------------------------------
+_reset_reporters() { ERRORS=0; WARNINGS=0; LAST_ERROR=""; }
+report_error()   { ERRORS=$((ERRORS+1)); LAST_ERROR="$1"; }
+report_warning() { WARNINGS=$((WARNINGS+1)); }
+report_success() { :; }
+
+test_validate_ok_for_command_only() {
+    _reset_reporters
+    local cfg="$FIXTURE_DIR/ok.yml"
+    cat > "$cfg" <<'EOF'
+docker:
+  extra_services:
+    scheduler:
+      command: ["./scheduler"]
+EOF
+    CONFIG_FILE="$cfg" validate_extra_services
+    assert_equals "0" "$ERRORS" "valid sidecar produces no errors"
+}
+
+test_validate_rejects_missing_command() {
+    _reset_reporters
+    local cfg="$FIXTURE_DIR/nocmd.yml"
+    cat > "$cfg" <<'EOF'
+docker:
+  extra_services:
+    scheduler:
+      compose_override: |
+        mem_limit: "128m"
+EOF
+    CONFIG_FILE="$cfg" validate_extra_services
+    local rc=0
+    assert_equals "1" "$ERRORS" "missing command must error" || rc=1
+    assert_contains "$LAST_ERROR" "command" "error message mentions command" || rc=1
+    return $rc
+}
+
+test_validate_rejects_forbidden_keys() {
+    _reset_reporters
+    local cfg="$FIXTURE_DIR/bad.yml"
+    cat > "$cfg" <<'EOF'
+docker:
+  extra_services:
+    admin:
+      command: ["./admin"]
+      ports:
+        - "8080:8080"
+      image: "other:tag"
+EOF
+    CONFIG_FILE="$cfg" validate_extra_services
+    assert_equals "2" "$ERRORS" "ports and image are both rejected"
+}
+
+# ------------------------------------------------------------------
 # reap_filter: given a container list on stdin and the new container
 # name, drop the new container AND any sidecar (-svc-).
 # ------------------------------------------------------------------
@@ -245,6 +299,13 @@ echo -e "${BLUE}Testing reap filter...${NC}"
 echo ""
 run_test "reap_filter drops new + sidecars" test_reap_filter_drops_new_and_sidecars
 run_test "reap_filter empty input" test_reap_filter_empty_input
+
+echo ""
+echo -e "${BLUE}Testing extra_services validation...${NC}"
+echo ""
+run_test "validate ok for command-only" test_validate_ok_for_command_only
+run_test "validate rejects missing command" test_validate_rejects_missing_command
+run_test "validate rejects forbidden keys" test_validate_rejects_forbidden_keys
 
 rm -rf "$FIXTURE_DIR"
 
