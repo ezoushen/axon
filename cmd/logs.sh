@@ -26,6 +26,7 @@ LOGS_ALL=false
 FOLLOW=false
 LINES="50"
 SINCE=""
+LOG_SERVICE=""
 
 # Early product type detection - scan for -c/--config before full parsing
 # This preserves $@ for delegation to static handler if needed
@@ -81,7 +82,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Usage: $0 <environment|--all> [OPTIONS]"
+            echo "Usage: $0 <environment|--all> [service] [OPTIONS]"
             echo ""
             echo "View container logs for a specific environment or all environments."
             echo ""
@@ -96,9 +97,11 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Arguments:"
             echo "  environment          Specific environment to check logs for"
+            echo "  service              (optional) Sidecar service name (e.g. scheduler, worker)"
             echo ""
             echo "Examples:"
-            echo "  $0 production                # Last 50 lines"
+            echo "  $0 production                # Last 50 lines (main container)"
+            echo "  $0 production scheduler      # Logs from the scheduler sidecar"
             echo "  $0 --all                     # Logs from all environments"
             echo "  $0 staging --follow          # Follow logs in real-time"
             echo "  $0 production --lines 100    # Last 100 lines"
@@ -115,6 +118,8 @@ while [[ $# -gt 0 ]]; do
             # Positional argument
             if [ -z "$ENVIRONMENT" ]; then
                 ENVIRONMENT="$1"
+            elif [ -z "$LOG_SERVICE" ]; then
+                LOG_SERVICE="$1"
             else
                 echo -e "${RED}Error: Too many positional arguments${NC}"
                 echo "Use --help for usage information"
@@ -159,6 +164,7 @@ fi
 source "$MODULE_DIR/lib/config-parser.sh"
 source "$MODULE_DIR/lib/defaults.sh"
 source "$MODULE_DIR/lib/ssh-connection.sh"
+source "$MODULE_DIR/lib/extra-services.sh"
 
 # Initialize SSH connection multiplexing for performance
 ssh_init_multiplexing
@@ -237,13 +243,17 @@ echo -e "${BLUE}==================================================${NC}"
 echo ""
 
 # Find the most recent container for this environment
-CONTAINER=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
-    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}' | sort -r | head -n 1")
+CONTAINER_LIST=$(axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \
+    "docker ps -a --filter 'name=${CONTAINER_FILTER}-' --format '{{.Names}}'")
+CONTAINER=$(printf '%s\n' "$CONTAINER_LIST" | pick_latest_container "$CONTAINER_FILTER" "$LOG_SERVICE")
 
 # Check if container exists
 if [ -z "$CONTAINER" ]; then
     echo -e "${YELLOW}Warning: No container found for ${ENVIRONMENT} environment${NC}"
     echo -e "${YELLOW}Looking for containers matching: ${CONTAINER_FILTER}-${NC}"
+    if [ -n "$LOG_SERVICE" ]; then
+        echo -e "${YELLOW}Hint: no sidecar matching '${LOG_SERVICE}' found for ${ENVIRONMENT}${NC}"
+    fi
     echo ""
     echo "Available containers:"
     axon_ssh "app" -i "$APPLICATION_SERVER_SSH_KEY" "$APP_SERVER" \

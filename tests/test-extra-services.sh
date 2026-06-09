@@ -267,6 +267,43 @@ test_reap_filter_empty_input() {
 }
 
 # ------------------------------------------------------------------
+# pick_latest_container: choose target from a container list (stdin)
+# Args: env_filter (product-env), service ("" = main)
+# ------------------------------------------------------------------
+test_pick_latest_main_excludes_sidecars() {
+    local list="goodtogo-production-1699999999
+goodtogo-production-1700000000
+goodtogo-production-svc-scheduler-1700000000"
+    local out
+    out=$(printf '%s\n' "$list" | pick_latest_container "goodtogo-production" "")
+    assert_equals "goodtogo-production-1700000000" "$out" "default picks latest MAIN, not sidecar"
+}
+
+test_pick_latest_named_sidecar() {
+    local list="goodtogo-production-1700000000
+goodtogo-production-svc-scheduler-1699999999
+goodtogo-production-svc-scheduler-1700000000
+goodtogo-production-svc-worker-1700000000"
+    local out
+    out=$(printf '%s\n' "$list" | pick_latest_container "goodtogo-production" "scheduler")
+    assert_equals "goodtogo-production-svc-scheduler-1700000000" "$out" "service arg picks latest matching sidecar"
+}
+
+test_pick_latest_empty_list() {
+    local out
+    out=$(printf '' | pick_latest_container "goodtogo-production" "")
+    assert_equals "" "$out" "empty list yields empty selection without error"
+}
+
+test_pick_latest_unknown_service() {
+    local list="goodtogo-production-1700000000
+goodtogo-production-svc-scheduler-1700000000"
+    local out
+    out=$(printf '%s\n' "$list" | pick_latest_container "goodtogo-production" "nonexistent")
+    assert_equals "" "$out" "unknown service yields empty selection (drives the not-found path)"
+}
+
+# ------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------
 echo ""
@@ -306,6 +343,14 @@ echo ""
 run_test "validate ok for command-only" test_validate_ok_for_command_only
 run_test "validate rejects missing command" test_validate_rejects_missing_command
 run_test "validate rejects forbidden keys" test_validate_rejects_forbidden_keys
+
+echo ""
+echo -e "${BLUE}Testing log target selection...${NC}"
+echo ""
+run_test "pick latest main excludes sidecars" test_pick_latest_main_excludes_sidecars
+run_test "pick latest named sidecar" test_pick_latest_named_sidecar
+run_test "pick latest empty list" test_pick_latest_empty_list
+run_test "pick latest unknown service" test_pick_latest_unknown_service
 
 rm -rf "$FIXTURE_DIR"
 

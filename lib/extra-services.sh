@@ -84,6 +84,20 @@ validate_extra_services() {
     done <<< "$names"
 }
 
+# Pick the latest container for logs from a newline list on stdin.
+# Args: env_filter (e.g. product-env), service ("" => main container)
+# - main: names starting "<env_filter>-" but NOT containing -svc-
+# - service: names starting "<env_filter>-svc-<service>-"
+pick_latest_container() {
+    local env_filter=$1
+    local service=$2
+    if [ -n "$service" ]; then
+        grep "^${env_filter}-svc-${service}-" | sort -r | head -n 1
+    else
+        grep "^${env_filter}-" | grep -v -- '-svc-' | sort -r | head -n 1
+    fi
+}
+
 # Filter a newline-delimited container list (stdin), dropping the new main
 # container and every sidecar (names containing -svc-).
 # NOTE: This is a tested parity model of the reap pipelines embedded in
