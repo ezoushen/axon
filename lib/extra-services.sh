@@ -165,21 +165,24 @@ if ! docker network ls | grep -q "\${NETWORK_NAME}"; then
     docker network create "\${NETWORK_NAME}"
 fi
 
+# Start-new-then-stop-old: two instances of a sidecar run briefly during
+# deploy, matching the main container's rolling-update model.
 docker rm -f "\${SVC_CONTAINER}" 2>/dev/null || true
 eval "${run_cmd}"
 
 OLD=\$(docker ps -a --filter "name=\${SVC_PREFIX}" --format '{{.Names}}' | grep -v "^\${SVC_CONTAINER}\$" || true)
 if [ -n "\$OLD" ]; then
-    for c in \$OLD; do
+    while IFS= read -r c; do
+        [ -z "\$c" ] && continue
         docker stop "\$c" 2>/dev/null || true
         docker rm "\$c" 2>/dev/null || true
-    done
+    done <<< "\$OLD"
 fi
 EOF
         if [ $? -eq 0 ]; then
             echo -e "  ${GREEN}✓${NC} ${name} → ${svc_container}"
         else
-            echo -e "  ${YELLOW}⚠ ${name}: deploy reported an error (main container unaffected)${NC}"
+            echo -e "  ${YELLOW}⚠ ${name}: deploy reported an error (main container unaffected) — check: docker logs ${svc_container}${NC}"
         fi
     done <<< "$names"
     echo ""
