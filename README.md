@@ -4,25 +4,44 @@
 
 # AXON
 
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ezoushen/axon?sort=semver&style=flat-square&color=8C7A52)](https://github.com/ezoushen/axon/releases) [![Release Workflow](https://img.shields.io/github/actions/workflow/status/ezoushen/axon/release.yml?style=flat-square&label=release&color=B89D6B)](https://github.com/ezoushen/axon/actions/workflows/release.yml) [![License](https://img.shields.io/badge/license-GPL--3.0-D4BE8E?style=flat-square)](https://github.com/ezoushen/axon/blob/main/LICENSE) ![Bash 3.2+](https://img.shields.io/badge/bash-3.2+-8C7A52?style=flat-square&logo=gnu-bash&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-B89D6B?style=flat-square)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ezoushen/axon?sort=semver&style=flat-square&color=8C7A52)](https://github.com/ezoushen/axon/releases) [![Test](https://img.shields.io/github/actions/workflow/status/ezoushen/axon/test.yml?style=flat-square&label=tests&color=8C7A52)](https://github.com/ezoushen/axon/actions/workflows/test.yml) [![Release Workflow](https://img.shields.io/github/actions/workflow/status/ezoushen/axon/release.yml?style=flat-square&label=release&color=B89D6B)](https://github.com/ezoushen/axon/actions/workflows/release.yml) [![License](https://img.shields.io/badge/license-GPL--3.0-D4BE8E?style=flat-square)](https://github.com/ezoushen/axon/blob/main/LICENSE) ![Bash 3.2+](https://img.shields.io/badge/bash-3.2+-8C7A52?style=flat-square&logo=gnu-bash&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-B89D6B?style=flat-square)
 
-Zero-downtime deployment orchestration for Docker containers and static sites. Deploy instantly, switch seamlessly.
+**AXON** is a zero-downtime deployment orchestrator for Docker containers and static sites — deploy, switch, and roll back instantly from a single `axon.config.yml`. SSH-driven, nginx-integrated, product-agnostic.
 
-A reusable, config-driven deployment system for achieving zero-downtime deployments across multiple products using Docker, nginx, static site hosting, and any major container registry.
+## Table of Contents
+
+- [Who is this for?](#who-is-this-for)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [How It Works](#how-it-works)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Who is this for?
+
+- **DevOps engineers** who want a lightweight, SSH-driven deployment tool without Kubernetes complexity
+- **Full-stack teams** deploying Dockerized apps or static sites to single-server or multi-server setups
+- **Startups & SMBs** that need zero-downtime deployments without a heavy ops investment
+- **Agencies** managing multiple client projects — switch between contexts with one command
+- **Anyone** running nginx on a VPS who wants atomic, rollback-capable releases
 
 ## Features
 
-- **Zero-downtime deployments** - Atomic symlink switching for static sites, Docker auto-port assignment with rolling updates
-- **Dual deployment modes** - Docker containers and static site hosting
-- **Config-driven** - All settings in `axon.config.yml` (no docker-compose files)
-- **Multi-environment support** - Production, staging, and custom environments
-- **Product-agnostic** - Reusable across multiple projects
-- **Multi-registry support** - Docker Hub, AWS ECR, Google GCR, Azure ACR
-- **Git SHA tagging** - Automatic commit tagging with release name tracking for static sites
-- **Health checks** - Docker native health checks and application HTTP endpoint testing
-- **Automatic rollback** - On health check failures (Docker deployments)
-- **SSH-based coordination** - Updates nginx configurations automatically
-- **Flexible workflows** - Separate or combined build/push/deploy steps
+- **Zero-downtime deployments** — Atomic symlink switching for static sites, Docker auto-port assignment with rolling updates
+- **Dual deployment modes** — Docker containers and static site hosting
+- **Config-driven** — All settings in `axon.config.yml` (no docker-compose files)
+- **Multi-environment support** — Production, staging, and custom environments
+- **Product-agnostic** — Reusable across multiple projects under one install
+- **Multi-registry support** — Docker Hub, AWS ECR, Google GCR, Azure ACR
+- **Git SHA tagging** — Automatic commit tagging with release name tracking for static sites
+- **Health checks** — Docker native health checks and application HTTP endpoint testing
+- **Automatic rollback** — On health check failures (Docker deployments)
+- **SSH-based coordination** — Updates nginx configurations automatically
+- **Flexible workflows** — Separate or combined build/push/deploy steps
 
 ## Architecture
 
@@ -306,12 +325,7 @@ Use `axon <command> --help` for command-specific troubleshooting. Enable verbose
 
 ## Contributing
 
-This module is designed to be product-agnostic and reusable. When contributing:
-
-1. Keep scripts generic (use configuration, not hardcoded values)
-2. Update documentation
-3. Test with multiple products
-4. Follow existing code style
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding conventions, and pull request guidelines.
 
 ### Releasing New Versions
 
