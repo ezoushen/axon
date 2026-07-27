@@ -1,0 +1,41 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Bash syntax
+        run: |
+          for script in axon install.sh uninstall.sh cmd/*.sh lib/*.sh setup/*.sh; do
+            if [ -f "$script" ]; then
+              bash -n "$script" && echo "  ✓ $script"
+            fi
+          done
+
+      - name: Validate yq config parsing
+        run: |
+          if command -v yq &> /dev/null; then
+            yq eval '.' config.example.yml && echo "  ✓ config.example.yml is valid YAML"
+          else
+            echo "  ⚠ yq not installed, skipping config validation"
+          fi
+
+      - name: Run test suite
+        run: |
+          chmod +x tests/run-all-tests.sh
+          CI=true ./tests/run-all-tests.sh
+
+      - name: Verify VERSION file
+        run: |
+          if [ -f VERSION ]; then
+            echo "VERSION: $(cat VERSION)"
+          fi
