@@ -85,7 +85,7 @@ brew install https://raw.githubusercontent.com/ezoushen/axon/main/homebrew/axon.
 git clone https://github.com/ezoushen/axon.git ~/.axon
 
 # Create symlink
-sudo ln -s ~/.axon/axon /usr/local/bin/axon
+sudo mkdir -p /usr/local/bin && sudo ln -s ~/.axon/axon /usr/local/bin/axon
 
 # Verify
 axon --version

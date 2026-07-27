@@ -135,7 +135,7 @@ brew install axon
 ### Manual
 ```bash
 git clone https://github.com/ezoushen/axon.git ~/.axon
-sudo ln -s ~/.axon/axon /usr/local/bin/axon
+sudo mkdir -p /usr/local/bin && sudo ln -s ~/.axon/axon /usr/local/bin/axon
 ```
 
 ## Troubleshooting

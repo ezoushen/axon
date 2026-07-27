@@ -32,7 +32,7 @@ Install the **AXON** zero-downtime deployment CLI for the user. Be safe and conf
    **Manual:**
    ```bash
    git clone https://github.com/ezoushen/axon.git ~/.axon
-   sudo ln -sf ~/.axon/axon /usr/local/bin/axon
+   sudo mkdir -p /usr/local/bin && sudo ln -sf ~/.axon/axon /usr/local/bin/axon
    ```
 
 4. **Verify.** Run `axon --version`. If `axon` is not found, check the install dir is on `PATH` (e.g. `/usr/local/bin` or the chosen `INSTALL_DIR`) and tell the user how to fix it.
