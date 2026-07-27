@@ -67,6 +67,9 @@ chmod +x "$AXON_DIR/axon"
 echo ""
 echo -e "${BLUE}Creating symlink in ${INSTALL_DIR}...${NC}"
 
+# Ensure install directory exists
+$SUDO mkdir -p "$INSTALL_DIR"
+
 # Check if we need sudo for /usr/local/bin
 if [ -w "$INSTALL_DIR" ]; then
     SUDO=""
